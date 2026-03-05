@@ -1,59 +1,33 @@
-const SESSIONS = [
-  {
-    id: 1,
-    title: "Thumka Choreography",
-    choreographer: "Priya Sharma",
-    style: "Bollywood",
-    level: "Beginner",
-    date: "Sat 8 Mar, 7:00 PM",
-    price: 499,
-    seats_total: 20,
-    seats_booked: 14,
-    color: "#c8430a"
-  },
-  {
-    id: 2,
-    title: "Bharatanatyam Basics",
-    choreographer: "Meera Nair",
-    style: "Bharatanatyam",
-    level: "Absolute Beginner",
-    date: "Sun 9 Mar, 6:00 PM",
-    price: 599,
-    seats_total: 15,
-    seats_booked: 5,
-    color: "#5b4fcf"
-  },
-  {
-    id: 3,
-    title: "Contemporary Flow",
-    choreographer: "Arjun Das",
-    style: "Contemporary",
-    level: "Intermediate",
-    date: "Mon 10 Mar, 8:00 PM",
-    price: 699,
-    seats_total: 12,
-    seats_booked: 12,
-    color: "#1a7a3c"
-  },
-  {
-    id: 4,
-    title: "Hip Hop Basics",
-    choreographer: "Riya Kapoor",
-    style: "Hip Hop",
-    level: "Beginner",
-    date: "Tue 11 Mar, 7:30 PM",
-    price: 449,
-    seats_total: 25,
-    seats_booked: 8,
-    color: "#c8430a"
-  },
-]
+import { useState, useEffect } from 'react'
+import { supabase } from './lib/supabase'
 
 function SessionCard({ session }) {
-  const pct = session.seats_booked / session.seats_total
-  const isFull = pct >= 1
+  const tiers = session.price_tiers
+  const lowestPrice = Math.min(...tiers.map(t => t.price))
+  const totalSeats = tiers.reduce((sum, t) => sum + t.seats, 0)
+  const bookedCount = session.bookings_count || 0
+  const pct = totalSeats > 0 ? bookedCount / totalSeats : 0
+  const isFull = session.status === 'full' || bookedCount >= totalSeats
   const isHot = pct >= 0.7 && !isFull
-  const seatsLeft = session.seats_total - session.seats_booked
+  const seatsLeft = totalSeats - bookedCount
+
+  const styleColors = {
+    bollywood: '#c8430a',
+    bharatanatyam: '#5b4fcf',
+    contemporary: '#1a7a3c',
+    hiphop: '#b5420e',
+    kathak: '#8b4513',
+    folk: '#c47800',
+  }
+  const color = styleColors[session.style_tags?.[0]] || '#c8430a'
+
+  const formatDate = (dateStr) => {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-IN', {
+      weekday: 'short', day: 'numeric',
+      month: 'short', hour: '2-digit', minute: '2-digit'
+    })
+  }
 
   return (
     <div style={{
@@ -72,26 +46,16 @@ function SessionCard({ session }) {
       e.currentTarget.style.transform = 'translateY(0)'
       e.currentTarget.style.boxShadow = 'none'
     }}>
-
-      {/* Colour banner */}
       <div style={{
-        height: 120,
-        background: session.color,
-        display: 'flex',
-        alignItems: 'flex-end',
-        padding: '12px 16px',
-        position: 'relative'
+        height: 120, background: color,
+        display: 'flex', alignItems: 'flex-end',
+        padding: '12px 16px', position: 'relative'
       }}>
         <span style={{
-          background: 'rgba(0,0,0,0.35)',
-          color: 'white',
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: 1,
-          textTransform: 'uppercase',
-          padding: '4px 10px',
-          borderRadius: 20,
-        }}>{session.style}</span>
+          background: 'rgba(0,0,0,0.35)', color: 'white',
+          fontSize: 11, fontWeight: 700, letterSpacing: 1,
+          textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20,
+        }}>{session.style_tags?.[0] || 'Dance'}</span>
 
         {isHot && (
           <span style={{
@@ -109,35 +73,37 @@ function SessionCard({ session }) {
             padding: '4px 10px', borderRadius: 20,
           }}>Full — Waitlist</span>
         )}
+        {session.status === 'confirmed' && !isFull && (
+          <span style={{
+            position: 'absolute', top: 12, right: 12,
+            background: '#1a7a3c', color: 'white',
+            fontSize: 11, fontWeight: 700,
+            padding: '4px 10px', borderRadius: 20,
+          }}>✓ Confirmed</span>
+        )}
       </div>
 
-      {/* Card body */}
       <div style={{padding: '16px 20px 20px'}}>
         <div style={{fontSize: 11, color: '#7a6e65', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1}}>
-          {session.level}
+          {session.skill_level?.replace('_', ' ')}
         </div>
         <h3 style={{fontSize: 17, fontWeight: 700, marginBottom: 6, color: '#0f0c0c'}}>
           {session.title}
         </h3>
         <div style={{fontSize: 13, color: '#7a6e65', marginBottom: 12}}>
-          👤 {session.choreographer}
+          👤 {session.profiles?.full_name || 'NrithyaHolics'}
         </div>
         <div style={{fontSize: 13, color: '#3a3230', marginBottom: 16}}>
-          📅 {session.date}
+          📅 {formatDate(session.scheduled_at)}
         </div>
 
-        {/* Seat bar */}
         <div style={{marginBottom: 16}}>
-          <div style={{
-            height: 4, background: '#e2dbd4',
-            borderRadius: 4, overflow: 'hidden'
-          }}>
+          <div style={{height: 4, background: '#e2dbd4', borderRadius: 4, overflow: 'hidden'}}>
             <div style={{
               height: '100%',
-              width: `${pct * 100}%`,
+              width: `${Math.min(pct * 100, 100)}%`,
               background: isFull ? '#333' : isHot ? '#e8a020' : '#c8430a',
               borderRadius: 4,
-              transition: 'width 0.3s'
             }}/>
           </div>
           <div style={{fontSize: 12, color: '#7a6e65', marginTop: 4}}>
@@ -145,20 +111,14 @@ function SessionCard({ session }) {
           </div>
         </div>
 
-        {/* Price + CTA */}
         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
           <div style={{fontSize: 20, fontWeight: 800, color: '#0f0c0c'}}>
-            ₹{session.price}
+            ₹{lowestPrice}
           </div>
           <button style={{
             background: isFull ? '#333' : '#c8430a',
-            color: 'white',
-            border: 'none',
-            borderRadius: 8,
-            padding: '10px 20px',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'pointer',
+            color: 'white', border: 'none', borderRadius: 8,
+            padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
           }}>
             {isFull ? 'Join Waitlist' : 'Book Now'}
           </button>
@@ -169,24 +129,43 @@ function SessionCard({ session }) {
 }
 
 export default function HomePage({ onLoginClick, user, onLogout }) {
+  const [sessions, setSessions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('All Styles')
+
+  useEffect(() => {
+    fetchSessions()
+  }, [])
+
+  async function fetchSessions() {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*, profiles(full_name)')
+      .in('status', ['open', 'confirmed'])
+      .order('scheduled_at', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching sessions:', error)
+    } else {
+      setSessions(data || [])
+    }
+    setLoading(false)
+  }
+
+  const filters = ['All Styles', 'Bollywood', 'Bharatanatyam', 'Hip Hop', 'Contemporary', 'Kathak']
+
+  const filtered = filter === 'All Styles' ? sessions : sessions.filter(s =>
+    s.style_tags?.some(tag => tag.toLowerCase() === filter.toLowerCase().replace(' ', ''))
+  )
+
   return (
     <div style={{minHeight: '100vh', background: '#faf7f2'}}>
-
-      {/* NAV */}
       <nav style={{
-        background: '#0f0c0c',
-        padding: '0 40px',
-        height: 64,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        background: '#0f0c0c', padding: '0 40px', height: 64,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        <div style={{
-          fontFamily: 'Georgia, serif',
-          fontSize: 22,
-          fontWeight: 900,
-          color: '#faf7f2',
-        }}>
+        <div style={{fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2'}}>
           Nrithya<span style={{color: '#c8430a'}}>Holics</span>
         </div>
         <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
@@ -198,11 +177,8 @@ export default function HomePage({ onLoginClick, user, onLogout }) {
               <button onClick={onLogout} style={{
                 background: 'transparent',
                 border: '1px solid rgba(250,247,242,0.3)',
-                color: '#faf7f2',
-                padding: '8px 20px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 14,
+                color: '#faf7f2', padding: '8px 20px',
+                borderRadius: 8, cursor: 'pointer', fontSize: 14,
               }}>Log out</button>
             </>
           ) : (
@@ -210,43 +186,26 @@ export default function HomePage({ onLoginClick, user, onLogout }) {
               <button onClick={onLoginClick} style={{
                 background: 'transparent',
                 border: '1px solid rgba(250,247,242,0.3)',
-                color: '#faf7f2',
-                padding: '8px 20px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 14,
+                color: '#faf7f2', padding: '8px 20px',
+                borderRadius: 8, cursor: 'pointer', fontSize: 14,
               }}>Log in</button>
               <button onClick={onLoginClick} style={{
-                background: '#c8430a',
-                border: 'none',
-                color: 'white',
-                padding: '8px 20px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 14,
-                fontWeight: 600,
+                background: '#c8430a', border: 'none', color: 'white',
+                padding: '8px 20px', borderRadius: 8, cursor: 'pointer',
+                fontSize: 14, fontWeight: 600,
               }}>Sign up</button>
             </>
           )}
         </div>
       </nav>
 
-      {/* HERO */}
-      <div style={{
-        background: '#0f0c0c',
-        padding: '60px 40px 80px',
-        textAlign: 'center',
-      }}>
+      <div style={{background: '#0f0c0c', padding: '60px 40px 80px', textAlign: 'center'}}>
         <div style={{fontSize: 12, letterSpacing: 4, color: '#e8a020', textTransform: 'uppercase', marginBottom: 16}}>
           Learn from the choreographer
         </div>
         <h1 style={{
-          fontFamily: 'Georgia, serif',
-          fontSize: 56,
-          fontWeight: 900,
-          color: '#faf7f2',
-          lineHeight: 1.1,
-          marginBottom: 16,
+          fontFamily: 'Georgia, serif', fontSize: 56, fontWeight: 900,
+          color: '#faf7f2', lineHeight: 1.1, marginBottom: 16,
         }}>
           Live dance classes,<br/>
           <span style={{color: '#c8430a'}}>anywhere in India</span>
@@ -254,35 +213,37 @@ export default function HomePage({ onLoginClick, user, onLogout }) {
         <p style={{color: 'rgba(250,247,242,0.55)', fontSize: 18, marginBottom: 40}}>
           Book live sessions with real choreographers. Learn, dance, repeat.
         </p>
-
-        {/* Filters */}
         <div style={{display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap'}}>
-          {['All Styles', 'Bollywood', 'Bharatanatyam', 'Hip Hop', 'Contemporary', 'Kathak'].map(f => (
-            <button key={f} style={{
-              background: f === 'All Styles' ? '#c8430a' : 'rgba(250,247,242,0.1)',
-              color: '#faf7f2',
-              border: '1px solid rgba(250,247,242,0.2)',
-              padding: '8px 18px',
-              borderRadius: 20,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: f === 'All Styles' ? 600 : 400,
+          {filters.map(f => (
+            <button key={f} onClick={() => setFilter(f)} style={{
+              background: filter === f ? '#c8430a' : 'rgba(250,247,242,0.1)',
+              color: '#faf7f2', border: '1px solid rgba(250,247,242,0.2)',
+              padding: '8px 18px', borderRadius: 20, cursor: 'pointer',
+              fontSize: 13, fontWeight: filter === f ? 600 : 400,
             }}>{f}</button>
           ))}
         </div>
       </div>
 
-      {/* SESSION GRID */}
       <div style={{maxWidth: 1100, margin: '0 auto', padding: '48px 24px'}}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          gap: 24,
-        }}>
-          {SESSIONS.map(s => <SessionCard key={s.id} session={s}/>)}
-        </div>
+        {loading ? (
+          <div style={{textAlign: 'center', color: '#7a6e65', padding: '60px 0'}}>
+            Loading sessions...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{textAlign: 'center', color: '#7a6e65', padding: '60px 0'}}>
+            No sessions found for this style.
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+            gap: 24,
+          }}>
+            {filtered.map(s => <SessionCard key={s.id} session={s}/>)}
+          </div>
+        )}
       </div>
-
     </div>
   )
 }
