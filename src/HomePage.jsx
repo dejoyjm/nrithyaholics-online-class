@@ -130,7 +130,7 @@ function SessionCard({ session, onClick }) {
   )
 }
 
-export default function HomePage({ onLoginClick, user, onLogout, onSessionClick, profile, onSwitchToTeaching }) {
+export default function HomePage({ onLoginClick, user, onLogout, onSessionClick, profile, onSwitchToTeaching, onProfileClick }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All Styles')
@@ -180,7 +180,15 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
           )}
           {user ? (
             <>
-              <span style={{ color: 'rgba(250,247,242,0.6)', fontSize: 14 }}>👋 {user.email}</span>
+
+              <span
+              onClick={onProfileClick}
+              style={{ color: 'rgba(250,247,242,0.6)', fontSize: 14, cursor: 'pointer' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#faf7f2'}
+              onMouseLeave={e => e.currentTarget.style.color = 'rgba(250,247,242,0.6)'}
+            >
+              👤 {profile?.full_name || user.email}
+            </span>
               <button onClick={onLogout} style={{
                 background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
                 color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14,

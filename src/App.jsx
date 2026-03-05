@@ -6,6 +6,7 @@ import RoleSelectPage from './pages/RoleSelectPage'
 import { supabase } from './lib/supabase'
 import ChoreoPage from './pages/ChoreoPage'
 import AdminPage from './pages/AdminPage'
+import ProfilePage from './pages/ProfilePage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -14,6 +15,7 @@ export default function App() {
   const [currentSession, setCurrentSession] = useState(null)
   const [mode, setMode] = useState('learning')
   const [loading, setLoading] = useState(true)
+  const [showProfile, setShowProfile] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -86,6 +88,21 @@ export default function App() {
     )
   }
 
+if (showProfile) {
+    return (
+      <ProfilePage
+        user={user}
+        profile={profile}
+        onBack={() => setShowProfile(false)}
+        onApplyToTeach={() => {
+          setShowProfile(false)
+          // Re-use RoleSelectPage apply flow
+          setProfile({ ...profile, role: null })
+        }}
+      />
+    )
+  }
+
   if (currentSession) {
     return (
       <SessionPage
@@ -97,12 +114,13 @@ export default function App() {
     )
   }
 
-  return (
+return (
     <HomePage
       onLoginClick={() => setShowAuth(true)}
       user={user}
       profile={profile}
       onSessionClick={(id) => setCurrentSession(id)}
+      onProfileClick={() => setShowProfile(true)}
       onSwitchToTeaching={() => setMode('teaching')}
       onLogout={logOut}
     />
