@@ -258,7 +258,7 @@ export default function SessionPage({ sessionId, user, onBack, onLoginClick }) {
                     ))}
                   </div>
 
-                  {/* Seats selector */}
+                {/* Seats selector */}
                   <div style={{marginBottom: 20}}>
                     <div style={{fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12}}>
                       Number of seats
@@ -272,8 +272,11 @@ export default function SessionPage({ sessionId, user, onBack, onLoginClick }) {
                       <span style={{fontSize: 20, fontWeight: 700, color: '#0f0c0c', minWidth: 24, textAlign: 'center'}}>
                         {seats}
                       </span>
-                       <button onClick={() => setSeats(Math.min(5, seats + 1))} style={{
+                      <button onClick={() => setSeats(Math.min(5, seats + 1))} style={{
                         width: 36, height: 36, borderRadius: '50%',
                         border: '1px solid #e2dbd4', background: 'white',
                         fontSize: 18, cursor: 'pointer', color: '#0f0c0c',
                       }}>+</button>
+                      <span style={{fontSize: 13, color: '#7a6e65'}}>max 5 per booking</span>
+                    </div>
+                  </div>
