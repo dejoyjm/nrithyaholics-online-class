@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function RoleSelectPage({ user, onRoleSelected }) {
+export default function RoleSelectPage({ user, profile, onRoleSelected }) {
   const [step, setStep] = useState('choose') // 'choose' | 'apply'
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
-    full_name: '', instagram_handle: '', sample_video_url: '',
-    bio: '', style_tags: [], teaching_language: 'Hindi'
+    full_name: profile?.full_name || '',
+    instagram_handle: profile?.instagram_handle || '',
+    sample_video_url: profile?.sample_video_url || '',
+    bio: profile?.bio || '',
+    style_tags: profile?.style_tags || [],
+    teaching_language: profile?.teaching_language || 'Hindi'
   })
   const [error, setError] = useState('')
 

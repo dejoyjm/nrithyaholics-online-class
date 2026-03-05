@@ -70,7 +70,7 @@ export default function App() {
 
   // New user — needs to pick role
   if (user && profile && !profile.role) {
-    return <RoleSelectPage user={user} onRoleSelected={async () => {
+    return <RoleSelectPage user={user} profile={profile} onRoleSelected={async () => {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       setProfile(data)
     }} />

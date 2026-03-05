@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function ChoreoPage({ user, profile, onLogout, onAdminClick }) {
+export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
