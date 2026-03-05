@@ -5,6 +5,7 @@ import SessionPage from './pages/SessionPage'
 import RoleSelectPage from './pages/RoleSelectPage'
 import { supabase } from './lib/supabase'
 import ChoreoPage from './pages/ChoreoPage'
+import AdminPage from './pages/AdminPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -41,6 +42,13 @@ export default function App() {
     setLoading(false)
   }
 
+  const logOut = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setProfile(null)
+    setMode('learning')
+  }
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 900, color: '#faf7f2' }}>
@@ -53,9 +61,14 @@ export default function App() {
     return <AuthPage onAuth={(u) => { setUser(u); setShowAuth(false) }} />
   }
 
-// New user — needs to pick role
+  // Admin
+  if (user && profile?.is_admin) {
+    return <AdminPage user={user} onLogout={logOut} />
+  }
+
+  // New user — needs to pick role
   if (user && profile && !profile.role) {
-    return <RoleSelectPage user={user} onRoleSelected={async (role) => {
+    return <RoleSelectPage user={user} onRoleSelected={async () => {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       setProfile(data)
     }} />
@@ -68,12 +81,7 @@ export default function App() {
         user={user}
         profile={profile}
         onSwitchToLearning={() => setMode('learning')}
-        onLogout={async () => {
-          await supabase.auth.signOut()
-          setUser(null)
-          setProfile(null)
-          setMode('learning')
-        }}
+        onLogout={logOut}
       />
     )
   }
@@ -89,19 +97,14 @@ export default function App() {
     )
   }
 
-    return (
-        <HomePage
-          onLoginClick={() => setShowAuth(true)}
-          user={user}
-          profile={profile}
-          onSessionClick={(id) => setCurrentSession(id)}
-          onSwitchToTeaching={() => setMode('teaching')}
-          onLogout={async () => {
-            await supabase.auth.signOut()
-            setUser(null)
-            setProfile(null)
-            setMode('learning')
-          }}
-        />
-      )
+  return (
+    <HomePage
+      onLoginClick={() => setShowAuth(true)}
+      user={user}
+      profile={profile}
+      onSessionClick={(id) => setCurrentSession(id)}
+      onSwitchToTeaching={() => setMode('teaching')}
+      onLogout={logOut}
+    />
+  )
 }
