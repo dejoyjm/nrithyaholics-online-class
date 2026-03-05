@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 
 function SessionCard({ session, onClick }) {
+  console.log('SessionCard onClick prop:', onClick)
   const tiers = session.price_tiers
   const lowestPrice = Math.min(...tiers.map(t => t.price))
   const totalSeats = tiers.reduce((sum, t) => sum + t.seats, 0)
@@ -116,20 +117,20 @@ function SessionCard({ session, onClick }) {
           <div style={{fontSize: 20, fontWeight: 800, color: '#0f0c0c'}}>
             ₹{lowestPrice}
           </div>
-          <button style={{
-            background: isFull ? '#333' : '#c8430a',
-            color: 'white', border: 'none', borderRadius: 8,
-            padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-          }}>
-            {isFull ? 'Join Waitlist' : 'Book Now'}
-          </button>
+            <button onClick={(e) => { e.stopPropagation(); onClick() }} style={{
+              background: isFull ? '#333' : '#c8430a',
+              color: 'white', border: 'none', borderRadius: 8,
+              padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}>
+              {isFull ? 'Join Waitlist' : 'Book Now'}
+            </button>
         </div>
       </div>
     </div>
   )
 }
 
-export default function HomePage({ onLoginClick, user, onLogout }) {
+export default function HomePage({ onLoginClick, user, onLogout, onSessionClick }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All Styles')
