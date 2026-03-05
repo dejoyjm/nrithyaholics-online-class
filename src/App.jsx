@@ -11,6 +11,7 @@ export default function App() {
   const [profile, setProfile] = useState(null)
   const [showAuth, setShowAuth] = useState(false)
   const [currentSession, setCurrentSession] = useState(null)
+  const [mode, setMode] = useState('learning')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -52,21 +53,26 @@ export default function App() {
     return <AuthPage onAuth={(u) => { setUser(u); setShowAuth(false) }} />
   }
 
-  // New user — needs to pick role
+// New user — needs to pick role
   if (user && profile && !profile.role) {
-    return <RoleSelectPage user={user} onRoleSelected={(role) => setProfile({ ...profile, role })} />
+    return <RoleSelectPage user={user} onRoleSelected={async (role) => {
+      const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+      setProfile(data)
+    }} />
   }
 
-  // Choreographer goes to their dashboard
-  if (user && profile?.role === 'choreographer') {
+  // Approved choreographer in teaching mode
+  if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') {
     return (
       <ChoreoPage
         user={user}
         profile={profile}
+        onSwitchToLearning={() => setMode('learning')}
         onLogout={async () => {
           await supabase.auth.signOut()
           setUser(null)
           setProfile(null)
+          setMode('learning')
         }}
       />
     )
@@ -83,17 +89,19 @@ export default function App() {
     )
   }
 
-  return (
-    <HomePage
-      onLoginClick={() => setShowAuth(true)}
-      user={user}
-      profile={profile}
-      onSessionClick={(id) => setCurrentSession(id)}
-      onLogout={async () => {
-        await supabase.auth.signOut()
-        setUser(null)
-        setProfile(null)
-      }}
-    />
-  )
+    return (
+        <HomePage
+          onLoginClick={() => setShowAuth(true)}
+          user={user}
+          profile={profile}
+          onSessionClick={(id) => setCurrentSession(id)}
+          onSwitchToTeaching={() => setMode('teaching')}
+          onLogout={async () => {
+            await supabase.auth.signOut()
+            setUser(null)
+            setProfile(null)
+            setMode('learning')
+          }}
+        />
+      )
 }

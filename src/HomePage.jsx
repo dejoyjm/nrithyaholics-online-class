@@ -130,7 +130,7 @@ function SessionCard({ session, onClick }) {
   )
 }
 
-export default function HomePage({ onLoginClick, user, onLogout, onSessionClick }) {
+export default function HomePage({ onLoginClick, user, onLogout, onSessionClick, profile, onSwitchToTeaching }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All Styles')
@@ -163,43 +163,55 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick 
 
   return (
     <div style={{minHeight: '100vh', background: '#faf7f2'}}>
-      <nav style={{
+    <nav style={{
         background: '#0f0c0c', padding: '0 40px', height: 64,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        <div style={{fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2'}}>
-          Nrithya<span style={{color: '#c8430a'}}>Holics</span>
+        <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2' }}>
+          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
         </div>
-        <div style={{display: 'flex', gap: 12, alignItems: 'center'}}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {user && profile?.role === 'choreographer' && profile?.choreographer_approved && (
+            <button onClick={onSwitchToTeaching} style={{
+              background: '#c8430a', color: 'white', border: 'none',
+              borderRadius: 8, padding: '8px 16px', fontSize: 13,
+              fontWeight: 600, cursor: 'pointer'
+            }}>🎭 Switch to Teaching</button>
+          )}
           {user ? (
             <>
-              <span style={{color: 'rgba(250,247,242,0.6)', fontSize: 14}}>
-                👋 {user.email}
-              </span>
+              <span style={{ color: 'rgba(250,247,242,0.6)', fontSize: 14 }}>👋 {user.email}</span>
               <button onClick={onLogout} style={{
-                background: 'transparent',
-                border: '1px solid rgba(250,247,242,0.3)',
-                color: '#faf7f2', padding: '8px 20px',
-                borderRadius: 8, cursor: 'pointer', fontSize: 14,
+                background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+                color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
               }}>Log out</button>
             </>
           ) : (
             <>
               <button onClick={onLoginClick} style={{
-                background: 'transparent',
-                border: '1px solid rgba(250,247,242,0.3)',
-                color: '#faf7f2', padding: '8px 20px',
-                borderRadius: 8, cursor: 'pointer', fontSize: 14,
+                background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+                color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
               }}>Log in</button>
               <button onClick={onLoginClick} style={{
                 background: '#c8430a', border: 'none', color: 'white',
-                padding: '8px 20px', borderRadius: 8, cursor: 'pointer',
-                fontSize: 14, fontWeight: 600,
+                padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600,
               }}>Sign up</button>
             </>
           )}
         </div>
       </nav>
+
+      {/* PENDING BANNER */}
+      {user && profile?.role === 'choreographer' && !profile?.choreographer_approved && (
+        <div style={{
+          background: '#e8a020', padding: '12px 40px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+        }}>
+          <div style={{ fontSize: 14, color: '#0f0c0c', fontWeight: 600 }}>
+            🕐 Your choreographer application is under review — we'll notify you within 1–2 days. Browse and book sessions while you wait!
+          </div>
+        </div>
+      )}
 
       <div style={{background: '#0f0c0c', padding: '60px 40px 80px', textAlign: 'center'}}>
         <div style={{fontSize: 12, letterSpacing: 4, color: '#e8a020', textTransform: 'uppercase', marginBottom: 16}}>

@@ -40,10 +40,16 @@ export default function ChoreoPage({ user, profile, onLogout, onAdminClick }) {
           <span style={{ fontSize: 12, color: 'rgba(250,247,242,0.4)', marginLeft: 12, fontFamily: 'sans-serif', fontWeight: 400 }}>Choreographer</span>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button onClick={onSwitchToLearning} style={{
+            background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+            color: '#faf7f2', padding: '8px 16px', borderRadius: 8,
+            cursor: 'pointer', fontSize: 13,
+          }}>💃 Switch to Learning</button>
           <span style={{ color: 'rgba(250,247,242,0.6)', fontSize: 14 }}>👋 {user.email}</span>
-          <button onClick={onLogout} style={{ background: 'transparent', border: '1px solid rgba(250,247,242,0.3)', color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
-            Log out
-          </button>
+          <button onClick={onLogout} style={{
+            background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+            color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
+          }}>Log out</button>
         </div>
       </nav>
 
