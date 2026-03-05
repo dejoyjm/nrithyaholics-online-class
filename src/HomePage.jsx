@@ -168,7 +168,7 @@ function SessionCard({ session }) {
   )
 }
 
-export default function HomePage({ onLoginClick, user }) {
+export default function HomePage({ onLoginClick, user, onLogout }) {
   return (
     <div style={{minHeight: '100vh', background: '#faf7f2'}}>
 
