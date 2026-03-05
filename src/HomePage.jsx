@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 
-function SessionCard({ session }) {
+function SessionCard({ session, onClick }) {
   const tiers = session.price_tiers
   const lowestPrice = Math.min(...tiers.map(t => t.price))
   const totalSeats = tiers.reduce((sum, t) => sum + t.seats, 0)
@@ -43,9 +43,10 @@ function SessionCard({ session }) {
       e.currentTarget.style.boxShadow = '0 12px 40px rgba(0,0,0,0.12)'
     }}
     onMouseLeave={e => {
-      e.currentTarget.style.transform = 'translateY(0)'
-      e.currentTarget.style.boxShadow = 'none'
-    }}>
+        e.currentTarget.style.transform = 'translateY(0)'
+        e.currentTarget.style.boxShadow = 'none'
+      }}
+      onClick={onClick}>
       <div style={{
         height: 120, background: color,
         display: 'flex', alignItems: 'flex-end',
@@ -240,7 +241,7 @@ export default function HomePage({ onLoginClick, user, onLogout }) {
             gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
             gap: 24,
           }}>
-            {filtered.map(s => <SessionCard key={s.id} session={s}/>)}
+            {filtered.map(s => <SessionCard key={s.id} session={s} onClick={() => onSessionClick(s.id)}/>)}
           </div>
         )}
       </div>
