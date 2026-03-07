@@ -108,14 +108,12 @@ export default function App() {
 
   if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') {
     return (
-
-    <ChoreoPage
-      user={user}
-      profile={profile}
-      onSwitchToLearning={() => setMode('learning')}
-      onLogout={logOut}
-      onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
-    />
+      <ChoreoPage
+        user={user}
+        profile={profile}
+        onSwitchToLearning={() => setMode('learning')}
+        onLogout={logOut}
+      />
     )
   }
 
@@ -125,6 +123,7 @@ export default function App() {
         user={user}
         profile={profile}
         onBack={() => setShowProfile(false)}
+        onSwitchToTeaching={() => { setShowProfile(false); setMode('teaching') }}
         onApplyToTeach={() => {
           setShowProfile(false)
           setProfile({ ...profile, role: null })
