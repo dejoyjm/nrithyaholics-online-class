@@ -24,6 +24,8 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
   const [activeTab, setActiveTab] = useState('profile')
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || null)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
   const isChoreo = profile?.role === 'choreographer'
   const isApprovedChoreo = isChoreo && profile?.choreographer_approved
@@ -74,6 +76,22 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
     if (error) alert(error.message)
     else setEditMode(false)
     setSaving(false)
+  }
+
+  async function uploadAvatar(file) {
+    if (!file) return
+    const ext = file.name.split('.').pop()
+    const path = `${user.id}/avatar.${ext}`
+    setUploadingPhoto(true)
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (uploadError) { alert('Upload failed: ' + uploadError.message); setUploadingPhoto(false); return }
+    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+    const publicUrl = data.publicUrl + '?t=' + Date.now() // cache bust
+    await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id)
+    setAvatarUrl(publicUrl)
+    setUploadingPhoto(false)
   }
 
   function toggleStyle(s) {
@@ -135,17 +153,31 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
         {/* HEADER CARD */}
         <div style={{ background: 'white', borderRadius: 20, padding: 28, border: '1px solid #e2dbd4', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%', flexShrink: 0,
-              background: '#c8430a', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', color: 'white', fontSize: 32, fontWeight: 700, position: 'relative',
-            }}>
-              {initials}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
               <div style={{
-                position: 'absolute', bottom: 0, right: 0, width: 24, height: 24, borderRadius: '50%',
-                background: '#e2dbd4', border: '2px solid white',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10,
-              }}>📷</div>
+                width: 80, height: 80, borderRadius: '50%',
+                background: avatarUrl ? 'transparent' : '#c8430a',
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'center', color: 'white', fontSize: 32, fontWeight: 700,
+                overflow: 'hidden',
+              }}>
+                {avatarUrl
+                  ? <img src={avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : initials
+                }
+              </div>
+              {/* Photo upload button */}
+              <label style={{
+                position: 'absolute', bottom: 0, right: 0, width: 26, height: 26,
+                borderRadius: '50%', background: uploadingPhoto ? '#e2dbd4' : '#0f0c0c',
+                border: '2px solid white', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: 11, cursor: 'pointer',
+                title: 'Change photo',
+              }}>
+                {uploadingPhoto ? '⏳' : '📷'}
+                <input type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={e => uploadAvatar(e.target.files[0])} />
+              </label>
             </div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f0c0c', marginBottom: 2 }}>

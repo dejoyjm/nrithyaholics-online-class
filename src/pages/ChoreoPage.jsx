@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-
 export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning, onProfileClick }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -43,57 +42,43 @@ export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button onClick={onSwitchToLearning} style={{
             background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
-            color: '#faf7f2', padding: '8px 16px', borderRadius: 8,
-            cursor: 'pointer', fontSize: 13,
+            color: '#faf7f2', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13,
           }}>💃 Switch to Learning</button>
           <button onClick={onProfileClick} style={{
-              background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
-              color: '#faf7f2', padding: '8px 16px', borderRadius: 8,
-              cursor: 'pointer', fontSize: 14,
-            }}>My Profile</button>
-            <button onClick={onLogout} style={{
             background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
-            color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
+            color: '#faf7f2', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
+          }}>My Profile</button>
+          <button onClick={onLogout} style={{
+            background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+            color: '#faf7f2', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
           }}>Log out</button>
         </div>
       </nav>
 
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '48px 24px' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
 
-        {/* HEADER */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 40 }}>
-          <div>
-            <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 36, fontWeight: 900, color: '#0f0c0c', marginBottom: 8 }}>
-              Your Dashboard
-            </h1>
-            <p style={{ color: '#7a6e65', fontSize: 15 }}>Manage your sessions and track bookings</p>
-          </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '12px 24px', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
-            + New Session
-          </button>
-        </div>
-
-        {/* STATS */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginBottom: 40 }}>
+        {/* STATS ROW */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 32 }}>
           {[
             ['Total Sessions', sessions.length, '🎭'],
-            ['Active Sessions', sessions.filter(s => ['open', 'confirmed'].includes(s.status)).length, '🔥'],
-            ['Est. Revenue', `₹${totalRevenue.toLocaleString()}`, '💰'],
+            ['Active Bookings', sessions.reduce((s, x) => s + (x.bookings_count || 0), 0), '💃'],
+            ['Est. Revenue', `₹${totalRevenue.toLocaleString('en-IN')}`, '💰'],
           ].map(([label, value, icon]) => (
-            <div key={label} style={{ background: 'white', borderRadius: 16, padding: '24px', border: '1px solid #e2dbd4' }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>{icon}</div>
+            <div key={label} style={{ background: 'white', borderRadius: 16, padding: '20px 24px', border: '1px solid #e2dbd4' }}>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{icon}</div>
               <div style={{ fontSize: 28, fontWeight: 800, color: '#0f0c0c', marginBottom: 4 }}>{value}</div>
               <div style={{ fontSize: 13, color: '#7a6e65' }}>{label}</div>
             </div>
           ))}
         </div>
 
-        {/* SESSIONS LIST */}
-        <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e2dbd4', overflow: 'hidden' }}>
-          <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2dbd4', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c' }}>Your Sessions</h2>
+        {/* SESSIONS */}
+        <div style={{ background: 'white', borderRadius: 20, border: '1px solid #e2dbd4' }}>
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0ebe6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif' }}>My Sessions</h2>
+            <button onClick={() => setShowCreate(true)} style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              + New Session
+            </button>
           </div>
 
           {loading ? (
@@ -109,7 +94,13 @@ export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning
             </div>
           ) : (
             sessions.map((s, i) => (
-              <div key={s.id} style={{ padding: '20px 24px', borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={s.id} style={{ padding: '20px 24px', borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                {/* Cover photo thumbnail */}
+                {s.cover_photo_url && (
+                  <div style={{ width: 56, height: 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
+                    <img src={s.cover_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                )}
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c' }}>{s.title}</h3>
@@ -150,8 +141,24 @@ function CreateSessionModal({ user, onClose, onCreated }) {
     duration: 60, price: 499, seats: 20, min_seats: 5
   })
   const [saving, setSaving] = useState(false)
+  const [coverUrl, setCoverUrl] = useState(null)
+  const [uploadingCover, setUploadingCover] = useState(false)
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
+
+  async function uploadCover(file) {
+    if (!file) return
+    const ext = file.name.split('.').pop()
+    const path = `${user.id}/${Date.now()}.${ext}`
+    setUploadingCover(true)
+    const { error } = await supabase.storage
+      .from('session-covers')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (error) { alert('Upload failed: ' + error.message); setUploadingCover(false); return }
+    const { data } = supabase.storage.from('session-covers').getPublicUrl(path)
+    setCoverUrl(data.publicUrl)
+    setUploadingCover(false)
+  }
 
   async function handleCreate() {
     if (!form.title || !form.date || !form.time) {
@@ -172,6 +179,7 @@ function CreateSessionModal({ user, onClose, onCreated }) {
       min_seats: form.min_seats,
       max_seats: form.seats,
       status: 'open',
+      cover_photo_url: coverUrl || null,
     })
     if (error) alert('Error: ' + error.message)
     else onCreated()
@@ -184,7 +192,6 @@ function CreateSessionModal({ user, onClose, onCreated }) {
     padding: '10px 14px', fontSize: 14,
     outline: 'none', boxSizing: 'border-box', color: '#0f0c0c'
   }
-
   const labelStyle = { fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
 
   return (
@@ -196,6 +203,38 @@ function CreateSessionModal({ user, onClose, onCreated }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* COVER PHOTO — first field */}
+          <div>
+            <label style={labelStyle}>Cover Photo <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 12, border: '2px dashed #e2dbd4', cursor: 'pointer',
+              background: '#faf7f2', overflow: 'hidden', position: 'relative',
+              minHeight: coverUrl ? 0 : 110,
+            }}>
+              {coverUrl ? (
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <img src={coverUrl} alt="cover" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block', borderRadius: 10 }} />
+                  <div style={{
+                    position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)',
+                    color: 'white', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20,
+                  }}>Change photo</div>
+                </div>
+              ) : uploadingCover ? (
+                <div style={{ color: '#7a6e65', fontSize: 13, padding: 24 }}>Uploading...</div>
+              ) : (
+                <div style={{ textAlign: 'center', color: '#7a6e65', padding: 24 }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>🖼️</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Click to upload cover photo</div>
+                  <div style={{ fontSize: 11, marginTop: 4 }}>JPG or PNG · Max 10MB · Landscape works best</div>
+                </div>
+              )}
+              <input type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={e => uploadCover(e.target.files[0])} />
+            </label>
+          </div>
+
           <div>
             <label style={labelStyle}>Session Title *</label>
             <input style={inputStyle} placeholder="e.g. Bollywood Beats Vol. 3" value={form.title} onChange={e => set('title', e.target.value)} />
@@ -210,7 +249,7 @@ function CreateSessionModal({ user, onClose, onCreated }) {
             <div>
               <label style={labelStyle}>Dance Style</label>
               <select style={inputStyle} value={form.style} onChange={e => set('style', e.target.value)}>
-                {['bollywood', 'bharatanatyam', 'contemporary', 'hiphop', 'kathak', 'folk'].map(s => (
+                {['bollywood', 'bharatanatyam', 'contemporary', 'hiphop', 'kathak', 'folk', 'jazz', 'fusion'].map(s => (
                   <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
                 ))}
               </select>
