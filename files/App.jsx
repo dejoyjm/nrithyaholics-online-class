@@ -35,20 +35,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Realtime: re-fetch profile instantly when admin changes it (suspension, role change, etc.)
-  useEffect(() => {
-    if (!user) return
-    const channel = supabase
-      .channel('profile-watch')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
-        (payload) => { setProfile(payload.new) }
-      )
-      .subscribe()
-    return () => supabase.removeChannel(channel)
-  }, [user])
-
   async function fetchProfile(userId) {
     const { data } = await supabase
       .from('profiles')
