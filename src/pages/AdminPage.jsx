@@ -20,7 +20,7 @@ export default function AdminPage({ user, onLogout }) {
         .order('choreographer_requested_at', { ascending: false }),
       supabase.from('profiles_with_email').select('*')
         .order('auth_created_at', { ascending: false }),
-      supabase.from('sessions').select('*, profiles(full_name)')
+      supabase.from('sessions').select('*, profiles(full_name, avatar_url)')
         .order('scheduled_at', { ascending: false }),
     ])
     setApplications(appsRes.data || [])
@@ -120,6 +120,15 @@ export default function AdminPage({ user, onLogout }) {
       const { data } = await supabase.from('profiles_with_email').select('*').eq('id', profileId).single()
       setSelectedUser(data)
     }
+  }
+
+  const [adminEditSession, setAdminEditSession] = useState(null)
+
+  async function adminCancelSession(sessionId) {
+    if (!window.confirm('Cancel this session? All bookings will be cancelled.')) return
+    await supabase.from('bookings').update({ status: 'cancelled', cancelled_reason: 'admin_cancelled', cancelled_at: new Date().toISOString() }).eq('session_id', sessionId)
+    await supabase.from('sessions').update({ status: 'cancelled' }).eq('id', sessionId)
+    fetchAll()
   }
 
   const tabStyle = (t) => ({
@@ -288,7 +297,7 @@ export default function AdminPage({ user, onLogout }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #f0ebe6' }}>
-                  {['Session', 'Choreographer', 'Date', 'Seats', 'Status'].map(h => (
+                  {['Session', 'Choreographer', 'Date', 'Seats', 'Status', ''].map(h => (
                     <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>{h}</th>
                   ))}
                 </tr>
@@ -297,12 +306,32 @@ export default function AdminPage({ user, onLogout }) {
                 {sessions.map((s, i) => (
                   <tr key={s.id} style={{ borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none' }}>
                     <td style={{ padding: '14px 20px' }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: '#0f0c0c' }}>{s.title}</div>
-                      <div style={{ fontSize: 12, color: '#7a6e65' }}>{s.style_tags?.[0]} · {s.skill_level?.replace(/_/g, ' ')}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#f0ebe6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {s.cover_photo_url
+                            ? <img src={s.cover_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <span style={{ fontSize: 18 }}>🎭</span>
+                          }
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: '#0f0c0c' }}>{s.title}</div>
+                          <div style={{ fontSize: 12, color: '#7a6e65' }}>{s.style_tags?.[0]} · {s.skill_level?.replace(/_/g, ' ')}</div>
+                        </div>
+                      </div>
                     </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{s.profiles?.full_name || '—'}</td>
+                    <td style={{ padding: '14px 20px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
+                          {s.profiles?.avatar_url
+                            ? <img src={s.profiles.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : (s.profiles?.full_name || '?')[0].toUpperCase()
+                          }
+                        </div>
+                        <span style={{ fontSize: 13, color: '#5a4e47' }}>{s.profiles?.full_name || '—'}</span>
+                      </div>
+                    </td>
                     <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{formatDate(s.scheduled_at)}</td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{s.max_seats} seats</td>
+                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{s.bookings_count || 0}/{s.max_seats}</td>
                     <td style={{ padding: '14px 20px' }}>
                       <span style={{
                         background: s.status === 'confirmed' ? '#e6f4ec' : s.status === 'open' ? '#fff8e6' : '#f0ebe6',
@@ -312,6 +341,16 @@ export default function AdminPage({ user, onLogout }) {
                         {s.status}
                       </span>
                     </td>
+                    <td style={{ padding: '14px 20px' }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {['open','draft','confirmed'].includes(s.status) && (
+                          <button onClick={() => setAdminEditSession(s)} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>✏️ Edit</button>
+                        )}
+                        {['open','confirmed','draft'].includes(s.status) && (
+                          <button onClick={() => adminCancelSession(s.id)} style={{ background: '#fff0f0', border: '1px solid #ffcccc', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#cc0000' }}>✕ Cancel</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -319,6 +358,15 @@ export default function AdminPage({ user, onLogout }) {
           )}
         </div>
       </div>
+
+      {/* ADMIN SESSION EDIT MODAL */}
+      {adminEditSession && (
+        <AdminSessionEditModal
+          session={adminEditSession}
+          onClose={() => setAdminEditSession(null)}
+          onSaved={() => { setAdminEditSession(null); fetchAll() }}
+        />
+      )}
 
       {/* USER PROFILE DRAWER */}
       {selectedUser && (
@@ -338,8 +386,11 @@ export default function AdminPage({ user, onLogout }) {
 
             {/* Avatar + name */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 26, fontWeight: 700, flexShrink: 0 }}>
-                {(selectedUser.full_name || selectedUser.email || '?')[0].toUpperCase()}
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 26, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
+                {selectedUser.avatar_url
+                  ? <img src={selectedUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : (selectedUser.full_name || selectedUser.email || '?')[0].toUpperCase()
+                }
               </div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 20, color: '#0f0c0c' }}>{selectedUser.full_name || '— no name —'}</div>
@@ -584,6 +635,132 @@ function ConfirmActionDialog({ action, onConfirm, onCancel, formatDate }) {
             disabled={!reason.trim()}
             style={{ flex: 2, background: isRevoke ? '#c8430a' : '#cc0000', border: 'none', color: 'white', padding: '12px', borderRadius: 8, cursor: reason.trim() ? 'pointer' : 'not-allowed', fontSize: 14, fontWeight: 600, opacity: reason.trim() ? 1 : 0.5 }}>
             {isRevoke ? '⚠️ Confirm Revoke' : '🚫 Confirm Suspend'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Admin Session Edit Modal ─────────────────────────────────
+const TIME_SLOTS_ADMIN = [
+  '06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30',
+  '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30',
+  '14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30',
+  '18:00','18:30','19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30',
+]
+function fmtTimeAdmin(t) {
+  const [h, m] = t.split(':').map(Number)
+  const ampm = h < 12 ? 'AM' : 'PM'
+  return `${h % 12 || 12}:${m.toString().padStart(2,'0')} ${ampm}`
+}
+
+function AdminSessionEditModal({ session, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    title: session.title || '',
+    description: session.description || '',
+    date: session.scheduled_at ? new Date(session.scheduled_at).toISOString().split('T')[0] : '',
+    time: session.scheduled_at ? (() => {
+      const d = new Date(session.scheduled_at)
+      return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes() < 30 ? '00' : '30'}`
+    })() : '',
+    duration: session.duration_minutes || 60,
+    price: session.price_tiers?.[0]?.price || 0,
+    max_seats: session.max_seats || 20,
+    min_seats: session.min_seats || 5,
+    status: session.status || 'open',
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const inputStyle = { width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', color: '#0f0c0c' }
+  const labelStyle = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
+
+  async function handleSave() {
+    if (!form.title || !form.date || !form.time) { alert('Title, date and time required'); return }
+    setSaving(true)
+    const scheduledAt = new Date(`${form.date}T${form.time}:00`).toISOString()
+    const { error } = await supabase.from('sessions').update({
+      title: form.title,
+      description: form.description,
+      scheduled_at: scheduledAt,
+      duration_minutes: form.duration,
+      price_tiers: [{ seats: form.max_seats, price: form.price }],
+      max_seats: form.max_seats,
+      min_seats: form.min_seats,
+      status: form.status,
+    }).eq('id', session.id)
+    if (error) alert(error.message)
+    else onSaved()
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 20, padding: 32, width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif' }}>Edit Session</h2>
+            <div style={{ fontSize: 11, color: '#e8a020', fontWeight: 600, marginTop: 2 }}>⚡ Admin Override</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65' }}>×</button>
+        </div>
+
+        {session.cover_photo_url && (
+          <div style={{ marginBottom: 20, borderRadius: 10, overflow: 'hidden' }}>
+            <img src={session.cover_photo_url} alt="" style={{ width: '100%', height: 120, objectFit: 'cover' }} />
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label style={labelStyle}>Session Title</label>
+            <input style={inputStyle} value={form.title} onChange={e => set('title', e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>Description</label>
+            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Date</label>
+              <input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+            </div>
+            <div>
+              <label style={labelStyle}>Start Time</label>
+              <select style={inputStyle} value={form.time} onChange={e => set('time', e.target.value)}>
+                {TIME_SLOTS_ADMIN.map(t => <option key={t} value={t}>{fmtTimeAdmin(t)}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Duration</label>
+              <select style={inputStyle} value={form.duration} onChange={e => set('duration', +e.target.value)}>
+                {[45,60,75,90,120].map(d => <option key={d} value={d}>{d}m</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Price ₹</label>
+              <input style={inputStyle} type="number" value={form.price} onChange={e => set('price', +e.target.value)} />
+            </div>
+            <div>
+              <label style={labelStyle}>Max Seats</label>
+              <input style={inputStyle} type="number" value={form.max_seats} onChange={e => set('max_seats', +e.target.value)} />
+            </div>
+            <div>
+              <label style={labelStyle}>Min Seats</label>
+              <input style={inputStyle} type="number" value={form.min_seats} onChange={e => set('min_seats', +e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Status</label>
+            <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
+              {['draft','open','confirmed','full','cancelled','completed'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <button onClick={handleSave} disabled={saving} style={{ width: '100%', background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: 13, fontSize: 15, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+            {saving ? 'Saving...' : 'Save Changes →'}
           </button>
         </div>
       </div>
