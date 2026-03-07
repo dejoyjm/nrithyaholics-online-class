@@ -113,6 +113,7 @@ export default function App() {
         profile={profile}
         onSwitchToLearning={() => setMode('learning')}
         onLogout={logOut}
+        onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
       />
     )
   }
