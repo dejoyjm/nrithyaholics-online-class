@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning }) {
+
+export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning, onProfileClick }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -45,8 +46,12 @@ export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning
             color: '#faf7f2', padding: '8px 16px', borderRadius: 8,
             cursor: 'pointer', fontSize: 13,
           }}>💃 Switch to Learning</button>
-          <span style={{ color: 'rgba(250,247,242,0.6)', fontSize: 14 }}>👋 {user.email}</span>
-          <button onClick={onLogout} style={{
+          <button onClick={onProfileClick} style={{
+              background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+              color: '#faf7f2', padding: '8px 16px', borderRadius: 8,
+              cursor: 'pointer', fontSize: 14,
+            }}>My Profile</button>
+            <button onClick={onLogout} style={{
             background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
             color: '#faf7f2', padding: '8px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14,
           }}>Log out</button>

@@ -8,6 +8,7 @@ import ChoreoPage from './pages/ChoreoPage'
 import AdminPage from './pages/AdminPage'
 import ProfilePage from './pages/ProfilePage'
 import SuspendedPage from './pages/SuspendedPage'
+import ChoreoProfilePage from './pages/ChoreoProfilePage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -17,6 +18,7 @@ export default function App() {
   const [mode, setMode] = useState('learning')
   const [loading, setLoading] = useState(true)
   const [showProfile, setShowProfile] = useState(false)
+  const [currentChoreoId, setCurrentChoreoId] = useState(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -35,7 +37,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Realtime: re-fetch profile instantly when admin changes it (suspension, role change, etc.)
   useEffect(() => {
     if (!user) return
     const channel = supabase
@@ -66,7 +67,6 @@ export default function App() {
     setMode('learning')
   }
 
-  // ── Loading screen ──────────────────────────────────────────
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 900, color: '#faf7f2' }}>
@@ -75,7 +75,6 @@ export default function App() {
     </div>
   )
 
-  // ── Suspended — must be first check after loading ───────────
   if (user && profile?.suspended) {
     return (
       <SuspendedPage
@@ -86,17 +85,14 @@ export default function App() {
     )
   }
 
-  // ── Auth page ───────────────────────────────────────────────
   if (showAuth && !user) {
     return <AuthPage onAuth={(u) => { setUser(u); setShowAuth(false) }} />
   }
 
-  // ── Admin ───────────────────────────────────────────────────
   if (user && profile?.is_admin) {
     return <AdminPage user={user} onLogout={logOut} />
   }
 
-  // ── New user — needs to pick role ───────────────────────────
   if (user && profile && !profile.role) {
     return (
       <RoleSelectPage
@@ -110,19 +106,19 @@ export default function App() {
     )
   }
 
-  // ── Approved choreographer in teaching mode ─────────────────
   if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') {
     return (
-      <ChoreoPage
-        user={user}
-        profile={profile}
-        onSwitchToLearning={() => setMode('learning')}
-        onLogout={logOut}
-      />
+
+    <ChoreoPage
+      user={user}
+      profile={profile}
+      onSwitchToLearning={() => setMode('learning')}
+      onLogout={logOut}
+      onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
+    />
     )
   }
 
-  // ── Profile page ────────────────────────────────────────────
   if (showProfile) {
     return (
       <ProfilePage
@@ -137,7 +133,21 @@ export default function App() {
     )
   }
 
-  // ── Session detail page ─────────────────────────────────────
+  if (currentChoreoId) {
+    return (
+      <ChoreoProfilePage
+        choreoId={currentChoreoId}
+        user={user}
+        onBack={() => setCurrentChoreoId(null)}
+        onSessionClick={(id) => {
+          setCurrentChoreoId(null)
+          setCurrentSession(id)
+        }}
+        onLoginClick={() => setShowAuth(true)}
+      />
+    )
+  }
+
   if (currentSession) {
     return (
       <SessionPage
@@ -149,13 +159,13 @@ export default function App() {
     )
   }
 
-  // ── Default: Home ───────────────────────────────────────────
   return (
     <HomePage
       onLoginClick={() => setShowAuth(true)}
       user={user}
       profile={profile}
       onSessionClick={(id) => setCurrentSession(id)}
+      onChoreoClick={(id) => setCurrentChoreoId(id)}
       onProfileClick={() => setShowProfile(true)}
       onSwitchToTeaching={() => setMode('teaching')}
       onLogout={logOut}
