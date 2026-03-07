@@ -19,6 +19,37 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [showProfile, setShowProfile] = useState(false)
   const [currentChoreoId, setCurrentChoreoId] = useState(null)
+  // Razorpay redirect-back: pass these down to SessionPage
+  const [razorpayReturn, setRazorpayReturn] = useState(null)
+
+  // Detect Razorpay redirect-back on app load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const orderId = params.get('razorpay_order_id')
+    const paymentId = params.get('razorpay_payment_id')
+    const signature = params.get('razorpay_signature')
+
+    if (orderId && paymentId && signature) {
+      // Clean URL immediately
+      window.history.replaceState({}, '', window.location.pathname)
+
+      // Get session info from sessionStorage (saved before redirect)
+      const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
+      sessionStorage.removeItem('nrh_pending_payment')
+
+      if (pending.session_id) {
+        setCurrentSession(pending.session_id)
+        setRazorpayReturn({
+          razorpay_order_id: orderId,
+          razorpay_payment_id: paymentId,
+          razorpay_signature: signature,
+          session_id: pending.session_id,
+          seats: pending.seats,
+          amount_inr: pending.amount_inr,
+        })
+      }
+    }
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -153,8 +184,9 @@ export default function App() {
       <SessionPage
         sessionId={currentSession}
         user={user}
-        onBack={() => setCurrentSession(null)}
+        onBack={() => { setCurrentSession(null); setRazorpayReturn(null) }}
         onLoginClick={() => setShowAuth(true)}
+        razorpayReturn={razorpayReturn}
       />
     )
   }

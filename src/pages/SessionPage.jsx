@@ -40,7 +40,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, onBack, onLoginClick }) {
+export default function SessionPage({ sessionId, user, onBack, onLoginClick, razorpayReturn }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -56,44 +56,21 @@ export default function SessionPage({ sessionId, user, onBack, onLoginClick }) {
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
 
-  // Handle redirect-back from Razorpay
+  // Handle redirect-back from Razorpay (params passed from App.jsx)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const rzp_order = params.get('razorpay_order_id')
-    const rzp_payment = params.get('razorpay_payment_id')
-    const rzp_sig = params.get('razorpay_signature')
-
-    if (rzp_order && rzp_payment && rzp_sig) {
-      // Clear URL params immediately
-      window.history.replaceState({}, '', window.location.pathname)
-
-      // Get pending payment info from sessionStorage
-      const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
-      sessionStorage.removeItem('nrh_pending_payment')
-
-      if (pending.session_id) {
-        setVerifying(true)
-        supabase.auth.getSession().then(async ({ data: { session: authSession } }) => {
-          const token = authSession?.access_token
-          const result = await callVerifyPayment({
-            razorpay_order_id: rzp_order,
-            razorpay_payment_id: rzp_payment,
-            razorpay_signature: rzp_sig,
-            session_id: pending.session_id,
-            seats: pending.seats,
-            amount_inr: pending.amount_inr,
-          }, token)
-
-          setVerifying(false)
-          if (result.success) {
-            setBooked(true)
-          } else {
-            setPaymentError(result.error || 'Payment received but booking failed. Contact support with payment ID: ' + rzp_payment)
-          }
-        })
+    if (!razorpayReturn) return
+    setVerifying(true)
+    supabase.auth.getSession().then(async ({ data: { session: authSession } }) => {
+      const token = authSession?.access_token
+      const result = await callVerifyPayment(razorpayReturn, token)
+      setVerifying(false)
+      if (result.success) {
+        setBooked(true)
+      } else {
+        setPaymentError(result.error || 'Payment received but booking failed. Contact support with payment ID: ' + razorpayReturn.razorpay_payment_id)
       }
-    }
-  }, [])
+    })
+  }, [razorpayReturn])
 
   async function fetchSession() {
     const { data, error } = await supabase
