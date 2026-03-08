@@ -184,6 +184,7 @@ export default function App() {
       <SessionPage
         sessionId={currentSession}
         user={user}
+        profile={profile}
         onBack={() => { setCurrentSession(null); setRazorpayReturn(null) }}
         onLoginClick={() => setShowAuth(true)}
         razorpayReturn={razorpayReturn}
