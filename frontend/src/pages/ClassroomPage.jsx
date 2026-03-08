@@ -215,7 +215,8 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   }
 
   // ── LIVE — 100ms Prebuilt iframe ──────────────────────────────
-  const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=false&auth_token=${roomToken}&name=${encodeURIComponent(userName)}`
+  const isGuest = userRole === 'guest'
+  const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=false&auth_token=${roomToken}&name=${encodeURIComponent(userName)}${isGuest ? '&audio=false&video=false' : ''}`
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#0f0c0c', display: 'flex', flexDirection: 'column', zIndex: 9999 }}>
