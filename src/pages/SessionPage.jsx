@@ -61,6 +61,11 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   // Handle redirect-back from Razorpay (params passed from App.jsx)
   useEffect(() => {
     if (!razorpayReturn) return
+    if (razorpayReturn.alreadyComplete) {
+      // Webhook already created booking, just show success
+      setBooked(true)
+      return
+    }
     setVerifying(true)
     supabase.auth.getSession().then(async ({ data: { session: authSession } }) => {
       const token = authSession?.access_token
@@ -172,7 +177,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         // Redirect flow for mobile — popup for desktop
         ...(isMobile ? {
           redirect: true,
-          callback_url: `${APP_URL}/?razorpay_session=${session.id}`,
+          callback_url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/razorpay-callback`,
         } : {}),
 
         modal: {

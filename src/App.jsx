@@ -28,12 +28,26 @@ export default function App() {
     const orderId = params.get('razorpay_order_id')
     const paymentId = params.get('razorpay_payment_id')
     const signature = params.get('razorpay_signature')
+    const paymentSuccess = params.get('payment_success')
+    const paymentError = params.get('payment_error')
+    const sessionIdParam = params.get('session_id')
 
-    if (orderId && paymentId && signature) {
-      // Clean URL immediately
+    // Clean URL immediately
+    if (orderId || paymentSuccess || paymentError) {
       window.history.replaceState({}, '', window.location.pathname)
+    }
 
-      // Get session info from sessionStorage (saved before redirect)
+    // Case 1: webhook already created booking, just show success
+    if (paymentSuccess === '1' && sessionIdParam) {
+      const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
+      sessionStorage.removeItem('nrh_pending_payment')
+      setCurrentSession(sessionIdParam)
+      setRazorpayReturn({ alreadyComplete: true })
+      return
+    }
+
+    // Case 2: normal redirect with params - verify-payment still needed
+    if (orderId && paymentId && signature) {
       const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
       sessionStorage.removeItem('nrh_pending_payment')
 
@@ -42,7 +56,7 @@ export default function App() {
         setRazorpayReturn({
           razorpay_order_id: orderId,
           razorpay_payment_id: paymentId,
-          razorpay_signature: signature,
+          razorpay_signature: decodeURIComponent(signature),
           session_id: pending.session_id,
           seats: pending.seats,
           amount_inr: pending.amount_inr,
