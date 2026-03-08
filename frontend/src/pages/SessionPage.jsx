@@ -42,7 +42,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn }) {
+export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -252,8 +252,16 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const isBookable = (session.status === 'open' || session.status === 'confirmed') && !alreadyBooked
   const sessionStart = new Date(session.scheduled_at).getTime()
   const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
-  const canJoinNow = (Date.now() >= sessionStart - 15 * 60 * 1000) && (Date.now() <= sessionEnd + 30 * 60 * 1000)
   const isChoreo = user && session.choreographer_id === user.id
+  const isHost = isChoreo || profile?.is_admin
+  // Use host or guest config depending on who is viewing — fallback only if config not yet loaded
+  const preJoinMs = isHost
+    ? (session.host_pre_join_minutes_override  ?? platformConfig?.host_pre_join_minutes  ?? 15) * 60 * 1000
+    : (session.guest_pre_join_minutes_override ?? platformConfig?.guest_pre_join_minutes ?? 5)  * 60 * 1000
+  const graceMs = isHost
+    ? (session.host_grace_minutes_override  ?? platformConfig?.host_grace_minutes  ?? 30) * 60 * 1000
+    : (session.guest_grace_minutes_override ?? platformConfig?.guest_grace_minutes ?? 15) * 60 * 1000
+  const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
 
   // Show classroom
   if (showClassroom && session) {
@@ -267,6 +275,13 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       />
     )
   }
+  {showSetupTest && (
+  <SetupTestModal
+    onClose={() => setShowSetupTest(false)}
+    isChoreo={isChoreo}
+  />
+  )}
+
   // Verifying state (redirect-back)
   if (verifying) return (
     <div style={{ minHeight: '100vh', background: '#faf7f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
@@ -278,14 +293,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
   return (
     <div style={{ minHeight: '100vh', background: '#faf7f2' }}>
-      {/* Setup Test Modal */}
-      {showSetupTest && (
-        <SetupTestModal
-          onClose={() => setShowSetupTest(false)}
-          isChoreo={isChoreo}
-        />
-      )}
-
       {/* Header */}
       <div style={{ background: '#0f0c0c', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>

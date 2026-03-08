@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function AdminPage({ user, onLogout }) {
+export default function AdminPage({ user, onLogout, onConfigChange }) {
   const [tab, setTab] = useState('applications')
   const [applications, setApplications] = useState([])
   const [users, setUsers] = useState([])
@@ -123,6 +123,14 @@ export default function AdminPage({ user, onLogout }) {
   }
 
   const [adminEditSession, setAdminEditSession] = useState(null)
+  const [platformConfig, setPlatformConfig] = useState(null)
+  // Load platform config for the settings tab
+    useEffect(() => {
+    supabase.from('platform_config')
+    .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
+    .eq('id', 1).single()
+    .then(({ data }) => { if (data) setPlatformConfig(data) })
+    }, [])
 
   async function adminCancelSession(sessionId) {
     if (!window.confirm('Cancel this session? All bookings will be cancelled.')) return
@@ -194,6 +202,7 @@ export default function AdminPage({ user, onLogout }) {
           </button>
           <button style={tabStyle('users')} onClick={() => setTab('users')}>Users</button>
           <button style={tabStyle('sessions')} onClick={() => setTab('sessions')}>Sessions</button>
+          <button style={tabStyle('settings')} onClick={() => setTab('settings')}>⚙️ Settings</button>
         </div>
 
         {/* CONTENT */}
@@ -358,6 +367,19 @@ export default function AdminPage({ user, onLogout }) {
           )}
         </div>
       </div>
+      {/* PLATFORM SETTINGS TAB */}
+      {tab === 'settings' && (
+        <div style={{ padding: 32 }}>
+          <PlatformSettingsTab
+            config={platformConfig}
+            onConfigSaved={(newConfig) => {
+              setPlatformConfig(newConfig)
+              if (onConfigChange) onConfigChange(newConfig)
+            }}
+          />
+        </div>
+      )}
+
 
       {/* ADMIN SESSION EDIT MODAL */}
       {adminEditSession && (
@@ -766,4 +788,201 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
       </div>
     </div>
   )
+}
+
+
+// ── PlatformSettingsTab ────────────────────────────────────────
+// Drop this as a component at the bottom of AdminPage.jsx
+// Then add to the tabs bar and render in the content section
+
+function PlatformSettingsTab({ onConfigSaved }) {
+  const [config, setConfig] = useState(null)
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { fetchConfig() }, [])
+
+  async function fetchConfig() {
+    const { data } = await supabase
+      .from('platform_config')
+      .select('*')
+      .eq('id', 1)
+      .single()
+    if (data) {
+      setConfig(data)
+      setForm({
+        host_pre_join_minutes:  data.host_pre_join_minutes,
+        guest_pre_join_minutes: data.guest_pre_join_minutes,
+        host_grace_minutes:     data.host_grace_minutes,
+        guest_grace_minutes:    data.guest_grace_minutes,
+      })
+    }
+    setLoading(false)
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setSaved(false)
+    const { error } = await supabase
+      .from('platform_config')
+      .update({ ...form, updated_at: new Date().toISOString() })
+      .eq('id', 1)
+    setSaving(false)
+    if (error) { alert(error.message); return }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+    if (onConfigSaved) onConfigSaved(form)
+  }
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: Math.max(0, parseInt(v) || 0) }))
+
+  const inputStyle = {
+    width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4',
+    borderRadius: 8, padding: '10px 14px', fontSize: 15, fontWeight: 600,
+    outline: 'none', boxSizing: 'border-box', color: '#0f0c0c',
+    textAlign: 'center',
+  }
+  const labelStyle = { fontSize: 12, color: '#7a6e65', fontWeight: 600, marginBottom: 6, display: 'block' }
+  const sectionStyle = {
+    background: 'white', borderRadius: 16, padding: 28,
+    border: '1px solid #e2dbd4', marginBottom: 20,
+  }
+
+  if (loading || !form) return (
+    <div style={{ padding: 40, textAlign: 'center', color: '#7a6e65' }}>Loading settings...</div>
+  )
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+
+      <div style={{ marginBottom: 28 }}>
+        <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 800, color: '#0f0c0c', marginBottom: 6 }}>
+          Platform Settings
+        </h2>
+        <p style={{ fontSize: 14, color: '#7a6e65', lineHeight: 1.6 }}>
+          Controls when the classroom becomes accessible before and after each session.
+          Changes apply globally to all sessions. Individual sessions can override these values.
+        </p>
+      </div>
+
+      {/* PRE-JOIN */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 20 }}>🚪</span>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c' }}>Early Entry</div>
+        </div>
+        <p style={{ fontSize: 13, color: '#7a6e65', marginBottom: 20, lineHeight: 1.5 }}>
+          How many minutes before the scheduled start time can each role enter the classroom.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div>
+            <label style={labelStyle}>🎭 Choreographer (host)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="number" min="0" max="120"
+                value={form.host_pre_join_minutes}
+                onChange={e => set('host_pre_join_minutes', e.target.value)}
+                style={inputStyle}
+              />
+              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins early</span>
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>💃 Learner (guest)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="number" min="0" max="60"
+                value={form.guest_pre_join_minutes}
+                onChange={e => set('guest_pre_join_minutes', e.target.value)}
+                style={inputStyle}
+              />
+              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins early</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: 14, padding: '10px 14px', background: '#faf7f2', borderRadius: 8, fontSize: 12, color: '#7a6e65' }}>
+          Example: If class starts at <strong>5:00 PM</strong> and host early entry is <strong>{form.host_pre_join_minutes} mins</strong>,
+          the choreographer can enter from <strong>{formatExampleTime(17 * 60, -form.host_pre_join_minutes)}</strong>.
+          Learners can enter from <strong>{formatExampleTime(17 * 60, -form.guest_pre_join_minutes)}</strong>.
+        </div>
+      </div>
+
+      {/* GRACE PERIOD */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 20 }}>⏱️</span>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c' }}>Grace Period After Session Ends</div>
+        </div>
+        <p style={{ fontSize: 13, color: '#7a6e65', marginBottom: 20, lineHeight: 1.5 }}>
+          How many minutes after the scheduled end time the classroom token stays valid.
+          Tokens expire hard at this point — no re-entry possible after.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div>
+            <label style={labelStyle}>🎭 Choreographer (host)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="number" min="0" max="120"
+                value={form.host_grace_minutes}
+                onChange={e => set('host_grace_minutes', e.target.value)}
+                style={inputStyle}
+              />
+              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins grace</span>
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>💃 Learner (guest)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="number" min="0" max="60"
+                value={form.guest_grace_minutes}
+                onChange={e => set('guest_grace_minutes', e.target.value)}
+                style={inputStyle}
+              />
+              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins grace</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: 14, padding: '10px 14px', background: '#faf7f2', borderRadius: 8, fontSize: 12, color: '#7a6e65' }}>
+          Example: For a <strong>60-min class starting 5:00 PM</strong>, it ends at 6:00 PM.
+          Learner tokens expire at <strong>{formatExampleTime(18 * 60, form.guest_grace_minutes)}</strong>.
+          Host token expires at <strong>{formatExampleTime(18 * 60, form.host_grace_minutes)}</strong>.
+        </div>
+      </div>
+
+      {/* SAVE */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            background: saved ? '#1a7a3c' : '#c8430a',
+            color: 'white', border: 'none', borderRadius: 10,
+            padding: '13px 32px', fontSize: 15, fontWeight: 700,
+            cursor: saving ? 'not-allowed' : 'pointer',
+            opacity: saving ? 0.7 : 1, transition: 'background 0.3s',
+          }}
+        >
+          {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Settings'}
+        </button>
+        {saved && (
+          <span style={{ fontSize: 13, color: '#1a7a3c', fontWeight: 600 }}>
+            Changes will apply to all new token requests immediately.
+          </span>
+        )}
+      </div>
+
+    </div>
+  )
+}
+
+function formatExampleTime(baseMinutes, offsetMinutes) {
+  const total = baseMinutes + offsetMinutes
+  const h = Math.floor(((total % (24 * 60)) + 24 * 60) % (24 * 60) / 60)
+  const m = ((total % 60) + 60) % 60
+  const ampm = h < 12 ? 'AM' : 'PM'
+  const h12 = h % 12 || 12
+  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
 }

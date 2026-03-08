@@ -17,16 +17,19 @@ function fmtTime(t) {
 
 const statusColor = { draft: '#7a6e65', open: '#e8a020', confirmed: '#1a7a3c', full: '#5b4fcf', cancelled: '#cc0000', completed: '#333' }
 
-// Choreo can enter their own room: 2 hours before start until end + 30 min
-function canChoreoStartNow(session) {
-  if (['cancelled', 'completed'].includes(session.status)) return false
-  const start = new Date(session.scheduled_at).getTime()
-  const end = start + (session.duration_minutes || 60) * 60 * 1000
-  const now = Date.now()
-  return now >= start - 2 * 60 * 60 * 1000 && now <= end + 30 * 60 * 1000
-}
+// Choreo entry window driven entirely by platform_config host settings
+function canChoreoStartNow(session, platformConfig) {
+    if (['cancelled', 'completed'].includes(session.status)) return false
+    const start = new Date(session.scheduled_at).getTime()
+    const end = start + (session.duration_minutes || 60) * 60 * 1000
+    const now = Date.now()
+    // Fallback values only used if platform_config hasn't loaded yet
+    const preJoinMs = (session.host_pre_join_minutes_override ?? platformConfig?.host_pre_join_minutes ?? 15) * 60 * 1000
+    const graceMs   = (session.host_grace_minutes_override    ?? platformConfig?.host_grace_minutes    ?? 30) * 60 * 1000
+    return now >= start - preJoinMs && now <= end + graceMs
+    }
 
-export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning, onProfileClick, onStartClass }) {
+export default function ChoreoPage({ user, profile, platformConfig, onLogout, onSwitchToLearning, onProfileClick, onStartClass }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -101,7 +104,7 @@ export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning
             </div>
           ) : (
             sessions.map((s, i) => {
-              const canStart = canChoreoStartNow(s)
+              const canStart = canChoreoStartNow(s, platformConfig)
               return (
                 <div key={s.id} style={{ padding: '16px 24px', borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none', display: 'flex', alignItems: 'center', gap: 16 }}>
                   {/* Cover thumbnail */}

@@ -11,7 +11,6 @@ const HMS_ACCESS_KEY = Deno.env.get('HMS_ACCESS_KEY')!
 const HMS_APP_SECRET = Deno.env.get('HMS_APP_SECRET')!
 const HMS_TEMPLATE_ID = '69aca87c6236da36a7d8c593'
 
-// ── Generate 100ms management token ──────────────────────────────
 async function getManagementToken(): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(HMS_APP_SECRET),
@@ -19,26 +18,14 @@ async function getManagementToken(): Promise<string> {
   )
   const now = Math.floor(Date.now() / 1000)
   return await create({ alg: 'HS256', typ: 'JWT' }, {
-    access_key: HMS_ACCESS_KEY,
-    type: 'management',
-    version: 2,
-    iat: now,
-    exp: now + 24 * 60 * 60,
-    nbf: now,
-    jti: crypto.randomUUID(),
+    access_key: HMS_ACCESS_KEY, type: 'management', version: 2,
+    iat: now, exp: now + 24 * 60 * 60, nbf: now, jti: crypto.randomUUID(),
   }, key)
 }
 
-// ── Generate 100ms room token anchored to wall-clock session time ─
-// tokenValidFrom : Unix epoch seconds — when token becomes valid (nbf)
-// tokenExpiry    : Unix epoch seconds — hard expiry (exp)
 async function getRoomToken(
-  roomId: string,
-  userId: string,
-  role: string,
-  userName: string,
-  tokenValidFrom: number,
-  tokenExpiry: number,
+  roomId: string, userId: string, role: string, userName: string,
+  tokenValidFrom: number, tokenExpiry: number,
 ): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(HMS_APP_SECRET),
@@ -46,32 +33,20 @@ async function getRoomToken(
   )
   const now = Math.floor(Date.now() / 1000)
   return await create({ alg: 'HS256', typ: 'JWT' }, {
-    access_key: HMS_ACCESS_KEY,
-    room_id: roomId,
-    user_id: userId,
-    role: role,
-    type: 'app',
-    version: 2,
-    iat: now,
-    nbf: tokenValidFrom,   // ← token not usable before this time
-    exp: tokenExpiry,      // ← hard wall-clock expiry
-    jti: crypto.randomUUID(),
+    access_key: HMS_ACCESS_KEY, room_id: roomId, user_id: userId,
+    role, type: 'app', version: 2,
+    iat: now, nbf: tokenValidFrom, exp: tokenExpiry, jti: crypto.randomUUID(),
   }, key)
 }
 
-// ── Create a 100ms room ───────────────────────────────────────────
 async function createRoom(sessionId: string, mgmtToken: string): Promise<string> {
   const res = await fetch('https://api.100ms.live/v2/rooms', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${mgmtToken}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${mgmtToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: `nrh-${sessionId}`,
       description: `NrithyaHolics session ${sessionId}`,
-      template_id: HMS_TEMPLATE_ID,
-      region: 'in',
+      template_id: HMS_TEMPLATE_ID, region: 'in',
     }),
   })
   const data = await res.json()
@@ -79,30 +54,21 @@ async function createRoom(sessionId: string, mgmtToken: string): Promise<string>
   return data.id
 }
 
-// ─────────────────────────────────────────────────────────────────
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
     const { session_id } = await req.json()
+    if (!session_id) return new Response(
+      JSON.stringify({ error: 'session_id required' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
 
-    if (!session_id) {
-      return new Response(
-        JSON.stringify({ error: 'session_id required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // ── Auth ────────────────────────────────────────────────────
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'No auth token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    if (!authHeader) return new Response(
+      JSON.stringify({ error: 'No auth token' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -111,113 +77,83 @@ serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '')
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid auth token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    if (authError || !user) return new Response(
+      JSON.stringify({ error: 'Invalid auth token' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
 
-    // ── Fetch session ───────────────────────────────────────────
     const { data: session, error: sessionError } = await supabase
-      .from('sessions')
-      .select('*, profiles(full_name)')
-      .eq('id', session_id)
-      .single()
+      .from('sessions').select('*').eq('id', session_id).single()
+    if (sessionError || !session) return new Response(
+      JSON.stringify({ error: 'Session not found' }),
+      { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
 
-    if (sessionError || !session) {
-      return new Response(
-        JSON.stringify({ error: 'Session not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // ── Fetch user profile ──────────────────────────────────────
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, is_admin, role')
-      .eq('id', user.id)
-      .single()
+      .from('profiles').select('full_name, is_admin, role').eq('id', user.id).single()
 
-    // ── Fetch platform config (with fallback defaults) ──────────
+    // ── Role: determine first — drives config selection ─────────
+    const isChoreo = session.choreographer_id === user.id
+    const isAdmin  = profile?.is_admin === true
+    const hmsRole  = (isChoreo || isAdmin) ? 'host' : 'guest'
+    const isHost   = hmsRole === 'host'
+
+    // ── Platform config ─────────────────────────────────────────
     const { data: config } = await supabase
       .from('platform_config')
-      .select('pre_join_minutes, grace_period_minutes')
-      .eq('id', 1)
-      .single()
+      .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
+      .eq('id', 1).single()
 
-    // Per-session overrides win if set, otherwise use global config, otherwise hardcoded defaults
-    const preJoinMinutes    = session.pre_join_minutes_override
-                           ?? config?.pre_join_minutes
-                           ?? 5
-    const gracePeriodMinutes = session.grace_period_minutes_override
-                           ?? config?.grace_period_minutes
-                           ?? 15
+    // Priority: per-session override → platform config → safety fallback
+    const preJoinMinutes = isHost
+      ? (session.host_pre_join_minutes_override  ?? config?.host_pre_join_minutes  ?? 15)
+      : (session.guest_pre_join_minutes_override ?? config?.guest_pre_join_minutes ?? 5)
 
-    // ── Wall-clock time calculations ────────────────────────────
-    const nowEpoch         = Math.floor(Date.now() / 1000)
-    const scheduledStart   = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
-    const sessionDuration  = (session.duration_minutes || 60) * 60  // seconds
-    const scheduledEnd     = scheduledStart + sessionDuration
+    const graceMinutes = isHost
+      ? (session.host_grace_minutes_override  ?? config?.host_grace_minutes  ?? 30)
+      : (session.guest_grace_minutes_override ?? config?.guest_grace_minutes ?? 15)
 
-    // Token window:
-    //   valid from : scheduledStart - preJoinMinutes
-    //   expires at : scheduledEnd   + gracePeriodMinutes
-    const tokenValidFrom = scheduledStart - (preJoinMinutes * 60)
-    const tokenExpiry    = scheduledEnd   + (gracePeriodMinutes * 60)
+    // ── Wall-clock window ───────────────────────────────────────
+    const nowEpoch        = Math.floor(Date.now() / 1000)
+    const scheduledStart  = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
+    const scheduledEnd    = scheduledStart + (session.duration_minutes || 60) * 60
+    const tokenValidFrom  = scheduledStart - (preJoinMinutes * 60)
+    const tokenExpiry     = scheduledEnd   + (graceMinutes   * 60)
 
     // ── Gate: too early ─────────────────────────────────────────
     if (nowEpoch < tokenValidFrom) {
-      const minutesUntilOpen = Math.ceil((tokenValidFrom - nowEpoch) / 60)
+      const minsLeft = Math.ceil((tokenValidFrom - nowEpoch) / 60)
       return new Response(
         JSON.stringify({
           error: 'too_early',
-          message: `Class opens ${minutesUntilOpen} minute${minutesUntilOpen !== 1 ? 's' : ''} before start. Come back then!`,
+          message: `Classroom opens in ${minsLeft} minute${minsLeft !== 1 ? 's' : ''}. Come back then!`,
           opens_at: tokenValidFrom,
         }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // ── Gate: too late (session + grace has passed) ─────────────
-    if (nowEpoch > tokenExpiry) {
-      return new Response(
-        JSON.stringify({
-          error: 'session_ended',
-          message: 'This session has ended.',
-        }),
+    // ── Gate: session over ──────────────────────────────────────
+    if (nowEpoch > tokenExpiry) return new Response(
+      JSON.stringify({ error: 'session_ended', message: 'This session has ended.' }),
+      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+
+    // ── Learner: verify confirmed booking ───────────────────────
+    if (!isHost) {
+      const { data: booking } = await supabase
+        .from('bookings').select('id, kicked')
+        .eq('session_id', session_id).eq('booked_by', user.id)
+        .eq('status', 'confirmed').maybeSingle()
+
+      if (!booking) return new Response(
+        JSON.stringify({ error: 'No confirmed booking found for this session' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
-    }
-
-    // ── Role determination ──────────────────────────────────────
-    const isChoreo = session.choreographer_id === user.id
-    const isAdmin  = profile?.is_admin === true
-    const hmsRole  = (isChoreo || isAdmin) ? 'host' : 'guest'
-
-    // ── Learner booking check ───────────────────────────────────
-    if (hmsRole === 'guest') {
-      const { data: booking } = await supabase
-        .from('bookings')
-        .select('id, kicked')
-        .eq('session_id', session_id)
-        .eq('booked_by', user.id)
-        .eq('status', 'confirmed')
-        .maybeSingle()
-
-      if (!booking) {
-        return new Response(
-          JSON.stringify({ error: 'No confirmed booking found for this session' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      if (booking.kicked) {
-        return new Response(
-          JSON.stringify({ error: 'You have been removed from this session' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
+      if (booking.kicked) return new Response(
+        JSON.stringify({ error: 'You have been removed from this session' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     // ── Get or create 100ms room ────────────────────────────────
@@ -225,32 +161,16 @@ serve(async (req) => {
     if (!roomId) {
       const mgmtToken = await getManagementToken()
       roomId = await createRoom(session_id, mgmtToken)
-      await supabase
-        .from('sessions')
-        .update({ room_id: roomId })
-        .eq('id', session_id)
+      await supabase.from('sessions').update({ room_id: roomId }).eq('id', session_id)
     }
 
-    // ── Generate room token (wall-clock anchored) ───────────────
-    const userName = profile?.full_name || user.email?.split('@')[0] || 'Participant'
-    const roomToken = await getRoomToken(
-      roomId,
-      user.id,
-      hmsRole,
-      userName,
-      tokenValidFrom,
-      tokenExpiry,
-    )
+    const userName  = profile?.full_name || user.email?.split('@')[0] || 'Participant'
+    const roomToken = await getRoomToken(roomId, user.id, hmsRole, userName, tokenValidFrom, tokenExpiry)
 
     return new Response(
       JSON.stringify({
-        token: roomToken,
-        room_id: roomId,
-        role: hmsRole,
-        user_name: userName,
-        // Return timing info so the client can show helpful messages
-        session_ends_at: scheduledEnd,
-        token_expires_at: tokenExpiry,
+        token: roomToken, room_id: roomId, role: hmsRole, user_name: userName,
+        session_ends_at: scheduledEnd, token_expires_at: tokenExpiry,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

@@ -14,16 +14,15 @@ import ClassroomPage from './pages/ClassroomPage'
 export default function App() {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [platformConfig, setPlatformConfig] = useState(null)
   const [showAuth, setShowAuth] = useState(false)
   const [currentSession, setCurrentSession] = useState(null)
   const [mode, setMode] = useState('learning')
   const [loading, setLoading] = useState(true)
   const [showProfile, setShowProfile] = useState(false)
   const [currentChoreoId, setCurrentChoreoId] = useState(null)
-  // Razorpay redirect-back: pass these down to SessionPage
   const [razorpayReturn, setRazorpayReturn] = useState(null)
-  // Direct classroom entry (from ChoreoPage dashboard)
-  const [currentClassroom, setCurrentClassroom] = useState(null) // { sessionId, sessionData }
+  const [currentClassroom, setCurrentClassroom] = useState(null)
 
   // Detect Razorpay redirect-back on app load
   useEffect(() => {
@@ -35,12 +34,10 @@ export default function App() {
     const paymentError = params.get('payment_error')
     const sessionIdParam = params.get('session_id')
 
-    // Clean URL immediately
     if (orderId || paymentSuccess || paymentError) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
-    // Case 1: webhook already created booking, just show success
     if (paymentSuccess === '1' && sessionIdParam) {
       const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
       sessionStorage.removeItem('nrh_pending_payment')
@@ -49,11 +46,9 @@ export default function App() {
       return
     }
 
-    // Case 2: normal redirect with params - verify-payment still needed
     if (orderId && paymentId && signature) {
       const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
       sessionStorage.removeItem('nrh_pending_payment')
-
       if (pending.session_id) {
         setCurrentSession(pending.session_id)
         setRazorpayReturn({
@@ -66,6 +61,16 @@ export default function App() {
         })
       }
     }
+  }, [])
+
+  // Fetch platform config once on mount — public read, no auth needed
+  useEffect(() => {
+    supabase
+      .from('platform_config')
+      .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
+      .eq('id', 1)
+      .single()
+      .then(({ data }) => { if (data) setPlatformConfig(data) })
   }, [])
 
   useEffect(() => {
@@ -89,30 +94,22 @@ export default function App() {
     if (!user) return
     const channel = supabase
       .channel('profile-watch')
-      .on(
-        'postgres_changes',
+      .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
         (payload) => { setProfile(payload.new) }
-      )
-      .subscribe()
+      ).subscribe()
     return () => supabase.removeChannel(channel)
   }, [user])
 
   async function fetchProfile(userId) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
+    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
     setProfile(data)
     setLoading(false)
   }
 
   const logOut = async () => {
     await supabase.auth.signOut()
-    setUser(null)
-    setProfile(null)
-    setMode('learning')
+    setUser(null); setProfile(null); setMode('learning')
   }
 
   if (loading) return (
@@ -123,112 +120,79 @@ export default function App() {
     </div>
   )
 
-  if (user && profile?.suspended) {
-    return (
-      <SuspendedPage
-        reason={profile.suspension_reason}
-        suspendedAt={profile.suspended_at}
-        onLogout={logOut}
-      />
-    )
-  }
+  if (user && profile?.suspended) return (
+    <SuspendedPage reason={profile.suspension_reason} suspendedAt={profile.suspended_at} onLogout={logOut} />
+  )
 
-  if (showAuth && !user) {
-    return <AuthPage onAuth={(u) => { setUser(u); setShowAuth(false) }} />
-  }
+  if (showAuth && !user) return (
+    <AuthPage onAuth={(u) => { setUser(u); setShowAuth(false) }} />
+  )
 
-  if (user && profile?.is_admin) {
-    return <AdminPage user={user} onLogout={logOut} />
-  }
+  if (user && profile?.is_admin) return (
+    <AdminPage user={user} onLogout={logOut} onConfigChange={setPlatformConfig} />
+  )
 
-  if (user && profile && !profile.role) {
-    return (
-      <RoleSelectPage
-        user={user}
-        profile={profile}
-        onRoleSelected={async () => {
-          const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-          setProfile(data)
-        }}
-      />
-    )
-  }
+  if (user && profile && !profile.role) return (
+    <RoleSelectPage user={user} profile={profile}
+      onRoleSelected={async () => {
+        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        setProfile(data)
+      }}
+    />
+  )
 
-  // Direct classroom entry from ChoreoPage dashboard
-  if (currentClassroom) {
-    return (
-      <ClassroomPage
-        sessionId={currentClassroom.sessionId}
-        sessionData={currentClassroom.sessionData}
-        user={user}
-        profile={profile}
-        onLeave={() => setCurrentClassroom(null)}
-      />
-    )
-  }
+  if (currentClassroom) return (
+    <ClassroomPage
+      sessionId={currentClassroom.sessionId}
+      sessionData={currentClassroom.sessionData}
+      user={user} profile={profile}
+      onLeave={() => setCurrentClassroom(null)}
+    />
+  )
 
-  if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') {
-    return (
-      <ChoreoPage
-        user={user}
-        profile={profile}
-        onSwitchToLearning={() => setMode('learning')}
-        onLogout={logOut}
-        onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
-        onStartClass={(session) => setCurrentClassroom({ sessionId: session.id, sessionData: session })}
-      />
-    )
-  }
+  if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') return (
+    <ChoreoPage
+      user={user} profile={profile} platformConfig={platformConfig}
+      onSwitchToLearning={() => setMode('learning')}
+      onLogout={logOut}
+      onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
+      onStartClass={(session) => setCurrentClassroom({ sessionId: session.id, sessionData: session })}
+    />
+  )
 
-  if (showProfile) {
-    return (
-      <ProfilePage
-        user={user}
-        profile={profile}
-        onBack={() => setShowProfile(false)}
-        onSessionClick={(id) => { setShowProfile(false); setCurrentSession(id) }}
-        onSwitchToTeaching={() => { setShowProfile(false); setMode('teaching') }}
-        onApplyToTeach={() => {
-          setShowProfile(false)
-          setProfile({ ...profile, role: null })
-        }}
-      />
-    )
-  }
+  if (showProfile) return (
+    <ProfilePage
+      user={user} profile={profile} platformConfig={platformConfig}
+      onBack={() => setShowProfile(false)}
+      onSessionClick={(id) => { setShowProfile(false); setCurrentSession(id) }}
+      onSwitchToTeaching={() => { setShowProfile(false); setMode('teaching') }}
+      onApplyToTeach={() => { setShowProfile(false); setProfile({ ...profile, role: null }) }}
+    />
+  )
 
-  if (currentChoreoId) {
-    return (
-      <ChoreoProfilePage
-        choreoId={currentChoreoId}
-        user={user}
-        onBack={() => setCurrentChoreoId(null)}
-        onSessionClick={(id) => {
-          setCurrentChoreoId(null)
-          setCurrentSession(id)
-        }}
-        onLoginClick={() => setShowAuth(true)}
-      />
-    )
-  }
+  if (currentChoreoId) return (
+    <ChoreoProfilePage
+      choreoId={currentChoreoId} user={user}
+      onBack={() => setCurrentChoreoId(null)}
+      onSessionClick={(id) => { setCurrentChoreoId(null); setCurrentSession(id) }}
+      onLoginClick={() => setShowAuth(true)}
+    />
+  )
 
-  if (currentSession) {
-    return (
-      <SessionPage
-        sessionId={currentSession}
-        user={user}
-        profile={profile}
-        onBack={() => { setCurrentSession(null); setRazorpayReturn(null) }}
-        onLoginClick={() => setShowAuth(true)}
-        razorpayReturn={razorpayReturn}
-      />
-    )
-  }
+  if (currentSession) return (
+    <SessionPage
+      sessionId={currentSession} user={user} profile={profile}
+      platformConfig={platformConfig}
+      onBack={() => { setCurrentSession(null); setRazorpayReturn(null) }}
+      onLoginClick={() => setShowAuth(true)}
+      razorpayReturn={razorpayReturn}
+    />
+  )
 
   return (
     <HomePage
       onLoginClick={() => setShowAuth(true)}
-      user={user}
-      profile={profile}
+      user={user} profile={profile}
       onSessionClick={(id) => setCurrentSession(id)}
       onChoreoClick={(id) => setCurrentChoreoId(id)}
       onProfileClick={() => setShowProfile(true)}

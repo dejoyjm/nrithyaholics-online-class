@@ -18,7 +18,7 @@ function cleanInstagram(val) {
   return val.replace('@', '').trim()
 }
 
-export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick }) {
+export default function ProfilePage({ user, profile, platformConfig, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick }) {
   const [bookings, setBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
   const [activeTab, setActiveTab] = useState('profile')
@@ -398,13 +398,13 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
                 {upcoming.length > 0 && (
                   <div style={{ marginBottom: 28 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>UPCOMING ({upcoming.length})</div>
-                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} />)}
+                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} platformConfig={platformConfig} />)}
                   </div>
                 )}
                 {past.length > 0 && (
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>PAST ({past.length})</div>
-                    {past.map(b => <BookingRow key={b.id} booking={b} />)}
+                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} />)}
                   </div>
                 )}
               </div>
@@ -417,18 +417,19 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
   )
 }
 
-function BookingRow({ booking, isUpcoming, onSessionClick }) {
-  const session = booking.sessions
-  if (!session) return null
-  const styleKey = session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '') || ''
-  const color = { bollywood: '#c8430a', bharatanatyam: '#5b4fcf', contemporary: '#1a7a3c', hiphop: '#b5420e', kathak: '#8b4513', folk: '#c47800' }[styleKey] || '#c8430a'
-  const price = booking.credits_paid || (session.price_tiers?.length ? Math.min(...session.price_tiers.map(t => t.price)) : 0)
-  const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-
-  const sessionStart = new Date(session.scheduled_at).getTime()
-  const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
-  const canJoinNow = (Date.now() >= sessionStart - 15 * 60 * 1000) && (Date.now() <= sessionEnd + 30 * 60 * 1000)
-
+function BookingRow({ booking, isUpcoming, onSessionClick, platformConfig }) {
+const session = booking.sessions
+if (!session) return null
+const styleKey = session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '') || ''
+const color = { bollywood: '#c8430a', bharatanatyam: '#5b4fcf', contemporary: '#1a7a3c', hiphop: '#b5420e', kathak: '#8b4513', folk: '#c47800' }[styleKey] || '#c8430a'
+const price = booking.credits_paid || (session.price_tiers?.length ? Math.min(...session.price_tiers.map(t => t.price)) : 0)
+const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const sessionStart = new Date(session.scheduled_at).getTime()
+const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
+// Learners are always guests on ProfilePage
+const preJoinMs = (session.guest_pre_join_minutes_override ?? platformConfig?.guest_pre_join_minutes ?? 5) * 60 * 1000
+const graceMs   = (session.guest_grace_minutes_override    ?? platformConfig?.guest_grace_minutes    ?? 15) * 60 * 1000
+const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
   return (
     <div style={{ padding: '14px 0', borderBottom: '1px solid #f0ebe6' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
