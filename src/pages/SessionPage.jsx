@@ -243,6 +243,10 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const currentTierPrice = tiers[selectedTier]?.price || 0
   const totalAmount = currentTierPrice * seats
   const isBookable = (session.status === 'open' || session.status === 'confirmed') && !alreadyBooked
+  const sessionStart = new Date(session.scheduled_at).getTime()
+  const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
+  const canJoinNow = (Date.now() >= sessionStart - 15 * 60 * 1000) && (Date.now() <= sessionEnd + 30 * 60 * 1000)
+  const isChoreo = user && session.choreographer_id === user.id
 
   // Show classroom
   if (showClassroom && session) {
