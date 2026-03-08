@@ -9,6 +9,7 @@ import AdminPage from './pages/AdminPage'
 import ProfilePage from './pages/ProfilePage'
 import SuspendedPage from './pages/SuspendedPage'
 import ChoreoProfilePage from './pages/ChoreoProfilePage'
+import ClassroomPage from './pages/ClassroomPage'
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -21,6 +22,8 @@ export default function App() {
   const [currentChoreoId, setCurrentChoreoId] = useState(null)
   // Razorpay redirect-back: pass these down to SessionPage
   const [razorpayReturn, setRazorpayReturn] = useState(null)
+  // Direct classroom entry (from ChoreoPage dashboard)
+  const [currentClassroom, setCurrentClassroom] = useState(null) // { sessionId, sessionData }
 
   // Detect Razorpay redirect-back on app load
   useEffect(() => {
@@ -151,6 +154,19 @@ export default function App() {
     )
   }
 
+  // Direct classroom entry from ChoreoPage dashboard
+  if (currentClassroom) {
+    return (
+      <ClassroomPage
+        sessionId={currentClassroom.sessionId}
+        sessionData={currentClassroom.sessionData}
+        user={user}
+        profile={profile}
+        onLeave={() => setCurrentClassroom(null)}
+      />
+    )
+  }
+
   if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') {
     return (
       <ChoreoPage
@@ -159,6 +175,7 @@ export default function App() {
         onSwitchToLearning={() => setMode('learning')}
         onLogout={logOut}
         onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
+        onStartClass={(session) => setCurrentClassroom({ sessionId: session.id, sessionData: session })}
       />
     )
   }

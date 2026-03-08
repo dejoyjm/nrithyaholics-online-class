@@ -17,7 +17,16 @@ function fmtTime(t) {
 
 const statusColor = { draft: '#7a6e65', open: '#e8a020', confirmed: '#1a7a3c', full: '#5b4fcf', cancelled: '#cc0000', completed: '#333' }
 
-export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning, onProfileClick }) {
+// Choreo can enter their own room: 2 hours before start until end + 30 min
+function canChoreoStartNow(session) {
+  if (['cancelled', 'completed'].includes(session.status)) return false
+  const start = new Date(session.scheduled_at).getTime()
+  const end = start + (session.duration_minutes || 60) * 60 * 1000
+  const now = Date.now()
+  return now >= start - 2 * 60 * 60 * 1000 && now <= end + 30 * 60 * 1000
+}
+
+export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning, onProfileClick, onStartClass }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -91,37 +100,51 @@ export default function ChoreoPage({ user, profile, onLogout, onSwitchToLearning
               <button onClick={() => setShowCreate(true)} style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '12px 24px', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Create First Session</button>
             </div>
           ) : (
-            sessions.map((s, i) => (
-              <div key={s.id} style={{ padding: '16px 24px', borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none', display: 'flex', alignItems: 'center', gap: 16 }}>
-                {/* Cover thumbnail */}
-                <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: '#f0ebe6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {s.cover_photo_url
-                    ? <img src={s.cover_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <span style={{ fontSize: 24 }}>🎭</span>
-                  }
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f0c0c' }}>{s.title}</h3>
-                    <span style={{ background: statusColor[s.status] + '22', color: statusColor[s.status], fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, textTransform: 'uppercase' }}>{s.status}</span>
+            sessions.map((s, i) => {
+              const canStart = canChoreoStartNow(s)
+              return (
+                <div key={s.id} style={{ padding: '16px 24px', borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none', display: 'flex', alignItems: 'center', gap: 16 }}>
+                  {/* Cover thumbnail */}
+                  <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: '#f0ebe6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {s.cover_photo_url
+                      ? <img src={s.cover_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <span style={{ fontSize: 24 }}>🎭</span>
+                    }
                   </div>
-                  <div style={{ fontSize: 12, color: '#7a6e65' }}>📅 {formatDate(s.scheduled_at)} · {s.style_tags?.[0]} · {s.skill_level?.replace(/_/g, ' ')}</div>
-                </div>
-                <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: '#0f0c0c' }}>{s.bookings_count || 0}/{s.max_seats}</div>
-                    <div style={{ fontSize: 11, color: '#7a6e65' }}>seats</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f0c0c', margin: 0 }}>{s.title}</h3>
+                      <span style={{ background: statusColor[s.status] + '22', color: statusColor[s.status], fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20, textTransform: 'uppercase', flexShrink: 0 }}>{s.status}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#7a6e65' }}>📅 {formatDate(s.scheduled_at)} · {s.style_tags?.[0]} · {s.skill_level?.replace(/_/g, ' ')}</div>
                   </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: '#1a7a3c' }}>₹{s.price_tiers?.length ? Math.min(...s.price_tiers.map(t => t.price)) : 0}</div>
-                    <div style={{ fontSize: 11, color: '#7a6e65' }}>from</div>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#0f0c0c' }}>{s.bookings_count || 0}/{s.max_seats}</div>
+                      <div style={{ fontSize: 11, color: '#7a6e65' }}>seats</div>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1a7a3c' }}>₹{s.price_tiers?.length ? Math.min(...s.price_tiers.map(t => t.price)) : 0}</div>
+                      <div style={{ fontSize: 11, color: '#7a6e65' }}>from</div>
+                    </div>
+
+                    {/* START CLASS button — only when within the time window */}
+                    {canStart && onStartClass && (
+                      <button
+                        onClick={() => onStartClass(s)}
+                        style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        🎬 Start Class
+                      </button>
+                    )}
+
+                    {['open', 'draft', 'confirmed'].includes(s.status) && (
+                      <button onClick={() => setEditSession(s)} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>✏️ Edit</button>
+                    )}
                   </div>
-                  {['open', 'draft'].includes(s.status) && (
-                    <button onClick={() => setEditSession(s)} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>✏️ Edit</button>
-                  )}
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
@@ -251,7 +274,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
             <div>
               <label style={labelStyle}>Dance Style</label>
               <select style={inputStyle} value={form.style} onChange={e => set('style', e.target.value)}>
-                {['bollywood', 'bharatanatyam', 'contemporary', 'hiphop', 'kathak', 'folk', 'jazz', 'fusion'].map(s => (
+                {['bollywood', 'bharatanatyam', 'contemporary', 'hip-hop', 'kathak', 'folk', 'jazz', 'fusion'].map(s => (
                   <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
                 ))}
               </select>
@@ -259,68 +282,53 @@ function SessionModal({ user, session, onClose, onSaved }) {
             <div>
               <label style={labelStyle}>Skill Level</label>
               <select style={inputStyle} value={form.level} onChange={e => set('level', e.target.value)}>
-                {[['absolute_beginner','Absolute Beginner'],['beginner','Beginner'],['intermediate','Intermediate'],['advanced','Advanced']].map(([v,l]) => (
-                  <option key={v} value={v}>{l}</option>
+                {['beginner', 'intermediate', 'advanced', 'all_levels'].map(l => (
+                  <option key={l} value={l}>{l.replace(/_/g, ' ')}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* DATE + TIME — time as dropdown with 30min slots */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <label style={labelStyle}>Date *</label>
-              <input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} min={new Date().toISOString().split('T')[0]} />
+              <input type="date" style={inputStyle} value={form.date} onChange={e => set('date', e.target.value)} min={new Date().toISOString().split('T')[0]} />
             </div>
             <div>
-              <label style={labelStyle}>Start Time *</label>
+              <label style={labelStyle}>Time *</label>
               <select style={inputStyle} value={form.time} onChange={e => set('time', e.target.value)}>
-                <option value="">Select time...</option>
+                <option value="">Select time</option>
                 {TIME_SLOTS.map(t => <option key={t} value={t}>{fmtTime(t)}</option>)}
               </select>
             </div>
           </div>
 
-          {/* DURATION */}
-          <div>
-            <label style={labelStyle}>Duration</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[45, 60, 75, 90, 120].map(d => (
-                <button key={d} onClick={() => set('duration', d)} style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  cursor: 'pointer', border: '1px solid #e2dbd4',
-                  background: form.duration === d ? '#0f0c0c' : 'white',
-                  color: form.duration === d ? 'white' : '#5a4e47',
-                }}>{d} min</button>
-              ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Duration (minutes)</label>
+              <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
+                {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+              </select>
             </div>
-          </div>
-
-          {/* SEATS + PRICE */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             <div>
               <label style={labelStyle}>Price (₹)</label>
-              <input style={inputStyle} type="number" min="0" value={form.price} onChange={e => set('price', +e.target.value)} />
-            </div>
-            <div>
-              <label style={labelStyle}>Max Seats</label>
-              <input style={inputStyle} type="number" min="1" max="200" value={form.max_seats} onChange={e => set('max_seats', +e.target.value)} />
-            </div>
-            <div>
-              <label style={labelStyle}>Min Seats</label>
-              <input style={inputStyle} type="number" min="1" value={form.min_seats} onChange={e => set('min_seats', +e.target.value)} />
+              <input type="number" style={inputStyle} value={form.price} onChange={e => set('price', Number(e.target.value))} min="0" step="50" />
             </div>
           </div>
-          <div style={{ fontSize: 12, color: '#7a6e65', marginTop: -12 }}>Min seats = session confirms automatically when reached. Max seats = booking closes when full.</div>
 
-          {isEdit && (
-            <div style={{ background: '#fff8e6', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#7a6e65' }}>
-              ⚠️ Editing a live session — learners who already booked will not be notified automatically. For major changes (date/time), consider cancelling and recreating.
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Max Seats</label>
+              <input type="number" style={inputStyle} value={form.max_seats} onChange={e => set('max_seats', Number(e.target.value))} min="1" max="100" />
             </div>
-          )}
+            <div>
+              <label style={labelStyle}>Min Seats (to confirm)</label>
+              <input type="number" style={inputStyle} value={form.min_seats} onChange={e => set('min_seats', Number(e.target.value))} min="1" />
+            </div>
+          </div>
 
-          <button onClick={handleSave} disabled={saving || uploadingCover} style={{ width: '100%', background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: 14, fontSize: 16, fontWeight: 600, cursor: (saving || uploadingCover) ? 'not-allowed' : 'pointer', opacity: (saving || uploadingCover) ? 0.7 : 1 }}>
-            {saving ? 'Saving...' : isEdit ? 'Save Changes →' : 'Create Session →'}
+          <button onClick={handleSave} disabled={saving} style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: 8 }}>
+            {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Session'}
           </button>
         </div>
       </div>

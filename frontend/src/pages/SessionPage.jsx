@@ -363,7 +363,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', position: window.innerWidth < 768 ? 'static' : 'sticky', top: 80 }}>
 
           {/* JOIN CLASS BANNER — shown to choreo or booked learner when session is live */}
-          {canJoinNow && (isChoreo || alreadyBooked || booked) && (
+          {(isChoreo || (canJoinNow && (alreadyBooked || booked))) && (
             <div style={{ background: '#052e16', border: '1px solid #22c55e', borderRadius: 12, padding: 20, marginBottom: 20, textAlign: 'center' }}>
               <div style={{ fontSize: 13, color: '#86efac', marginBottom: 8 }}>
                 {isChoreo ? '🎭 Your class is live now!' : '✅ You have a spot in this session'}
