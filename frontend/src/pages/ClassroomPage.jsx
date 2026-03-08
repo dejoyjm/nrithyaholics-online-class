@@ -5,20 +5,42 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export default function ClassroomPage({ sessionId, sessionData, user, profile, onLeave }) {
-  const [status, setStatus] = useState('fetching')
+  const [status, setStatus] = useState('fetching') // fetching | too_early | ended | error | ready | left
   const [errorMsg, setErrorMsg] = useState('')
+  const [opensAt, setOpensAt] = useState(null)     // epoch seconds — for countdown
+  const [countdown, setCountdown] = useState('')
   const [roomToken, setRoomToken] = useState(null)
   const [roomId, setRoomId] = useState(null)
   const [userName, setUserName] = useState('')
   const [userRole, setUserRole] = useState('guest')
   const iframeRef = useRef(null)
+  const countdownRef = useRef(null)
 
   const session = sessionData
-  const isHost = profile?.is_admin || session?.choreographer_id === user?.id
 
   useEffect(() => {
     fetchToken()
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current) }
   }, [])
+
+  // Live countdown + auto-retry when window opens
+  useEffect(() => {
+    if (status === 'too_early' && opensAt) {
+      if (countdownRef.current) clearInterval(countdownRef.current)
+      countdownRef.current = setInterval(() => {
+        const secsLeft = Math.max(0, opensAt - Math.floor(Date.now() / 1000))
+        if (secsLeft === 0) {
+          clearInterval(countdownRef.current)
+          fetchToken()
+          return
+        }
+        const m = Math.floor(secsLeft / 60)
+        const s = secsLeft % 60
+        setCountdown(`${m}:${s.toString().padStart(2, '0')}`)
+      }, 1000)
+    }
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current) }
+  }, [status, opensAt])
 
   async function fetchToken() {
     setStatus('fetching')
@@ -37,6 +59,18 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
       })
 
       const data = await res.json()
+
+      if (data.error === 'too_early') {
+        setOpensAt(data.opens_at)
+        setStatus('too_early')
+        return
+      }
+
+      if (data.error === 'session_ended') {
+        setStatus('ended')
+        return
+      }
+
       if (!res.ok || !data.token) {
         setStatus('error')
         setErrorMsg(data.error || 'Could not get room access. Please try again.')
@@ -55,11 +89,12 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     }
   }
 
+  // ── FETCHING ──────────────────────────────────────────────────
   if (status === 'fetching') {
     return (
       <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
         {session?.cover_photo_url && (
-          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${session.cover_photo_url})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.1 }} />
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${session.cover_photo_url})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.08 }} />
         )}
         <div style={{ position: 'relative', textAlign: 'center' }}>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 28, fontWeight: 900, color: '#faf7f2', marginBottom: 8 }}>
@@ -74,6 +109,79 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     )
   }
 
+  // ── TOO EARLY — countdown screen ─────────────────────────────
+  if (status === 'too_early') {
+    const scheduledTime = session?.scheduled_at
+      ? new Date(session.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : ''
+    const scheduledDate = session?.scheduled_at
+      ? new Date(session.scheduled_at).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
+      : ''
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        {session?.cover_photo_url && (
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${session.cover_photo_url})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.08 }} />
+        )}
+        <div style={{ position: 'relative', textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>⏰</div>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 800, color: '#faf7f2', marginBottom: 8 }}>
+            Class hasn't started yet
+          </div>
+          <div style={{ fontSize: 14, color: '#a09890', marginBottom: 28, lineHeight: 1.6 }}>
+            {session?.title && <><strong style={{ color: '#faf7f2' }}>{session.title}</strong><br /></>}
+            {scheduledDate && <>{scheduledDate} · {scheduledTime}</>}
+          </div>
+
+          {countdown && (
+            <div style={{ marginBottom: 32 }}>
+              <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 10 }}>
+                Classroom opens in
+              </div>
+              <div style={{ fontSize: 52, fontWeight: 900, color: '#c8430a', fontVariantNumeric: 'tabular-nums', letterSpacing: 3 }}>
+                {countdown}
+              </div>
+              <div style={{ fontSize: 12, color: '#5a4e47', marginTop: 8 }}>
+                You'll be let in 5 minutes before the class starts
+              </div>
+            </div>
+          )}
+
+          <button onClick={onLeave} style={{
+            background: 'rgba(255,255,255,0.07)', border: '1px solid #3a2e2e',
+            color: '#a09890', padding: '12px 28px', borderRadius: 10,
+            cursor: 'pointer', fontSize: 14,
+          }}>
+            ← Go Back
+          </button>
+        </div>
+        <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+      </div>
+    )
+  }
+
+  // ── SESSION ENDED ─────────────────────────────────────────────
+  if (status === 'ended') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
+        <div style={{ fontSize: 56 }}>🎬</div>
+        <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 800, color: '#faf7f2', textAlign: 'center' }}>
+          This class has ended
+        </div>
+        <div style={{ fontSize: 14, color: '#a09890', textAlign: 'center', maxWidth: 320, lineHeight: 1.6 }}>
+          The session is over. Check your profile for upcoming classes.
+        </div>
+        <button onClick={onLeave} style={{
+          marginTop: 8, background: '#c8430a', border: 'none', color: 'white',
+          padding: '12px 28px', borderRadius: 10, cursor: 'pointer',
+          fontSize: 14, fontWeight: 600,
+        }}>
+          Back to Sessions
+        </button>
+      </div>
+    )
+  }
+
+  // ── ERROR ─────────────────────────────────────────────────────
   if (status === 'error') {
     return (
       <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
@@ -92,6 +200,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     )
   }
 
+  // ── LEFT ──────────────────────────────────────────────────────
   if (status === 'left') {
     return (
       <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
@@ -105,7 +214,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     )
   }
 
-  // Live — 100ms Prebuilt iframe
+  // ── LIVE — 100ms Prebuilt iframe ──────────────────────────────
   const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=false&auth_token=${roomToken}&name=${encodeURIComponent(userName)}`
 
   return (

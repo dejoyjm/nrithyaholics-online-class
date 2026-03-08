@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { create, getNumericDate } from 'https://deno.land/x/djwt@v2.8/mod.ts'
+import { create } from 'https://deno.land/x/djwt@v2.8/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,53 +11,55 @@ const HMS_ACCESS_KEY = Deno.env.get('HMS_ACCESS_KEY')!
 const HMS_APP_SECRET = Deno.env.get('HMS_APP_SECRET')!
 const HMS_TEMPLATE_ID = '69aca87c6236da36a7d8c593'
 
-// Generate 100ms management token (for API calls)
+// ── Generate 100ms management token ──────────────────────────────
 async function getManagementToken(): Promise<string> {
   const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(HMS_APP_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
+    'raw', new TextEncoder().encode(HMS_APP_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
   )
-  const payload = {
+  const now = Math.floor(Date.now() / 1000)
+  return await create({ alg: 'HS256', typ: 'JWT' }, {
     access_key: HMS_ACCESS_KEY,
     type: 'management',
     version: 2,
-    iat: getNumericDate(0),
-    exp: getNumericDate(24 * 60 * 60), // 24h
-    nbf: getNumericDate(0),
+    iat: now,
+    exp: now + 24 * 60 * 60,
+    nbf: now,
     jti: crypto.randomUUID(),
-  }
-  return await create({ alg: 'HS256', typ: 'JWT' }, payload, key)
+  }, key)
 }
 
-// Generate 100ms room token for a user
-async function getRoomToken(roomId: string, userId: string, role: string, userName: string, sessionDuration: number): Promise<string> {
+// ── Generate 100ms room token anchored to wall-clock session time ─
+// tokenValidFrom : Unix epoch seconds — when token becomes valid (nbf)
+// tokenExpiry    : Unix epoch seconds — hard expiry (exp)
+async function getRoomToken(
+  roomId: string,
+  userId: string,
+  role: string,
+  userName: string,
+  tokenValidFrom: number,
+  tokenExpiry: number,
+): Promise<string> {
   const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(HMS_APP_SECRET),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
+    'raw', new TextEncoder().encode(HMS_APP_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
   )
-  const bufferMinutes = role === 'host' ? 30 : 15
-  const payload = {
+  const now = Math.floor(Date.now() / 1000)
+  return await create({ alg: 'HS256', typ: 'JWT' }, {
     access_key: HMS_ACCESS_KEY,
     room_id: roomId,
     user_id: userId,
     role: role,
     type: 'app',
     version: 2,
-    iat: getNumericDate(0),
-    exp: getNumericDate((sessionDuration + bufferMinutes) * 60),
-    nbf: getNumericDate(0),
+    iat: now,
+    nbf: tokenValidFrom,   // ← token not usable before this time
+    exp: tokenExpiry,      // ← hard wall-clock expiry
     jti: crypto.randomUUID(),
-  }
-  return await create({ alg: 'HS256', typ: 'JWT' }, payload, key)
+  }, key)
 }
 
-// Create a 100ms room
+// ── Create a 100ms room ───────────────────────────────────────────
 async function createRoom(sessionId: string, mgmtToken: string): Promise<string> {
   const res = await fetch('https://api.100ms.live/v2/rooms', {
     method: 'POST',
@@ -77,6 +79,7 @@ async function createRoom(sessionId: string, mgmtToken: string): Promise<string>
   return data.id
 }
 
+// ─────────────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -92,7 +95,7 @@ serve(async (req) => {
       )
     }
 
-    // Auth check
+    // ── Auth ────────────────────────────────────────────────────
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(
@@ -106,7 +109,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // Get user from token
     const token = authHeader.replace('Bearer ', '')
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
     if (authError || !user) {
@@ -116,7 +118,7 @@ serve(async (req) => {
       )
     }
 
-    // Get session details
+    // ── Fetch session ───────────────────────────────────────────
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
       .select('*, profiles(full_name)')
@@ -130,19 +132,70 @@ serve(async (req) => {
       )
     }
 
-    // Get user profile
+    // ── Fetch user profile ──────────────────────────────────────
     const { data: profile } = await supabase
       .from('profiles')
       .select('full_name, is_admin, role')
       .eq('id', user.id)
       .single()
 
-    // Determine role
-    const isChoreo = session.choreographer_id === user.id
-    const isAdmin = profile?.is_admin === true
-    const hmsRole = (isChoreo || isAdmin) ? 'host' : 'guest'
+    // ── Fetch platform config (with fallback defaults) ──────────
+    const { data: config } = await supabase
+      .from('platform_config')
+      .select('pre_join_minutes, grace_period_minutes')
+      .eq('id', 1)
+      .single()
 
-    // If learner, verify they have a confirmed booking
+    // Per-session overrides win if set, otherwise use global config, otherwise hardcoded defaults
+    const preJoinMinutes    = session.pre_join_minutes_override
+                           ?? config?.pre_join_minutes
+                           ?? 5
+    const gracePeriodMinutes = session.grace_period_minutes_override
+                           ?? config?.grace_period_minutes
+                           ?? 15
+
+    // ── Wall-clock time calculations ────────────────────────────
+    const nowEpoch         = Math.floor(Date.now() / 1000)
+    const scheduledStart   = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
+    const sessionDuration  = (session.duration_minutes || 60) * 60  // seconds
+    const scheduledEnd     = scheduledStart + sessionDuration
+
+    // Token window:
+    //   valid from : scheduledStart - preJoinMinutes
+    //   expires at : scheduledEnd   + gracePeriodMinutes
+    const tokenValidFrom = scheduledStart - (preJoinMinutes * 60)
+    const tokenExpiry    = scheduledEnd   + (gracePeriodMinutes * 60)
+
+    // ── Gate: too early ─────────────────────────────────────────
+    if (nowEpoch < tokenValidFrom) {
+      const minutesUntilOpen = Math.ceil((tokenValidFrom - nowEpoch) / 60)
+      return new Response(
+        JSON.stringify({
+          error: 'too_early',
+          message: `Class opens ${minutesUntilOpen} minute${minutesUntilOpen !== 1 ? 's' : ''} before start. Come back then!`,
+          opens_at: tokenValidFrom,
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ── Gate: too late (session + grace has passed) ─────────────
+    if (nowEpoch > tokenExpiry) {
+      return new Response(
+        JSON.stringify({
+          error: 'session_ended',
+          message: 'This session has ended.',
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ── Role determination ──────────────────────────────────────
+    const isChoreo = session.choreographer_id === user.id
+    const isAdmin  = profile?.is_admin === true
+    const hmsRole  = (isChoreo || isAdmin) ? 'host' : 'guest'
+
+    // ── Learner booking check ───────────────────────────────────
     if (hmsRole === 'guest') {
       const { data: booking } = await supabase
         .from('bookings')
@@ -167,28 +220,26 @@ serve(async (req) => {
       }
     }
 
-    // Get or create 100ms room
+    // ── Get or create 100ms room ────────────────────────────────
     let roomId = session.room_id
-
     if (!roomId) {
       const mgmtToken = await getManagementToken()
       roomId = await createRoom(session_id, mgmtToken)
-
-      // Store room_id on session
       await supabase
         .from('sessions')
         .update({ room_id: roomId })
         .eq('id', session_id)
     }
 
-    // Generate room token
+    // ── Generate room token (wall-clock anchored) ───────────────
     const userName = profile?.full_name || user.email?.split('@')[0] || 'Participant'
     const roomToken = await getRoomToken(
       roomId,
       user.id,
       hmsRole,
       userName,
-      session.duration_minutes || 60
+      tokenValidFrom,
+      tokenExpiry,
     )
 
     return new Response(
@@ -197,6 +248,9 @@ serve(async (req) => {
         room_id: roomId,
         role: hmsRole,
         user_name: userName,
+        // Return timing info so the client can show helpful messages
+        session_ends_at: scheduledEnd,
+        token_expires_at: tokenExpiry,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
