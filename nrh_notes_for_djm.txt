@@ -1,0 +1,77 @@
+React framework with JavaScript
+
+  VITE v7.3.1  ready in 4487 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
+
+✅ @supabase/supabase-js  — added 13 packages
+✅ react-router-dom       — added 7 packages  
+✅ tailwindcss            — added 32 packages
+✅ 0 vulnerabilities      — clean install!
+
+
+npm run dev
+
+
+Landing page
+    ↓ click "Sign up" or "Log in"
+Auth page
+    ├── Continue with Google  (one click)
+    └── Continue with Phone   (enter number → OTP)
+    ↓ success
+Role selection (first time only)
+    ├── I want to learn  → Learner home
+    └── I want to teach  → Choreographer dashboard
+
+
+Supabase
+Project : nrithyaholics-online-class
+Password : *Pollappu123
+
+Supabase
+URL:  https://vuxqimoqsbqsgvkashak.supabase.co
+KEY:  sb_publishable_uIUbVLySwkY4SQXjObq4Rw_UM41h1Lo
+Project : nrithyaholics-online-class
+
+#Github
+
+git add .
+git commit -m "editing announced session v1"
+git push origin master
+
+
+#Razor pay
+
+rzp_live_bYmMMbiG8WZC34
+
+IfKXY0is1AoyaD9T7Zt9QRXJ
+
+supabase link --project-ref vuxqimoqsbqsgvkashak
+
+supabase secrets set RAZORPAY_KEY_SECRET=IfKXY0is1AoyaD9T7Zt9QRXJ
+
+Webhook password :  *Pollappu123
+
+
+https://nrithyaholics-online-class.vercel.app/#
+supabase secrets set RAZORPAY_WEBHOOK_SECRET=*Pollappu123
+
+
+# 100ms
+Access Credentials
+Access Key :  69aca7a963cbbe924eef8f70
+
+App Secret : kOrq5qBoC_XJSGDD8rcmTgD35vYsYsGcui0wnCrrjVzyy0Y4TDS14WjhsFj2c20weVDgPJlYKlE7YwiJsLPy2rOp-MohhCFAsO5XGKLVSahIwaa1nqGQCd4l4m_Zb4lfHXStqBSQ_aa8Ci9EBvDkc4X3UJvwCLER1R_MydFOklE=
+
+Management Token : eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NzI5MjMxMzEsImV4cCI6MTc3MzUyNzkzMSwianRpIjoiMzgzMDIxMWMtNTAzMC00NjNhLThmYjktYzBiOTIzYWNhMTRmIiwidHlwZSI6Im1hbmFnZW1lbnQiLCJ2ZXJzaW9uIjoyLCJuYmYiOjE3NzI5MjMxMzEsImFjY2Vzc19rZXkiOiI2OWFjYTdhOTYzY2JiZTkyNGVlZjhmNzAifQ.iRw1-PocLyzHXQVknpD1Ul0PIgQPjysF1JXtGefWQOM
+
+
+SIP Interconnect Credentials
+
+username : 69aca7a963cbbe924eef8f70
+password : n3jD_bdjYyJmP-kr9CmUorwbX8HeLZlT
+
+sip endpoint : sip.100ms.live
+
