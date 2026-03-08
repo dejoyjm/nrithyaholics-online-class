@@ -18,7 +18,7 @@ function cleanInstagram(val) {
   return val.replace('@', '').trim()
 }
 
-export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onSwitchToTeaching }) {
+export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick }) {
   const [bookings, setBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
   const [activeTab, setActiveTab] = useState('profile')
@@ -398,7 +398,7 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
                 {upcoming.length > 0 && (
                   <div style={{ marginBottom: 28 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>UPCOMING ({upcoming.length})</div>
-                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming />)}
+                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} />)}
                   </div>
                 )}
                 {past.length > 0 && (
@@ -417,7 +417,7 @@ export default function ProfilePage({ user, profile, onBack, onApplyToTeach, onS
   )
 }
 
-function BookingRow({ booking, isUpcoming }) {
+function BookingRow({ booking, isUpcoming, onSessionClick }) {
   const session = booking.sessions
   if (!session) return null
   const styleKey = session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '') || ''
@@ -425,19 +425,32 @@ function BookingRow({ booking, isUpcoming }) {
   const price = booking.credits_paid || (session.price_tiers?.length ? Math.min(...session.price_tiers.map(t => t.price)) : 0)
   const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
+  const sessionStart = new Date(session.scheduled_at).getTime()
+  const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
+  const canJoinNow = (Date.now() >= sessionStart - 15 * 60 * 1000) && (Date.now() <= sessionEnd + 30 * 60 * 1000)
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', borderBottom: '1px solid #f0ebe6' }}>
-      <div style={{ width: 4, height: 44, borderRadius: 2, background: color, flexShrink: 0 }} />
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', marginBottom: 2 }}>{session.title}</div>
-        <div style={{ fontSize: 12, color: '#7a6e65' }}>📅 {fmt(session.scheduled_at)} · {session.duration_minutes} mins</div>
+    <div style={{ padding: '14px 0', borderBottom: '1px solid #f0ebe6' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ width: 4, height: 44, borderRadius: 2, background: color, flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', marginBottom: 2 }}>{session.title}</div>
+          <div style={{ fontSize: 12, color: '#7a6e65' }}>📅 {fmt(session.scheduled_at)} · {session.duration_minutes} mins</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+          {price > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c' }}>₹{price}</div>}
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: isUpcoming ? '#e6f4ec' : '#f0ebe6', color: isUpcoming ? '#1a7a3c' : '#7a6e65' }}>
+            {isUpcoming ? '🟢 Upcoming' : 'Completed'}
+          </span>
+        </div>
       </div>
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        {price > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', marginBottom: 4 }}>₹{price}</div>}
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: isUpcoming ? '#e6f4ec' : '#f0ebe6', color: isUpcoming ? '#1a7a3c' : '#7a6e65' }}>
-          {isUpcoming ? '🟢 Upcoming' : 'Completed'}
-        </span>
-      </div>
+      {canJoinNow && isUpcoming && onSessionClick && (
+        <button
+          onClick={() => onSessionClick(booking.session_id)}
+          style={{ marginTop: 10, marginLeft: 18, background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+          🎬 Join Class Now
+        </button>
+      )}
     </div>
   )
 }

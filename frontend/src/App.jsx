@@ -169,6 +169,7 @@ export default function App() {
         user={user}
         profile={profile}
         onBack={() => setShowProfile(false)}
+        onSessionClick={(id) => { setShowProfile(false); setCurrentSession(id) }}
         onSwitchToTeaching={() => { setShowProfile(false); setMode('teaching') }}
         onApplyToTeach={() => {
           setShowProfile(false)

@@ -362,50 +362,48 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         {/* RIGHT — Booking card */}
         <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', position: window.innerWidth < 768 ? 'static' : 'sticky', top: 80 }}>
 
-          {isChoreo && canJoinNow ? (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>🎭</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', marginBottom: 8 }}>Your class is ready!</h3>
-              <p style={{ fontSize: 14, color: '#7a6e65', lineHeight: 1.6, marginBottom: 20 }}>
-                {session.bookings_count || 0} learner{session.bookings_count !== 1 ? 's' : ''} have booked.
-              </p>
+          {/* JOIN CLASS BANNER — shown to choreo or booked learner when session is live */}
+          {canJoinNow && (isChoreo || alreadyBooked || booked) && (
+            <div style={{ background: '#052e16', border: '1px solid #22c55e', borderRadius: 12, padding: 20, marginBottom: 20, textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: '#86efac', marginBottom: 8 }}>
+                {isChoreo ? '🎭 Your class is live now!' : '✅ You have a spot in this session'}
+              </div>
+              {isChoreo && (
+                <div style={{ fontSize: 12, color: '#4ade80', marginBottom: 12 }}>
+                  {session.bookings_count || 0} learner{session.bookings_count !== 1 ? 's' : ''} have booked
+                </div>
+              )}
               <button onClick={() => setShowClassroom(true)}
-                style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 16, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-                🎬 Start Class
+                style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+                🎬 {isChoreo ? 'Start Class' : 'Join Class Now'}
               </button>
             </div>
+          )}
 
-          ) : booked ? (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
-              <h3 style={{ fontSize: 22, fontWeight: 800, color: '#0f0c0c', marginBottom: 8, fontFamily: 'Georgia, serif' }}>You're booked!</h3>
-              <p style={{ fontSize: 14, color: '#7a6e65', lineHeight: 1.6, marginBottom: 24 }}>
-                Your spot is confirmed. We'll send you the join link before the session starts.
+          {/* BOOKING STATE */}
+          {booked ? (
+            <div style={{ textAlign: 'center', padding: '12px 0 20px' }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🎉</div>
+              <h3 style={{ fontSize: 20, fontWeight: 800, color: '#0f0c0c', marginBottom: 6, fontFamily: 'Georgia, serif' }}>You're booked!</h3>
+              <p style={{ fontSize: 13, color: '#7a6e65', lineHeight: 1.6, marginBottom: 16 }}>
+                Your spot is confirmed.
               </p>
-              {canJoinNow && (
-                <button onClick={() => setShowClassroom(true)}
-                  style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 16, fontSize: 16, fontWeight: 700, cursor: 'pointer', marginBottom: 12 }}>
-                  🎬 Join Class Now
-                </button>
-              )}
-              <button onClick={onBack} style={{ width: '100%', background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={onBack} style={{ width: '100%', background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 10, padding: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
                 Browse more sessions
               </button>
             </div>
 
-          ) : alreadyBooked ? (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', marginBottom: 8 }}>Already booked!</h3>
-              <p style={{ fontSize: 14, color: '#7a6e65', lineHeight: 1.6, marginBottom: canJoinNow ? 20 : 0 }}>
-                You have a confirmed spot in this session.
-              </p>
-              {canJoinNow && (
-                <button onClick={() => setShowClassroom(true)}
-                  style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 16, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-                  🎬 Join Class Now
-                </button>
-              )}
+          ) : alreadyBooked && !isBookable ? (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', marginBottom: 6 }}>Already booked!</h3>
+              <p style={{ fontSize: 13, color: '#7a6e65' }}>You have a confirmed spot in this session.</p>
+            </div>
+
+          ) : isChoreo && !isBookable ? (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🎭</div>
+              <p style={{ fontSize: 13, color: '#7a6e65' }}>This is your session.</p>
             </div>
 
           ) : !isBookable ? (
