@@ -7,12 +7,12 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 export default function ClassroomPage({ sessionId, sessionData, user, profile, onLeave }) {
   const [status, setStatus] = useState('fetching') // fetching | too_early | ended | error | ready | left
   const [errorMsg, setErrorMsg] = useState('')
-  const [opensAt, setOpensAt] = useState(null)     // epoch seconds — for countdown
+  const [opensAt, setOpensAt] = useState(null)
   const [countdown, setCountdown] = useState('')
   const [roomToken, setRoomToken] = useState(null)
   const [roomId, setRoomId] = useState(null)
   const [userName, setUserName] = useState('')
-  const [userRole, setUserRole] = useState('guest')
+  const [userRole, setUserRole] = useState(null) // null until resolved — avoids premature guest assumption
   const iframeRef = useRef(null)
   const countdownRef = useRef(null)
 
@@ -23,7 +23,6 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     return () => { if (countdownRef.current) clearInterval(countdownRef.current) }
   }, [])
 
-  // Live countdown + auto-retry when window opens
   useEffect(() => {
     if (status === 'too_early' && opensAt) {
       if (countdownRef.current) clearInterval(countdownRef.current)
@@ -77,10 +76,11 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         return
       }
 
+      // Set role BEFORE status='ready' so prebuiltUrl is built with correct role
       setRoomToken(data.token)
       setRoomId(data.room_id)
       setUserName(data.user_name)
-      setUserRole(data.role)
+      setUserRole(data.role)  // 'host' or 'guest'
       setStatus('ready')
     } catch (err) {
       console.error('Token fetch error:', err)
@@ -109,7 +109,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     )
   }
 
-  // ── TOO EARLY — countdown screen ─────────────────────────────
+  // ── TOO EARLY ─────────────────────────────────────────────────
   if (status === 'too_early') {
     const scheduledTime = session?.scheduled_at
       ? new Date(session.scheduled_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
@@ -118,40 +118,29 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
       ? new Date(session.scheduled_at).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
       : ''
     return (
-      <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
         {session?.cover_photo_url && (
-          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${session.cover_photo_url})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.08 }} />
+          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${session.cover_photo_url})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.06 }} />
         )}
-        <div style={{ position: 'relative', textAlign: 'center', maxWidth: 400 }}>
+        <div style={{ position: 'relative', textAlign: 'center', maxWidth: 420 }}>
           <div style={{ fontSize: 56, marginBottom: 16 }}>⏰</div>
-          <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 800, color: '#faf7f2', marginBottom: 8 }}>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 24, fontWeight: 800, color: '#faf7f2', marginBottom: 8 }}>
             Class hasn't started yet
           </div>
-          <div style={{ fontSize: 14, color: '#a09890', marginBottom: 28, lineHeight: 1.6 }}>
-            {session?.title && <><strong style={{ color: '#faf7f2' }}>{session.title}</strong><br /></>}
-            {scheduledDate && <>{scheduledDate} · {scheduledTime}</>}
+          <div style={{ fontSize: 14, color: '#a09890', marginBottom: 24, lineHeight: 1.6 }}>
+            <strong style={{ color: '#faf7f2' }}>{session?.title}</strong><br />
+            {scheduledDate} at {scheduledTime}
           </div>
-
           {countdown && (
-            <div style={{ marginBottom: 32 }}>
-              <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 10 }}>
-                Classroom opens in
-              </div>
-              <div style={{ fontSize: 52, fontWeight: 900, color: '#c8430a', fontVariantNumeric: 'tabular-nums', letterSpacing: 3 }}>
-                {countdown}
-              </div>
-              <div style={{ fontSize: 12, color: '#5a4e47', marginTop: 8 }}>
-                You'll be let in 5 minutes before the class starts
-              </div>
+            <div style={{ fontSize: 48, fontWeight: 800, color: '#c8430a', fontFamily: 'Georgia, serif', marginBottom: 8, letterSpacing: 2 }}>
+              {countdown}
             </div>
           )}
-
-          <button onClick={onLeave} style={{
-            background: 'rgba(255,255,255,0.07)', border: '1px solid #3a2e2e',
-            color: '#a09890', padding: '12px 28px', borderRadius: 10,
-            cursor: 'pointer', fontSize: 14,
-          }}>
-            ← Go Back
+          <div style={{ fontSize: 13, color: '#7a6e65', marginBottom: 32 }}>
+            You'll be let in before the class starts
+          </div>
+          <button onClick={onLeave} style={{ background: 'transparent', border: '1px solid #3a2e2e', color: '#a09890', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
+            Go Back
           </button>
         </div>
         <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
@@ -163,18 +152,10 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   if (status === 'ended') {
     return (
       <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
-        <div style={{ fontSize: 56 }}>🎬</div>
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 800, color: '#faf7f2', textAlign: 'center' }}>
-          This class has ended
-        </div>
-        <div style={{ fontSize: 14, color: '#a09890', textAlign: 'center', maxWidth: 320, lineHeight: 1.6 }}>
-          The session is over. Check your profile for upcoming classes.
-        </div>
-        <button onClick={onLeave} style={{
-          marginTop: 8, background: '#c8430a', border: 'none', color: 'white',
-          padding: '12px 28px', borderRadius: 10, cursor: 'pointer',
-          fontSize: 14, fontWeight: 600,
-        }}>
+        <div style={{ fontSize: 56 }}>🎭</div>
+        <div style={{ fontFamily: 'Georgia, serif', fontSize: 24, fontWeight: 700, color: '#faf7f2', textAlign: 'center' }}>This class has ended</div>
+        <div style={{ fontSize: 14, color: '#7a6e65', textAlign: 'center' }}>Check your profile for upcoming classes.</div>
+        <button onClick={onLeave} style={{ marginTop: 8, background: '#c8430a', border: 'none', color: 'white', padding: '12px 28px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
           Back to Sessions
         </button>
       </div>
@@ -183,6 +164,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
 
   // ── ERROR ─────────────────────────────────────────────────────
   if (status === 'error') {
+    const isExpired = errorMsg.toLowerCase().includes('expired') || errorMsg.toLowerCase().includes('token')
     return (
       <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
         <div style={{ fontSize: 48 }}>⚠️</div>
@@ -193,7 +175,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
             Go Back
           </button>
           <button onClick={fetchToken} style={{ background: '#c8430a', border: 'none', color: 'white', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-            Try Again
+            {isExpired ? '🔄 Get Fresh Token' : 'Try Again'}
           </button>
         </div>
       </div>
@@ -215,8 +197,13 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   }
 
   // ── LIVE — 100ms Prebuilt iframe ──────────────────────────────
+  // userRole is 'host' or 'guest' — guaranteed set before status='ready'
   const isGuest = userRole === 'guest'
-  const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=false&auth_token=${roomToken}&name=${encodeURIComponent(userName)}${isGuest ? '&audio=false&video=false' : ''}`
+
+  // Guests join muted (mic + cam off). Host joins live (mic + cam on).
+  const muteParams = isGuest ? '&audio=false&video=false' : '&audio=true&video=true'
+
+  const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=false&auth_token=${roomToken}&name=${encodeURIComponent(userName)}${muteParams}`
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#0f0c0c', display: 'flex', flexDirection: 'column', zIndex: 9999 }}>
