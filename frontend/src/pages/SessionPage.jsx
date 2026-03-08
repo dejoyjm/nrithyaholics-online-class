@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ClassroomPage from './ClassroomPage'
+import SetupTestModal from './SetupTestModal'
 
 const RAZORPAY_KEY_ID = 'rzp_live_bYmMMbiG8WZC34'
 const APP_URL = 'https://online.nrithyaholics.in'
@@ -54,6 +55,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [userName, setUserName] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [showClassroom, setShowClassroom] = useState(false)
+  const [showSetupTest, setShowSetupTest] = useState(false)
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
@@ -265,7 +267,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       />
     )
   }
-
   // Verifying state (redirect-back)
   if (verifying) return (
     <div style={{ minHeight: '100vh', background: '#faf7f2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
@@ -277,6 +278,14 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
   return (
     <div style={{ minHeight: '100vh', background: '#faf7f2' }}>
+      {/* Setup Test Modal */}
+      {showSetupTest && (
+        <SetupTestModal
+          onClose={() => setShowSetupTest(false)}
+          isChoreo={isChoreo}
+        />
+      )}
+
       {/* Header */}
       <div style={{ background: '#0f0c0c', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
@@ -368,6 +377,22 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
               <div style={{ fontSize: 13, color: '#86efac', marginBottom: 8 }}>
                 {isChoreo ? '🎭 Your class is live now!' : '✅ You have a spot in this session'}
               </div>
+
+              {user && (isChoreo || alreadyBooked || booked) && (
+                  <button
+                    onClick={() => setShowSetupTest(true)}
+                    style={{
+                      width: '100%', background: 'transparent',
+                      border: '1px solid #e2dbd4', borderRadius: 10,
+                      padding: '10px', fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', color: '#5a4e47', marginBottom: 12,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    🔍 Test my setup
+                  </button>
+                )}
+
               {isChoreo && (
                 <div style={{ fontSize: 12, color: '#4ade80', marginBottom: 12 }}>
                   {session.bookings_count || 0} learner{session.bookings_count !== 1 ? 's' : ''} have booked

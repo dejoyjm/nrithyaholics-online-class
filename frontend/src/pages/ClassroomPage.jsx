@@ -136,7 +136,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         ref={iframeRef}
         src={prebuiltUrl}
         style={{ flex: 1, border: 'none', width: '100%' }}
-        allow="camera; microphone; display-capture; fullscreen; clipboard-read; clipboard-write"
+        allow="camera; microphone; display-capture; fullscreen; clipboard-read; clipboard-write; screen-wake-lock; compute-pressure; autoplay; payment"
         allowFullScreen
         title="NrithyaHolics Classroom"
       />
