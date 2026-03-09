@@ -64,7 +64,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   useEffect(() => {
     if (!razorpayReturn) return
     if (razorpayReturn.alreadyComplete) {
-      // Webhook already created booking, just show success
       setBooked(true)
       return
     }
@@ -155,7 +154,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         return
       }
 
-      // Store pending payment info for redirect-back verification
       sessionStorage.setItem('nrh_pending_payment', JSON.stringify({
         session_id: session.id,
         seats,
@@ -163,7 +161,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         order_id: orderData.order_id,
       }))
 
-      // Detect mobile
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
 
       const options = {
@@ -176,7 +173,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         prefill: { email: userEmail, name: userName },
         theme: { color: '#c8430a' },
 
-        // Redirect flow for mobile — popup for desktop
         ...(isMobile ? {
           redirect: true,
           callback_url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/razorpay-callback`,
@@ -193,7 +189,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         },
 
         handler: async (response) => {
-          // Desktop popup success handler
           const result = await callVerifyPayment({
             razorpay_order_id: response.razorpay_order_id,
             razorpay_payment_id: response.razorpay_payment_id,
@@ -254,7 +249,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
   const isChoreo = user && session.choreographer_id === user.id
   const isHost = isChoreo || profile?.is_admin
-  // Use host or guest config depending on who is viewing — fallback only if config not yet loaded
+
   const preJoinMs = isHost
     ? (session.host_pre_join_minutes_override  ?? platformConfig?.host_pre_join_minutes  ?? 15) * 60 * 1000
     : (session.guest_pre_join_minutes_override ?? platformConfig?.guest_pre_join_minutes ?? 5)  * 60 * 1000
@@ -262,6 +257,12 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
     ? (session.host_grace_minutes_override  ?? platformConfig?.host_grace_minutes  ?? 30) * 60 * 1000
     : (session.guest_grace_minutes_override ?? platformConfig?.guest_grace_minutes ?? 15) * 60 * 1000
   const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
+
+  // Who can see "Test my setup" — anytime, no time gate
+  const canTestSetup = user && (isChoreo || alreadyBooked || booked)
+
+  // Who can see the join/start button — only within the time window
+  const canEnterClass = canJoinNow && (isChoreo || alreadyBooked || booked)
 
   // Show classroom
   if (showClassroom && session) {
@@ -275,12 +276,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       />
     )
   }
-  {showSetupTest && (
-  <SetupTestModal
-    onClose={() => setShowSetupTest(false)}
-    isChoreo={isChoreo}
-  />
-  )}
 
   // Verifying state (redirect-back)
   if (verifying) return (
@@ -293,6 +288,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
   return (
     <div style={{ minHeight: '100vh', background: '#faf7f2' }}>
+
       {/* Header */}
       <div style={{ background: '#0f0c0c', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 10 }}>
         <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
@@ -378,41 +374,43 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         {/* RIGHT — Booking card */}
         <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', position: window.innerWidth < 768 ? 'static' : 'sticky', top: 80 }}>
 
-          {/* JOIN CLASS BANNER — shown to choreo or booked learner when session is live */}
-          {(isChoreo || (canJoinNow && (alreadyBooked || booked))) && (
+          {/* ── TEST MY SETUP — always visible to booked users / choreo, no time gate ── */}
+          {canTestSetup && (
+            <button
+              onClick={() => setShowSetupTest(true)}
+              style={{
+                width: '100%', background: '#faf7f2',
+                border: '1px solid #e2dbd4', borderRadius: 10,
+                padding: '10px', fontSize: 13, fontWeight: 600,
+                cursor: 'pointer', color: '#5a4e47', marginBottom: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              🔍 Test my setup
+            </button>
+          )}
+
+          {/* ── JOIN / START CLASS BANNER — only within time window ── */}
+          {canEnterClass && (
             <div style={{ background: '#052e16', border: '1px solid #22c55e', borderRadius: 12, padding: 20, marginBottom: 20, textAlign: 'center' }}>
               <div style={{ fontSize: 13, color: '#86efac', marginBottom: 8 }}>
                 {isChoreo ? '🎭 Your class is live now!' : '✅ You have a spot in this session'}
               </div>
-
-              {user && (isChoreo || alreadyBooked || booked) && (
-                  <button
-                    onClick={() => setShowSetupTest(true)}
-                    style={{
-                      width: '100%', background: 'transparent',
-                      border: '1px solid #e2dbd4', borderRadius: 10,
-                      padding: '10px', fontSize: 13, fontWeight: 600,
-                      cursor: 'pointer', color: '#5a4e47', marginBottom: 12,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}
-                  >
-                    🔍 Test my setup
-                  </button>
-                )}
-
               {isChoreo && (
                 <div style={{ fontSize: 12, color: '#4ade80', marginBottom: 12 }}>
                   {session.bookings_count || 0} learner{session.bookings_count !== 1 ? 's' : ''} have booked
                 </div>
               )}
-              <button onClick={() => setShowClassroom(true)}
-                style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+              <button
+                onClick={() => setShowClassroom(true)}
+                style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+              >
                 🎬 {isChoreo ? 'Start Class' : 'Join Class Now'}
               </button>
             </div>
           )}
 
-          {/* BOOKING STATE */}
+          {/* ── BOOKING STATES ── */}
           {booked ? (
             <div style={{ textAlign: 'center', padding: '12px 0 20px' }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>🎉</div>
@@ -521,8 +519,15 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
           )}
         </div>
       </div>
+
+      {/* ── SetupTestModal — correctly inside return, renders as overlay ── */}
+      {showSetupTest && (
+        <SetupTestModal
+          onClose={() => setShowSetupTest(false)}
+          isChoreo={isChoreo}
+        />
+      )}
+
     </div>
   )
 }
-
-
