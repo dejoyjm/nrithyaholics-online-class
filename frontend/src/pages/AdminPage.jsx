@@ -8,7 +8,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState(null)
-  const [confirmAction, setConfirmAction] = useState(null) // { type, user, sessions }
+  const [confirmAction, setConfirmAction] = useState(null)
 
   useEffect(() => { fetchAll() }, [])
 
@@ -96,7 +96,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
     else { fetchAll(); setSelectedUser(null) }
   }
 
-  // ── Supreme Leader: set any user to any role ───────────────
   async function setUserRole(profileId, newRole) {
     const updates = {
       role: newRole,
@@ -108,7 +107,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
       updates.choreographer_approved = true
       updates.choreographer_requested_at = new Date().toISOString()
     } else {
-      // Demoting to learner
       updates.choreographer_approved = false
     }
 
@@ -116,7 +114,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
     if (error) alert(error.message)
     else {
       fetchAll()
-      // Refresh the selected user panel
       const { data } = await supabase.from('profiles_with_email').select('*').eq('id', profileId).single()
       setSelectedUser(data)
     }
@@ -124,13 +121,13 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
 
   const [adminEditSession, setAdminEditSession] = useState(null)
   const [platformConfig, setPlatformConfig] = useState(null)
-  // Load platform config for the settings tab
-    useEffect(() => {
+
+  useEffect(() => {
     supabase.from('platform_config')
-    .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
-    .eq('id', 1).single()
-    .then(({ data }) => { if (data) setPlatformConfig(data) })
-    }, [])
+      .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
+      .eq('id', 1).single()
+      .then(({ data }) => { if (data) setPlatformConfig(data) })
+  }, [])
 
   async function adminCancelSession(sessionId) {
     if (!window.confirm('Cancel this session? All bookings will be cancelled.')) return
@@ -268,18 +265,19 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                   <tr key={u.id} onClick={() => setSelectedUser(u)}
                     style={{ borderBottom: i < users.length - 1 ? '1px solid #f0ebe6' : 'none', cursor: 'pointer' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#faf7f2'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
                     <td style={{ padding: '14px 20px' }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: '#0f0c0c' }}>{u.full_name || '—'}</div>
-                      {u.instagram_handle && <div style={{ fontSize: 12, color: '#7a6e65' }}>@{u.instagram_handle}</div>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.full_name || u.email || '?')[0].toUpperCase()}
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>{u.full_name || '—'}</span>
+                      </div>
                     </td>
                     <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{u.email}</td>
                     <td style={{ padding: '14px 20px' }}>
-                      <span style={{
-                        background: u.role === 'choreographer' ? '#f0e8ff' : '#f0ebe6',
-                        color: u.role === 'choreographer' ? '#5b4fcf' : '#5a4e47',
-                        fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase'
-                      }}>
+                      <span style={{ background: '#f0ebe6', color: '#5a4e47', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize' }}>
                         {u.role || 'learner'}
                       </span>
                     </td>
@@ -324,23 +322,19 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                         </div>
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 14, color: '#0f0c0c' }}>{s.title}</div>
-                          <div style={{ fontSize: 12, color: '#7a6e65' }}>{s.style_tags?.[0]} · {s.skill_level?.replace(/_/g, ' ')}</div>
+                          <div style={{ fontSize: 12, color: '#7a6e65' }}>{s.style_tags?.join(', ')}</div>
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: '14px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 11, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
-                          {s.profiles?.avatar_url
-                            ? <img src={s.profiles.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            : (s.profiles?.full_name || '?')[0].toUpperCase()
-                          }
-                        </div>
-                        <span style={{ fontSize: 13, color: '#5a4e47' }}>{s.profiles?.full_name || '—'}</span>
-                      </div>
+                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
+                      {s.profiles?.full_name || '—'}
                     </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{formatDate(s.scheduled_at)}</td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{s.bookings_count || 0}/{s.max_seats}</td>
+                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47', whiteSpace: 'nowrap' }}>
+                      {new Date(s.scheduled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
+                      {s.bookings_count || 0} / {s.max_seats || '—'}
+                    </td>
                     <td style={{ padding: '14px 20px' }}>
                       <span style={{
                         background: s.status === 'confirmed' ? '#e6f4ec' : s.status === 'open' ? '#fff8e6' : '#f0ebe6',
@@ -366,20 +360,21 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
             </table>
           )}
         </div>
-      </div>
-      {/* PLATFORM SETTINGS TAB */}
-      {tab === 'settings' && (
-        <div style={{ padding: 32 }}>
-          <PlatformSettingsTab
-            config={platformConfig}
-            onConfigSaved={(newConfig) => {
-              setPlatformConfig(newConfig)
-              if (onConfigChange) onConfigChange(newConfig)
-            }}
-          />
-        </div>
-      )}
 
+        {/* PLATFORM SETTINGS TAB */}
+        {tab === 'settings' && (
+          <div style={{ padding: 32 }}>
+            <PlatformSettingsTab
+              config={platformConfig}
+              onConfigSaved={(newConfig) => {
+                setPlatformConfig(newConfig)
+                if (onConfigChange) onConfigChange(newConfig)
+              }}
+            />
+          </div>
+        )}
+
+      </div>
 
       {/* ADMIN SESSION EDIT MODAL */}
       {adminEditSession && (
@@ -400,13 +395,11 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
             style={{ background: 'white', width: '100%', maxWidth: 480, height: '100vh', overflowY: 'auto', padding: 36 }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Drawer header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
               <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif' }}>User Profile</h2>
               <button onClick={() => setSelectedUser(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65' }}>×</button>
             </div>
 
-            {/* Avatar + name */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
               <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 26, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
                 {selectedUser.avatar_url
@@ -423,53 +416,41 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               </div>
             </div>
 
-            {/* Meta rows */}
             <div style={{ background: '#faf7f2', borderRadius: 12, padding: '4px 0', marginBottom: 24 }}>
               {[
                 ['Role', selectedUser.role || 'learner'],
                 ['Choreo Status', selectedUser.role === 'choreographer' ? (selectedUser.choreographer_approved ? '✓ Approved' : '⏳ Pending') : '—'],
                 ['Instagram', selectedUser.instagram_handle ? `@${selectedUser.instagram_handle}` : '—'],
-                ['Teaching Language', selectedUser.teaching_language || '—'],
-                ['Applied', formatDate(selectedUser.choreographer_requested_at)],
-                ['Last Sign In', formatDate(selectedUser.last_sign_in_at)],
                 ['Joined', formatDate(selectedUser.auth_created_at || selectedUser.created_at)],
               ].map(([label, value]) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #e2dbd4' }}>
-                  <span style={{ fontSize: 12, color: '#7a6e65' }}>{label}</span>
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid #f0ebe6' }}>
+                  <span style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#0f0c0c', textTransform: 'capitalize' }}>{value}</span>
                 </div>
               ))}
             </div>
 
-            {/* ── SUPREME LEADER: Role Assignment ── */}
-            <div style={{ marginBottom: 24, background: '#f5f0ff', border: '1px solid #c4b5fd', borderRadius: 12, padding: 20 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#5b4fcf', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>
-                ⚡ Supreme Leader — Role Assignment
-              </div>
-              <p style={{ fontSize: 12, color: '#7a6e65', marginBottom: 16, lineHeight: 1.5 }}>
-                Directly set this user's role. Promoting to Choreographer bypasses the application and auto-approves. Also clears any suspension.
-              </p>
+            {/* Role switcher */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Set Role</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   onClick={() => setUserRole(selectedUser.id, 'learner')}
-                  disabled={selectedUser.role === 'learner' && !selectedUser.suspended}
+                  disabled={selectedUser.role === 'learner' && !selectedUser.choreographer_approved}
                   style={{
                     flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    cursor: (selectedUser.role === 'learner' && !selectedUser.suspended) ? 'not-allowed' : 'pointer',
-                    border: '1px solid #e2dbd4',
-                    background: (selectedUser.role === 'learner' && !selectedUser.suspended) ? '#f0ebe6' : 'white',
-                    color: (selectedUser.role === 'learner' && !selectedUser.suspended) ? '#7a6e65' : '#0f0c0c',
+                    cursor: 'pointer', border: '1px solid #e2dbd4',
+                    background: selectedUser.role === 'learner' ? '#0f0c0c' : 'white',
+                    color: selectedUser.role === 'learner' ? 'white' : '#5a4e47',
                   }}
                 >
-                  👤 Set as Learner
+                  👤 Learner
                 </button>
                 <button
                   onClick={() => setUserRole(selectedUser.id, 'choreographer')}
-                  disabled={selectedUser.role === 'choreographer' && selectedUser.choreographer_approved && !selectedUser.suspended}
                   style={{
                     flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    cursor: (selectedUser.role === 'choreographer' && selectedUser.choreographer_approved && !selectedUser.suspended) ? 'not-allowed' : 'pointer',
-                    border: 'none',
+                    cursor: 'pointer', border: 'none',
                     background: (selectedUser.role === 'choreographer' && selectedUser.choreographer_approved && !selectedUser.suspended) ? '#c4b5fd' : '#5b4fcf',
                     color: 'white',
                   }}
@@ -479,7 +460,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               </div>
             </div>
 
-            {/* Bio */}
             {selectedUser.bio && (
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Bio</div>
@@ -489,16 +469,12 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               </div>
             )}
 
-            {/* Admin Notes */}
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Internal Notes</div>
               <AdminNotes userId={selectedUser.id} existingNotes={selectedUser.admin_notes} />
             </div>
 
-            {/* ── ACTION BUTTONS ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-              {/* Pending choreo → approve from drawer */}
               {selectedUser.role === 'choreographer' && !selectedUser.choreographer_approved && !selectedUser.suspended && (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => { rejectChoreographer(selectedUser.id); setSelectedUser(null) }}
@@ -512,7 +488,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                 </div>
               )}
 
-              {/* Approved choreographer → revoke */}
               {selectedUser.role === 'choreographer' && selectedUser.choreographer_approved && !selectedUser.suspended && (
                 <button onClick={() => initiateRevoke(selectedUser)}
                   style={{ width: '100%', background: '#fff0e6', border: '1px solid #e8a020', color: '#c8430a', padding: '12px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
@@ -520,7 +495,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                 </button>
               )}
 
-              {/* Suspend — any active user */}
               {!selectedUser.suspended && (
                 <button onClick={() => initiateSuspend(selectedUser)}
                   style={{ width: '100%', background: '#fff0f0', border: '1px solid #ffcccc', color: '#cc0000', padding: '12px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
@@ -528,7 +502,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                 </button>
               )}
 
-              {/* Reinstate suspended user */}
               {selectedUser.suspended && (
                 <div>
                   <div style={{ background: '#fff0f0', border: '1px solid #ffcccc', borderRadius: 8, padding: '12px 16px', marginBottom: 8 }}>
@@ -600,15 +573,12 @@ function ConfirmActionDialog({ action, onConfirm, onCancel, formatDate }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ background: 'white', borderRadius: 20, padding: 36, width: '100%', maxWidth: 520 }}>
-
         <div style={{ fontSize: 40, marginBottom: 16, textAlign: 'center' }}>
           {isRevoke ? '⚠️' : '🚫'}
         </div>
-
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', marginBottom: 8, textAlign: 'center', fontFamily: 'Georgia, serif' }}>
           {isRevoke ? 'Revoke Choreographer Status' : 'Suspend Account'}
         </h2>
-
         <p style={{ fontSize: 14, color: '#7a6e65', marginBottom: 24, textAlign: 'center', lineHeight: 1.6 }}>
           {isRevoke
             ? `This will remove choreographer access for ${action.user.full_name || action.user.email} and cancel all their active sessions.`
@@ -616,7 +586,6 @@ function ConfirmActionDialog({ action, onConfirm, onCancel, formatDate }) {
           }
         </p>
 
-        {/* Active sessions warning */}
         {action.sessions?.length > 0 && (
           <div style={{ background: '#fff8e6', border: '1px solid #e8a020', borderRadius: 12, padding: 16, marginBottom: 24 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#e8a020', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
@@ -634,7 +603,6 @@ function ConfirmActionDialog({ action, onConfirm, onCancel, formatDate }) {
           </div>
         )}
 
-        {/* Reason input */}
         <div style={{ marginBottom: 24 }}>
           <label style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }}>
             Reason (required)
@@ -677,14 +645,26 @@ function fmtTimeAdmin(t) {
   return `${h % 12 || 12}:${m.toString().padStart(2,'0')} ${ampm}`
 }
 
+// Helper: converts a UTC timestamp to a local YYYY-MM-DD string (IST-safe)
+function toLocalDateString(utcStr) {
+  const d = new Date(utcStr)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function AdminSessionEditModal({ session, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: session.title || '',
     description: session.description || '',
-    date: session.scheduled_at ? new Date(session.scheduled_at).toISOString().split('T')[0] : '',
+    // ✅ FIX: use local date (not UTC ISO date) so IST users don't get off-by-one day
+    date: session.scheduled_at ? toLocalDateString(session.scheduled_at) : '',
     time: session.scheduled_at ? (() => {
       const d = new Date(session.scheduled_at)
-      return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes() < 30 ? '00' : '30'}`
+      const h = d.getHours().toString().padStart(2, '0')
+      const m = d.getMinutes() < 30 ? '00' : '30'
+      return `${h}:${m}`
     })() : '',
     duration: session.duration_minutes || 60,
     price: session.price_tiers?.[0]?.price || 0,
@@ -701,15 +681,16 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
   async function handleSave() {
     if (!form.title || !form.date || !form.time) { alert('Title, date and time required'); return }
     setSaving(true)
+    // Construct as local datetime — browser interprets YYYY-MM-DDTHH:MM:SS as local time
     const scheduledAt = new Date(`${form.date}T${form.time}:00`).toISOString()
     const { error } = await supabase.from('sessions').update({
       title: form.title,
       description: form.description,
       scheduled_at: scheduledAt,
-      duration_minutes: form.duration,
+      duration_minutes: Number(form.duration),
       price_tiers: [{ seats: form.max_seats, price: form.price }],
-      max_seats: form.max_seats,
-      min_seats: form.min_seats,
+      max_seats: Number(form.max_seats),
+      min_seats: Number(form.min_seats),
       status: form.status,
     }).eq('id', session.id)
     if (error) alert(error.message)
@@ -755,33 +736,45 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
               </select>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
-              <label style={labelStyle}>Duration</label>
-              <select style={inputStyle} value={form.duration} onChange={e => set('duration', +e.target.value)}>
-                {[45,60,75,90,120].map(d => <option key={d} value={d}>{d}m</option>)}
+              <label style={labelStyle}>Duration (mins)</label>
+              <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
+                {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Price ₹</label>
-              <input style={inputStyle} type="number" value={form.price} onChange={e => set('price', +e.target.value)} />
+              <label style={labelStyle}>Status</label>
+              <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
+                {['draft','open','confirmed','cancelled','completed'].map(s => (
+                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                ))}
+              </select>
             </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             <div>
-              <label style={labelStyle}>Max Seats</label>
-              <input style={inputStyle} type="number" value={form.max_seats} onChange={e => set('max_seats', +e.target.value)} />
+              <label style={labelStyle}>Price (₹)</label>
+              <input style={inputStyle} type="number" min="0" value={form.price} onChange={e => set('price', Number(e.target.value))} />
             </div>
             <div>
               <label style={labelStyle}>Min Seats</label>
-              <input style={inputStyle} type="number" value={form.min_seats} onChange={e => set('min_seats', +e.target.value)} />
+              <input style={inputStyle} type="number" min="1" value={form.min_seats} onChange={e => set('min_seats', Number(e.target.value))} />
+            </div>
+            <div>
+              <label style={labelStyle}>Max Seats</label>
+              <input style={inputStyle} type="number" min="1" value={form.max_seats} onChange={e => set('max_seats', Number(e.target.value))} />
             </div>
           </div>
-          <div>
-            <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
-              {['draft','open','confirmed','full','cancelled','completed'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <button onClick={handleSave} disabled={saving} style={{ width: '100%', background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: 13, fontSize: 15, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+        </div>
+
+        <div style={{ marginTop: 24, display: 'flex', gap: 10 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, background: 'transparent', border: '1px solid #e2dbd4', color: '#7a6e65', padding: '12px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            style={{ flex: 2, background: '#c8430a', color: 'white', padding: '12px', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', border: 'none', opacity: saving ? 0.7 : 1 }}>
             {saving ? 'Saving...' : 'Save Changes →'}
           </button>
         </div>
@@ -790,13 +783,8 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
   )
 }
 
-
 // ── PlatformSettingsTab ────────────────────────────────────────
-// Drop this as a component at the bottom of AdminPage.jsx
-// Then add to the tabs bar and render in the content section
-
 function PlatformSettingsTab({ onConfigSaved }) {
-  const [config, setConfig] = useState(null)
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -811,7 +799,6 @@ function PlatformSettingsTab({ onConfigSaved }) {
       .eq('id', 1)
       .single()
     if (data) {
-      setConfig(data)
       setForm({
         host_pre_join_minutes:  data.host_pre_join_minutes,
         guest_pre_join_minutes: data.guest_pre_join_minutes,
@@ -841,14 +828,9 @@ function PlatformSettingsTab({ onConfigSaved }) {
   const inputStyle = {
     width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4',
     borderRadius: 8, padding: '10px 14px', fontSize: 15, fontWeight: 600,
-    outline: 'none', boxSizing: 'border-box', color: '#0f0c0c',
-    textAlign: 'center',
+    outline: 'none', boxSizing: 'border-box', color: '#0f0c0c', textAlign: 'center',
   }
   const labelStyle = { fontSize: 12, color: '#7a6e65', fontWeight: 600, marginBottom: 6, display: 'block' }
-  const sectionStyle = {
-    background: 'white', borderRadius: 16, padding: 28,
-    border: '1px solid #e2dbd4', marginBottom: 20,
-  }
 
   if (loading || !form) return (
     <div style={{ padding: 40, textAlign: 'center', color: '#7a6e65' }}>Loading settings...</div>
@@ -856,7 +838,6 @@ function PlatformSettingsTab({ onConfigSaved }) {
 
   return (
     <div style={{ maxWidth: 640 }}>
-
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 800, color: '#0f0c0c', marginBottom: 6 }}>
           Platform Settings
@@ -867,122 +848,46 @@ function PlatformSettingsTab({ onConfigSaved }) {
         </p>
       </div>
 
-      {/* PRE-JOIN */}
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 20 }}>🚪</span>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c' }}>Early Entry</div>
+      <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', marginBottom: 20 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#c8430a', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 20 }}>
+          🎭 Choreographer (Host)
         </div>
-        <p style={{ fontSize: 13, color: '#7a6e65', marginBottom: 20, lineHeight: 1.5 }}>
-          How many minutes before the scheduled start time can each role enter the classroom.
-        </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div>
-            <label style={labelStyle}>🎭 Choreographer (host)</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number" min="0" max="120"
-                value={form.host_pre_join_minutes}
-                onChange={e => set('host_pre_join_minutes', e.target.value)}
-                style={inputStyle}
-              />
-              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins early</span>
-            </div>
+            <label style={labelStyle}>Early entry (minutes before)</label>
+            <input style={inputStyle} type="number" min="0" max="60" value={form.host_pre_join_minutes}
+              onChange={e => set('host_pre_join_minutes', e.target.value)} />
           </div>
           <div>
-            <label style={labelStyle}>💃 Learner (guest)</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number" min="0" max="60"
-                value={form.guest_pre_join_minutes}
-                onChange={e => set('guest_pre_join_minutes', e.target.value)}
-                style={inputStyle}
-              />
-              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins early</span>
-            </div>
+            <label style={labelStyle}>Grace period (minutes after end)</label>
+            <input style={inputStyle} type="number" min="0" max="120" value={form.host_grace_minutes}
+              onChange={e => set('host_grace_minutes', e.target.value)} />
           </div>
-        </div>
-        <div style={{ marginTop: 14, padding: '10px 14px', background: '#faf7f2', borderRadius: 8, fontSize: 12, color: '#7a6e65' }}>
-          Example: If class starts at <strong>5:00 PM</strong> and host early entry is <strong>{form.host_pre_join_minutes} mins</strong>,
-          the choreographer can enter from <strong>{formatExampleTime(17 * 60, -form.host_pre_join_minutes)}</strong>.
-          Learners can enter from <strong>{formatExampleTime(17 * 60, -form.guest_pre_join_minutes)}</strong>.
         </div>
       </div>
 
-      {/* GRACE PERIOD */}
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 20 }}>⏱️</span>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c' }}>Grace Period After Session Ends</div>
+      <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', marginBottom: 28 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#5b4fcf', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 20 }}>
+          💃 Learner (Guest)
         </div>
-        <p style={{ fontSize: 13, color: '#7a6e65', marginBottom: 20, lineHeight: 1.5 }}>
-          How many minutes after the scheduled end time the classroom token stays valid.
-          Tokens expire hard at this point — no re-entry possible after.
-        </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div>
-            <label style={labelStyle}>🎭 Choreographer (host)</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number" min="0" max="120"
-                value={form.host_grace_minutes}
-                onChange={e => set('host_grace_minutes', e.target.value)}
-                style={inputStyle}
-              />
-              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins grace</span>
-            </div>
+            <label style={labelStyle}>Early entry (minutes before)</label>
+            <input style={inputStyle} type="number" min="0" max="30" value={form.guest_pre_join_minutes}
+              onChange={e => set('guest_pre_join_minutes', e.target.value)} />
           </div>
           <div>
-            <label style={labelStyle}>💃 Learner (guest)</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number" min="0" max="60"
-                value={form.guest_grace_minutes}
-                onChange={e => set('guest_grace_minutes', e.target.value)}
-                style={inputStyle}
-              />
-              <span style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>mins grace</span>
-            </div>
+            <label style={labelStyle}>Grace period (minutes after end)</label>
+            <input style={inputStyle} type="number" min="0" max="60" value={form.guest_grace_minutes}
+              onChange={e => set('guest_grace_minutes', e.target.value)} />
           </div>
         </div>
-        <div style={{ marginTop: 14, padding: '10px 14px', background: '#faf7f2', borderRadius: 8, fontSize: 12, color: '#7a6e65' }}>
-          Example: For a <strong>60-min class starting 5:00 PM</strong>, it ends at 6:00 PM.
-          Learner tokens expire at <strong>{formatExampleTime(18 * 60, form.guest_grace_minutes)}</strong>.
-          Host token expires at <strong>{formatExampleTime(18 * 60, form.host_grace_minutes)}</strong>.
-        </div>
       </div>
 
-      {/* SAVE */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{
-            background: saved ? '#1a7a3c' : '#c8430a',
-            color: 'white', border: 'none', borderRadius: 10,
-            padding: '13px 32px', fontSize: 15, fontWeight: 700,
-            cursor: saving ? 'not-allowed' : 'pointer',
-            opacity: saving ? 0.7 : 1, transition: 'background 0.3s',
-          }}
-        >
-          {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Settings'}
-        </button>
-        {saved && (
-          <span style={{ fontSize: 13, color: '#1a7a3c', fontWeight: 600 }}>
-            Changes will apply to all new token requests immediately.
-          </span>
-        )}
-      </div>
-
+      <button onClick={handleSave} disabled={saving}
+        style={{ background: saved ? '#1a7a3c' : '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+        {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Settings'}
+      </button>
     </div>
   )
-}
-
-function formatExampleTime(baseMinutes, offsetMinutes) {
-  const total = baseMinutes + offsetMinutes
-  const h = Math.floor(((total % (24 * 60)) + 24 * 60) % (24 * 60) / 60)
-  const m = ((total % 60) + 60) % 60
-  const ampm = h < 12 ? 'AM' : 'PM'
-  const h12 = h % 12 || 12
-  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`
 }
