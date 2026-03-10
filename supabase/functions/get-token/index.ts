@@ -54,6 +54,37 @@ async function createRoom(sessionId: string, mgmtToken: string): Promise<string>
   return data.id
 }
 
+// ── NEW: Check if this user_id is already an active peer in the room ─────────
+// Uses 100ms Sessions API: GET /v2/sessions?room_id=...&active=true
+// Fails open (returns false) on any API error — so a 100ms outage never
+// prevents legitimate joins.
+async function isUserAlreadyInRoom(roomId: string, userId: string, mgmtToken: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://api.100ms.live/v2/sessions?room_id=${roomId}&active=true`,
+      { headers: { 'Authorization': `Bearer ${mgmtToken}` } }
+    )
+    if (!res.ok) return false
+    const data = await res.json()
+
+    // data.data = array of active session objects
+    // each session has a `peers` object keyed by peer_id
+    // each peer has user_id (the value we passed) and left_at (null if still active)
+    const sessions = data?.data || []
+    for (const s of sessions) {
+      const peers = s.peers || {}
+      for (const peer of Object.values(peers) as any[]) {
+        if (peer.user_id === userId && peer.left_at == null) {
+          return true
+        }
+      }
+    }
+    return false
+  } catch {
+    return false // fail open — never block a legitimate join due to API error
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -92,19 +123,18 @@ serve(async (req) => {
     const { data: profile } = await supabase
       .from('profiles').select('full_name, is_admin, role').eq('id', user.id).single()
 
-    // ── Role: determine first — drives config selection ─────────
+    // ── Role determination ───────────────────────────────────────
     const isChoreo = session.choreographer_id === user.id
     const isAdmin  = profile?.is_admin === true
     const hmsRole  = (isChoreo || isAdmin) ? 'host' : 'guest'
     const isHost   = hmsRole === 'host'
 
-    // ── Platform config ─────────────────────────────────────────
+    // ── Platform config ──────────────────────────────────────────
     const { data: config } = await supabase
       .from('platform_config')
       .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
       .eq('id', 1).single()
 
-    // Priority: per-session override → platform config → safety fallback
     const preJoinMinutes = isHost
       ? (session.host_pre_join_minutes_override  ?? config?.host_pre_join_minutes  ?? 15)
       : (session.guest_pre_join_minutes_override ?? config?.guest_pre_join_minutes ?? 5)
@@ -113,14 +143,14 @@ serve(async (req) => {
       ? (session.host_grace_minutes_override  ?? config?.host_grace_minutes  ?? 30)
       : (session.guest_grace_minutes_override ?? config?.guest_grace_minutes ?? 15)
 
-    // ── Wall-clock window ───────────────────────────────────────
-    const nowEpoch        = Math.floor(Date.now() / 1000)
-    const scheduledStart  = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
-    const scheduledEnd    = scheduledStart + (session.duration_minutes || 60) * 60
-    const tokenValidFrom  = scheduledStart - (preJoinMinutes * 60)
-    const tokenExpiry     = scheduledEnd   + (graceMinutes   * 60)
+    // ── Time window ──────────────────────────────────────────────
+    const nowEpoch       = Math.floor(Date.now() / 1000)
+    const scheduledStart = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
+    const scheduledEnd   = scheduledStart + (session.duration_minutes || 60) * 60
+    const tokenValidFrom = scheduledStart - (preJoinMinutes * 60)
+    const tokenExpiry    = scheduledEnd   + (graceMinutes   * 60)
 
-    // ── Gate: too early ─────────────────────────────────────────
+    // ── Gate: too early ──────────────────────────────────────────
     if (nowEpoch < tokenValidFrom) {
       const minsLeft = Math.ceil((tokenValidFrom - nowEpoch) / 60)
       return new Response(
@@ -157,11 +187,32 @@ serve(async (req) => {
     }
 
     // ── Get or create 100ms room ────────────────────────────────
+    // mgmtToken hoisted here (not inside the if-block) so it's also available
+    // for the concurrent-join check below.
     let roomId = session.room_id
+    const mgmtToken = await getManagementToken()
+
     if (!roomId) {
-      const mgmtToken = await getManagementToken()
       roomId = await createRoom(session_id, mgmtToken)
       await supabase.from('sessions').update({ room_id: roomId }).eq('id', session_id)
+    }
+
+    // ── NEW Gate: one device per learner ────────────────────────
+    // Hosts (choreo/admin) are exempt — they must be able to rejoin if they drop.
+    // Guests are limited to one active device at a time.
+    // isUserAlreadyInRoom fails open (returns false) on 100ms API errors,
+    // so a downstream outage never blocks legitimate joins.
+    if (!isHost) {
+      const alreadyInRoom = await isUserAlreadyInRoom(roomId, user.id, mgmtToken)
+      if (alreadyInRoom) {
+        return new Response(
+          JSON.stringify({
+            error: 'already_joined',
+            message: 'You are already in this class on another device or tab. Please leave that session first.',
+          }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
     }
 
     const userName  = profile?.full_name || user.email?.split('@')[0] || 'Participant'
