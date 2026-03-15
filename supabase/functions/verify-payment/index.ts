@@ -330,8 +330,10 @@ serve(async (req) => {
     }
 
     if (sessionData && user.email) {
-      // Don't await — fire and forget so email never delays the response
-      sendBookingConfirmationEmail(
+      // Use EdgeRuntime.waitUntil so Supabase keeps the function alive
+      // long enough for the email fetch to complete, without delaying
+      // the response back to the user.
+      const emailPromise = sendBookingConfirmationEmail(
         user.email,
         learnerName,
         sessionData.title,
@@ -342,6 +344,13 @@ serve(async (req) => {
         choreographerName,
         session_id,
       )
+      try {
+        // @ts-ignore — EdgeRuntime is available in Supabase Deno environment
+        EdgeRuntime.waitUntil(emailPromise)
+      } catch {
+        // EdgeRuntime not available in local dev — just await directly
+        await emailPromise
+      }
     }
 
     return new Response(
