@@ -54,28 +54,59 @@ async function createRoom(sessionId: string, mgmtToken: string): Promise<string>
   return data.id
 }
 
-// ── Check if this user_id is already an active peer in the room ─────────────
-// Fails open (returns false) on any API error.
-async function isUserAlreadyInRoom(roomId: string, userId: string, mgmtToken: string): Promise<boolean> {
+// ── Get ghost peer_ids for this user_id in the room ─────────────────────────
+// Returns array of peer_ids that are still active (left_at == null).
+// These are ghost peers left behind when mobile WebRTC didn't close cleanly.
+async function getGhostPeerIds(roomId: string, userId: string, mgmtToken: string): Promise<string[]> {
   try {
     const res = await fetch(
       `https://api.100ms.live/v2/sessions?room_id=${roomId}&active=true`,
       { headers: { 'Authorization': `Bearer ${mgmtToken}` } }
     )
-    if (!res.ok) return false
+    if (!res.ok) return []
     const data = await res.json()
+    const ghostIds: string[] = []
     const sessions = data?.data || []
     for (const s of sessions) {
       const peers = s.peers || {}
-      for (const peer of Object.values(peers) as any[]) {
+      // peers is keyed by peer_id — that key IS the peer_id for the remove API
+      for (const [peerId, peer] of Object.entries(peers) as [string, any][]) {
         if (peer.user_id === userId && peer.left_at == null) {
-          return true
+          ghostIds.push(peerId)
         }
       }
     }
-    return false
+    return ghostIds
   } catch {
-    return false
+    return [] // fail open
+  }
+}
+
+// ── Remove ghost peers from the active room ───────────────────────────────────
+// Called when recently_left=true to clean up stale WebRTC connections
+// before issuing a fresh token. Fails silently — never blocks a join.
+async function removeGhostPeers(roomId: string, ghostPeerIds: string[], mgmtToken: string): Promise<void> {
+  for (const peerId of ghostPeerIds) {
+    try {
+      await fetch(
+        `https://api.100ms.live/v2/active-rooms/${roomId}/remove-peers`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${mgmtToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            peer_id: peerId,
+            reason: 'Reconnecting from same device',
+          }),
+        }
+      )
+      console.log(`Removed ghost peer ${peerId} from room ${roomId}`)
+    } catch (err) {
+      console.error(`Failed to remove ghost peer ${peerId}:`, err)
+      // Continue — try to remove remaining ghosts even if one fails
+    }
   }
 }
 
@@ -188,18 +219,32 @@ serve(async (req) => {
     }
 
     // ── Gate: one device per learner ─────────────────────────────
-    // Skip if: host (always exempt) OR recently_left=true (rejoining
-    // from same device — 100ms hasn't cleared the stale peer yet).
-    if (!isHost && !recently_left) {
-      const alreadyInRoom = await isUserAlreadyInRoom(roomId, user.id, mgmtToken)
-      if (alreadyInRoom) {
-        return new Response(
-          JSON.stringify({
-            error: 'already_joined',
-            message: 'You are already in this class on another device or tab. Please leave that session first.',
-          }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+    // Hosts always exempt. For guests:
+    // - recently_left=true → user just left on THIS device.
+    //   Mobile WebRTC often leaves ghost peers behind (left_at never set).
+    //   Remove any ghosts first, then issue fresh token.
+    // - recently_left=false → normal join. Block if already active elsewhere.
+    if (!isHost) {
+      const ghostPeerIds = await getGhostPeerIds(roomId, user.id, mgmtToken)
+
+      if (recently_left) {
+        // Clean up ghost peers so the fresh join has a clean slate
+        if (ghostPeerIds.length > 0) {
+          await removeGhostPeers(roomId, ghostPeerIds, mgmtToken)
+          // Brief wait for 100ms to process the removals
+          await new Promise(r => setTimeout(r, 800))
+        }
+      } else {
+        // Normal join — block if already active on another device
+        if (ghostPeerIds.length > 0) {
+          return new Response(
+            JSON.stringify({
+              error: 'already_joined',
+              message: 'You are already in this class on another device or tab. Please leave that session first.',
+            }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
       }
     }
 
