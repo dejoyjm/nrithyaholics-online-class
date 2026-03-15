@@ -156,7 +156,15 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
           'Authorization': `Bearer ${token}`,
           'apikey': SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ session_id: sessionId }),
+        body: JSON.stringify({
+            session_id: sessionId,
+            // If user left this session within last 90s on THIS device,
+            // skip the peer check — 100ms takes ~60s to clear departed peers.
+            recently_left: (() => {
+            const leftAt = sessionStorage.getItem(`nrh_left_${sessionId}`)
+            return leftAt ? (Date.now() - parseInt(leftAt)) < 90000 : false
+            })(),
+            }),
       })
 
       const data = await res.json()
@@ -170,11 +178,11 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         setStatus('ended')
         return
       }
-      if (data.error === 'already_joined') {
+        if (data.error === 'already_joined') {
         setStatus('error')
-        setErrorMsg('You are already in this class on another device or tab. Please leave that session first, then try again.')
+        setErrorMsg('You appear to be in this class on another device or browser tab. Please close the other session first, then tap "Try Again" below. If you just left, wait 30 seconds before rejoining.')
         return
-      }
+        }
       if (!res.ok || !data.token) {
         setStatus('error')
         setErrorMsg(data.error || 'Could not get room access. Please try again.')
@@ -263,7 +271,10 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
           This class has ended
         </div>
         <div style={{ fontSize: 14, color: '#7a6e65', textAlign: 'center' }}>Hope you enjoyed the session!</div>
-        <button onClick={onLeave} style={{ marginTop: 8, background: '#c8430a', border: 'none', color: 'white', padding: '12px 28px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+        <button onClick={() => {
+            sessionStorage.setItem(`nrh_left_${sessionId}`, Date.now().toString())
+            onLeave()
+            }} style={{ marginTop: 8, background: '#c8430a', border: 'none', color: 'white', padding: '12px 28px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
           Back to Sessions
         </button>
       </div>
@@ -302,7 +313,10 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         <div style={{ fontSize: 56 }}>👋</div>
         <div style={{ fontSize: 24, fontWeight: 700, color: '#faf7f2', fontFamily: 'Georgia, serif' }}>You've left the class</div>
         <div style={{ fontSize: 14, color: '#7a6e65' }}>Hope you enjoyed the session!</div>
-        <button onClick={onLeave} style={{ marginTop: 16, background: '#c8430a', border: 'none', color: 'white', padding: '12px 28px', borderRadius: 10, cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>
+        <button onClick={() => {
+            sessionStorage.setItem(`nrh_left_${sessionId}`, Date.now().toString())
+            onLeave()
+            }} style={{ marginTop: 16, background: '#c8430a', border: 'none', color: 'white', padding: '12px 28px', borderRadius: 10, cursor: 'pointer', fontSize: 15, fontWeight: 600 }}>
           Back to Sessions
         </button>
       </div>

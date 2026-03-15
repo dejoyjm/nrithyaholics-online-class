@@ -54,10 +54,8 @@ async function createRoom(sessionId: string, mgmtToken: string): Promise<string>
   return data.id
 }
 
-// ── NEW: Check if this user_id is already an active peer in the room ─────────
-// Uses 100ms Sessions API: GET /v2/sessions?room_id=...&active=true
-// Fails open (returns false) on any API error — so a 100ms outage never
-// prevents legitimate joins.
+// ── Check if this user_id is already an active peer in the room ─────────────
+// Fails open (returns false) on any API error.
 async function isUserAlreadyInRoom(roomId: string, userId: string, mgmtToken: string): Promise<boolean> {
   try {
     const res = await fetch(
@@ -66,10 +64,6 @@ async function isUserAlreadyInRoom(roomId: string, userId: string, mgmtToken: st
     )
     if (!res.ok) return false
     const data = await res.json()
-
-    // data.data = array of active session objects
-    // each session has a `peers` object keyed by peer_id
-    // each peer has user_id (the value we passed) and left_at (null if still active)
     const sessions = data?.data || []
     for (const s of sessions) {
       const peers = s.peers || {}
@@ -81,7 +75,7 @@ async function isUserAlreadyInRoom(roomId: string, userId: string, mgmtToken: st
     }
     return false
   } catch {
-    return false // fail open — never block a legitimate join due to API error
+    return false
   }
 }
 
@@ -89,7 +83,12 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { session_id } = await req.json()
+    // recently_left: client sends true when user just left this session
+    // on THIS device within the last 90 seconds. We skip the peer check
+    // because 100ms takes up to 60s to clear a departed peer, causing
+    // false "already joined" blocks on legitimate rejoins.
+    const { session_id, recently_left } = await req.json()
+
     if (!session_id) return new Response(
       JSON.stringify({ error: 'session_id required' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -123,13 +122,11 @@ serve(async (req) => {
     const { data: profile } = await supabase
       .from('profiles').select('full_name, is_admin, role').eq('id', user.id).single()
 
-    // ── Role determination ───────────────────────────────────────
     const isChoreo = session.choreographer_id === user.id
     const isAdmin  = profile?.is_admin === true
     const hmsRole  = (isChoreo || isAdmin) ? 'host' : 'guest'
     const isHost   = hmsRole === 'host'
 
-    // ── Platform config ──────────────────────────────────────────
     const { data: config } = await supabase
       .from('platform_config')
       .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
@@ -143,14 +140,12 @@ serve(async (req) => {
       ? (session.host_grace_minutes_override  ?? config?.host_grace_minutes  ?? 30)
       : (session.guest_grace_minutes_override ?? config?.guest_grace_minutes ?? 15)
 
-    // ── Time window ──────────────────────────────────────────────
     const nowEpoch       = Math.floor(Date.now() / 1000)
     const scheduledStart = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
     const scheduledEnd   = scheduledStart + (session.duration_minutes || 60) * 60
     const tokenValidFrom = scheduledStart - (preJoinMinutes * 60)
     const tokenExpiry    = scheduledEnd   + (graceMinutes   * 60)
 
-    // ── Gate: too early ──────────────────────────────────────────
     if (nowEpoch < tokenValidFrom) {
       const minsLeft = Math.ceil((tokenValidFrom - nowEpoch) / 60)
       return new Response(
@@ -163,13 +158,11 @@ serve(async (req) => {
       )
     }
 
-    // ── Gate: session over ──────────────────────────────────────
     if (nowEpoch > tokenExpiry) return new Response(
       JSON.stringify({ error: 'session_ended', message: 'This session has ended.' }),
       { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
-    // ── Learner: verify confirmed booking ───────────────────────
     if (!isHost) {
       const { data: booking } = await supabase
         .from('bookings').select('id, kicked')
@@ -186,9 +179,6 @@ serve(async (req) => {
       )
     }
 
-    // ── Get or create 100ms room ────────────────────────────────
-    // mgmtToken hoisted here (not inside the if-block) so it's also available
-    // for the concurrent-join check below.
     let roomId = session.room_id
     const mgmtToken = await getManagementToken()
 
@@ -197,12 +187,10 @@ serve(async (req) => {
       await supabase.from('sessions').update({ room_id: roomId }).eq('id', session_id)
     }
 
-    // ── NEW Gate: one device per learner ────────────────────────
-    // Hosts (choreo/admin) are exempt — they must be able to rejoin if they drop.
-    // Guests are limited to one active device at a time.
-    // isUserAlreadyInRoom fails open (returns false) on 100ms API errors,
-    // so a downstream outage never blocks legitimate joins.
-    if (!isHost) {
+    // ── Gate: one device per learner ─────────────────────────────
+    // Skip if: host (always exempt) OR recently_left=true (rejoining
+    // from same device — 100ms hasn't cleared the stale peer yet).
+    if (!isHost && !recently_left) {
       const alreadyInRoom = await isUserAlreadyInRoom(roomId, user.id, mgmtToken)
       if (alreadyInRoom) {
         return new Response(
