@@ -42,7 +42,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest }) {
+export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -513,8 +513,14 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
                   cursor: booking ? 'not-allowed' : 'pointer',
                   marginBottom: 12, transition: 'background 0.2s'
                 }}>
-                {booking ? '⏳ Processing...' : user ? `Pay ₹${totalAmount} & Book` : 'Login to Book'}
+                {booking ? '⏳ Processing...' : user ? `Pay ₹${totalAmount} & Book` : cameFromEmail ? 'Log In to Join Class →' : 'Login to Book'}
               </button>
+
+              {!user && cameFromEmail && (
+                <p style={{ fontSize: 12, color: '#7a6e65', textAlign: 'center', lineHeight: 1.6, margin: '0 0 8px' }}>
+                  Already booked? Log in and your spot will be waiting.
+                </p>
+              )}
 
               <p style={{ fontSize: 12, color: '#7a6e65', textAlign: 'center', lineHeight: 1.6, margin: 0 }}>
                 🔒 Secure payment via Razorpay · UPI, Cards, Netbanking accepted<br />

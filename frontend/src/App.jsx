@@ -25,6 +25,8 @@ export default function App() {
   const [currentClassroom, setCurrentClassroom] = useState(null)
   // ── NEW: auto-open test modal when arriving via email test link ──
   const [autoOpenTest, setAutoOpenTest] = useState(false)
+  // ── Set when arriving via email deep link (?session= param) ──
+  const [cameFromEmail, setCameFromEmail] = useState(false)
 
   // Detect URL params on app load — handles:
   // 1. Razorpay payment redirect-back
@@ -50,6 +52,7 @@ export default function App() {
     // ── NEW: Email deep link — ?session=ID or ?session=ID&test=1 ──
     if (sessionDeepLink) {
       setCurrentSession(sessionDeepLink)
+      setCameFromEmail(true)
       if (testParam === '1') setAutoOpenTest(true)
       return
     }
@@ -201,10 +204,11 @@ export default function App() {
     <SessionPage
       sessionId={currentSession} user={user} profile={profile}
       platformConfig={platformConfig}
-      onBack={() => { setCurrentSession(null); setRazorpayReturn(null); setAutoOpenTest(false) }}
+      onBack={() => { setCurrentSession(null); setRazorpayReturn(null); setAutoOpenTest(false); setCameFromEmail(false) }}
       onLoginClick={() => setShowAuth(true)}
       razorpayReturn={razorpayReturn}
       autoOpenTest={autoOpenTest}
+      cameFromEmail={cameFromEmail}
     />
   )
 
