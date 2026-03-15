@@ -294,9 +294,12 @@ serve(async (req) => {
       if (choreoProfile?.full_name) choreographerName = choreoProfile.full_name
     }
 
+    // ── Return OK to Razorpay IMMEDIATELY ───────────────────────
+    // Razorpay has a tight webhook timeout. Any delay here stalls the
+    // mobile UPI redirect chain and causes a broken payment UX.
+    // Use EdgeRuntime.waitUntil to send email AFTER the response.
     if (sessionData) {
-      // Webhook runs server-side — we can await directly, no EdgeRuntime needed
-      await sendBookingConfirmationEmail(
+      const emailPromise = sendBookingConfirmationEmail(
         userEmail,
         learnerName,
         sessionData.title,
@@ -307,6 +310,13 @@ serve(async (req) => {
         choreographerName,
         session_id,
       )
+      try {
+        // @ts-ignore — EdgeRuntime is available in Supabase Deno environment
+        EdgeRuntime.waitUntil(emailPromise)
+      } catch {
+        // Local dev fallback — fire without blocking
+        emailPromise.catch(e => console.error('Email error:', e))
+      }
     }
 
     return new Response('OK', { status: 200 })
