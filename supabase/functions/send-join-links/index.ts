@@ -185,10 +185,13 @@ serve(async (req) => {
     )
 
     // Allow manual trigger for a specific session (for testing)
+    // single_user_email: when set, only send to this user (late booking case)
     let manualSessionId: string | null = null
+    let singleUserEmail: string | null = null
     try {
       const body = await req.json()
       manualSessionId = body?.session_id || null
+      singleUserEmail = body?.single_user_email || null
     } catch { /* no body — cron trigger */ }
 
     // ── Find eligible sessions ────────────────────────────────────────────────
@@ -248,13 +251,15 @@ serve(async (req) => {
         .single()
       const choreographerName = choreoProfile?.full_name || 'your choreographer'
 
-      // Get all confirmed bookings for this session
-      const { data: bookings, error: bookingsError } = await supabase
+      // Get confirmed bookings — if singleUserEmail set, only that user (late booking)
+      let bookingsQuery = supabase
         .from('bookings')
         .select('id, booked_by')
         .eq('session_id', session.id)
         .eq('status', 'confirmed')
         .eq('kicked', false)
+
+      const { data: bookings, error: bookingsError } = await bookingsQuery
 
       if (bookingsError || !bookings || bookings.length === 0) {
         console.log(`No bookings for session ${session.id}`)
@@ -285,6 +290,9 @@ serve(async (req) => {
           console.error('No email for user', booking.booked_by)
           continue
         }
+
+        // Skip if single_user_email set and this isn't that user
+        if (singleUserEmail && email !== singleUserEmail) continue
 
         const name = profile?.full_name || email.split('@')[0]
         const redirectTo = `${APP_URL}/?session=${session.id}`

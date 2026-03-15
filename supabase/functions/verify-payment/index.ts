@@ -382,6 +382,39 @@ serve(async (req) => {
       }
     }
 
+    // ── Late booking: if join window already open, send join link immediately ──
+    // e.g. someone books 4 mins before class — cron already fired, won't catch them
+    const preJoinMins = sessionData.guest_pre_join_minutes_override ?? 5
+    const windowOpenTime = new Date(sessionData.scheduled_at).getTime() - (preJoinMins * 60 * 1000)
+    if (Date.now() >= windowOpenTime) {
+      const joinLinkPromise = (async () => {
+        try {
+          await fetch(
+            `${Deno.env.get('SUPABASE_URL')}/functions/v1/send-join-links`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({
+                session_id,
+                single_user_email: user.email,
+              }),
+            }
+          )
+        } catch (err) {
+          console.error('Late join link send failed:', err)
+        }
+      })()
+      try {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(joinLinkPromise)
+      } catch {
+        joinLinkPromise.catch(() => {})
+      }
+    }
+
     return new Response(
       JSON.stringify({ success: true, booking_id: booking.id }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

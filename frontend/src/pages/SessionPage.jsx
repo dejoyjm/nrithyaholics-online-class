@@ -264,10 +264,10 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
 
   // Who can see "Test my setup" — anytime, no time gate
-  const canTestSetup = user && (isChoreo || alreadyBooked || booked)
+  const canTestSetup = user && session.status !== 'cancelled' && (isChoreo || alreadyBooked || booked)
 
   // Who can see the join/start button — only within the time window
-  const canEnterClass = canJoinNow && (isChoreo || alreadyBooked || booked)
+  const canEnterClass = canJoinNow && session.status !== 'cancelled' && (isChoreo || alreadyBooked || booked)
 
   // Show classroom
   if (showClassroom && session) {
