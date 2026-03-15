@@ -23,21 +23,38 @@ export default function App() {
   const [currentChoreoId, setCurrentChoreoId] = useState(null)
   const [razorpayReturn, setRazorpayReturn] = useState(null)
   const [currentClassroom, setCurrentClassroom] = useState(null)
+  // ── NEW: auto-open test modal when arriving via email test link ──
+  const [autoOpenTest, setAutoOpenTest] = useState(false)
 
-  // Detect Razorpay redirect-back on app load
+  // Detect URL params on app load — handles:
+  // 1. Razorpay payment redirect-back
+  // 2. ?session=ID  — deep link to session from email (Join Class button)
+  // 3. ?session=ID&test=1 — deep link + auto-open SetupTestModal
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const orderId = params.get('razorpay_order_id')
-    const paymentId = params.get('razorpay_payment_id')
-    const signature = params.get('razorpay_signature')
+    const orderId        = params.get('razorpay_order_id')
+    const paymentId      = params.get('razorpay_payment_id')
+    const signature      = params.get('razorpay_signature')
     const paymentSuccess = params.get('payment_success')
-    const paymentError = params.get('payment_error')
+    const paymentError   = params.get('payment_error')
     const sessionIdParam = params.get('session_id')
+    // ── NEW params ──
+    const sessionDeepLink = params.get('session')
+    const testParam       = params.get('test')
 
-    if (orderId || paymentSuccess || paymentError) {
+    // Clean URL regardless of which param set we handle
+    if (orderId || paymentSuccess || paymentError || sessionDeepLink) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
+    // ── NEW: Email deep link — ?session=ID or ?session=ID&test=1 ──
+    if (sessionDeepLink) {
+      setCurrentSession(sessionDeepLink)
+      if (testParam === '1') setAutoOpenTest(true)
+      return
+    }
+
+    // Razorpay: webhook-first path (booking already exists)
     if (paymentSuccess === '1' && sessionIdParam) {
       const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
       sessionStorage.removeItem('nrh_pending_payment')
@@ -46,18 +63,19 @@ export default function App() {
       return
     }
 
+    // Razorpay: frontend verify path (booking not yet created)
     if (orderId && paymentId && signature) {
       const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
       sessionStorage.removeItem('nrh_pending_payment')
       if (pending.session_id) {
         setCurrentSession(pending.session_id)
         setRazorpayReturn({
-          razorpay_order_id: orderId,
+          razorpay_order_id:  orderId,
           razorpay_payment_id: paymentId,
-          razorpay_signature: decodeURIComponent(signature),
-          session_id: pending.session_id,
-          seats: pending.seats,
-          amount_inr: pending.amount_inr,
+          razorpay_signature:  decodeURIComponent(signature),
+          session_id:          pending.session_id,
+          seats:               pending.seats,
+          amount_inr:          pending.amount_inr,
         })
       }
     }
@@ -183,9 +201,10 @@ export default function App() {
     <SessionPage
       sessionId={currentSession} user={user} profile={profile}
       platformConfig={platformConfig}
-      onBack={() => { setCurrentSession(null); setRazorpayReturn(null) }}
+      onBack={() => { setCurrentSession(null); setRazorpayReturn(null); setAutoOpenTest(false) }}
       onLoginClick={() => setShowAuth(true)}
       razorpayReturn={razorpayReturn}
+      autoOpenTest={autoOpenTest}
     />
   )
 

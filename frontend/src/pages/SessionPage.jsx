@@ -42,7 +42,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig }) {
+export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -79,6 +79,11 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       }
     })
   }, [razorpayReturn])
+
+  // ── Auto-open SetupTestModal when arriving via email test link ──
+  useEffect(() => {
+    if (autoOpenTest && user) setShowSetupTest(true)
+  }, [autoOpenTest, user])
 
   async function fetchSession() {
     const { data, error } = await supabase

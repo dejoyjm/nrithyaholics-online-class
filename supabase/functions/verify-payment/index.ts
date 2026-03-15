@@ -47,7 +47,7 @@ async function sendBookingConfirmationEmail(
       timeZone: 'Asia/Kolkata',
     })
 
-    const sessionUrl = `${APP_URL}/#session-${sessionId}`
+    const sessionUrl = `${APP_URL}/?session=${sessionId}`
     const firstName  = toName?.split(' ')[0] || 'there'
 
     const html = `
@@ -132,7 +132,7 @@ async function sendBookingConfirmationEmail(
     <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:16px; margin-bottom:28px;">
       <div style="font-size:13px; color:#78350f; line-height:1.7;">
         <strong>📌 Before your class:</strong><br/>
-        • Test your camera and microphone at online.nrithyaholics.in<br/>
+        • <a href="${APP_URL}/?session=${sessionId}&test=1" style="color:#78350f;">Test your camera &amp; mic</a> — opens directly in NrithyaHolics<br/>
         • Join from a device with a stable internet connection<br/>
         • Find a space with enough room to move freely<br/>
         • You'll be muted on entry — unmute when asked
