@@ -1,30 +1,17 @@
-React framework with JavaScript
-
-  VITE v7.3.1  ready in 4487 ms
-
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: use --host to expose
-  ➜  press h + enter to show help
-
-✅ @supabase/supabase-js  — added 13 packages
-✅ react-router-dom       — added 7 packages  
-✅ tailwindcss            — added 32 packages
-✅ 0 vulnerabilities      — clean install!
+http://localhost:5173/
+https://nrithyaholics-online-class.vercel.app/
 
 
+cd frontend
 npm run dev
+```
 
+That's it. No venv needed — this is a Node/React project, not Python. `npm` handles everything.
 
-Landing page
-    ↓ click "Sign up" or "Log in"
-Auth page
-    ├── Continue with Google  (one click)
-    └── Continue with Phone   (enter number → OTP)
-    ↓ success
-Role selection (first time only)
-    ├── I want to learn  → Learner home
-    └── I want to teach  → Choreographer dashboard
-
+It'll print something like:
+```
+  VITE v7.x.x  ready in 300ms
+  ➜  Local:   http://localhost:5173/
 
 Supabase
 Project : nrithyaholics-online-class

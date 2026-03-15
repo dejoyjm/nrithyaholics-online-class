@@ -633,16 +633,20 @@ function ConfirmActionDialog({ action, onConfirm, onCancel, formatDate }) {
 }
 
 // ── Admin Session Edit Modal ─────────────────────────────────
-const TIME_SLOTS_ADMIN = [
-  '06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30',
-  '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30',
-  '14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30',
-  '18:00','18:30','19:00','19:30','20:00','20:30','21:00','21:30','22:00','22:30',
-]
-function fmtTimeAdmin(t) {
-  const [h, m] = t.split(':').map(Number)
+const ADMIN_HOURS   = Array.from({ length: 24 }, (_, i) => i)
+const ADMIN_MINUTES = ['00', '15', '30', '45']
+function fmtAdminHour(h) {
   const ampm = h < 12 ? 'AM' : 'PM'
-  return `${h % 12 || 12}:${m.toString().padStart(2,'0')} ${ampm}`
+  return `${h % 12 || 12} ${ampm}`
+}
+function parseAdminTime(utcStr) {
+  if (!utcStr) return { hour: 9, minute: '00' }
+  const d = new Date(utcStr)
+  const h = d.getHours()
+  const m = d.getMinutes()
+  const mins = [0, 15, 30, 45]
+  const nearest = mins.reduce((prev, curr) => Math.abs(curr - m) < Math.abs(prev - m) ? curr : prev, 0)
+  return { hour: h, minute: String(nearest).padStart(2, '0') }
 }
 
 // Helper: converts a UTC timestamp to a local YYYY-MM-DD string (IST-safe)
@@ -660,12 +664,8 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
     description: session.description || '',
     // ✅ FIX: use local date (not UTC ISO date) so IST users don't get off-by-one day
     date: session.scheduled_at ? toLocalDateString(session.scheduled_at) : '',
-    time: session.scheduled_at ? (() => {
-      const d = new Date(session.scheduled_at)
-      const h = d.getHours().toString().padStart(2, '0')
-      const m = d.getMinutes() < 30 ? '00' : '30'
-      return `${h}:${m}`
-    })() : '',
+    hour:   session.scheduled_at ? parseAdminTime(session.scheduled_at).hour   : 9,
+    minute: session.scheduled_at ? parseAdminTime(session.scheduled_at).minute : '00',
     duration: session.duration_minutes || 60,
     price: session.price_tiers?.[0]?.price || 0,
     max_seats: session.max_seats || 20,
@@ -679,10 +679,10 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
   const labelStyle = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
 
   async function handleSave() {
-    if (!form.title || !form.date || !form.time) { alert('Title, date and time required'); return }
+    if (!form.title || !form.date || form.hour === '' || !form.minute) { alert('Title, date and time required'); return }
     setSaving(true)
-    // Construct as local datetime — browser interprets YYYY-MM-DDTHH:MM:SS as local time
-    const scheduledAt = new Date(`${form.date}T${form.time}:00`).toISOString()
+    const timeStr = `${String(form.hour).padStart(2,'0')}:${form.minute}:00`
+    const scheduledAt = new Date(`${form.date}T${timeStr}`).toISOString()
     const { error } = await supabase.from('sessions').update({
       title: form.title,
       description: form.description,
@@ -729,13 +729,21 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
               <label style={labelStyle}>Date</label>
               <input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} />
             </div>
-            <div>
+           <div>
               <label style={labelStyle}>Start Time</label>
-              <select style={inputStyle} value={form.time} onChange={e => set('time', e.target.value)}>
-                {TIME_SLOTS_ADMIN.map(t => <option key={t} value={t}>{fmtTimeAdmin(t)}</option>)}
-              </select>
-            </div>
-          </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <select style={inputStyle} value={form.hour} onChange={e => set('hour', Number(e.target.value))}>
+                  {ADMIN_HOURS.map(h => (
+                    <option key={h} value={h}>{fmtAdminHour(h)}</option>
+                  ))}
+                </select>
+                <select style={inputStyle} value={form.minute} onChange={e => set('minute', e.target.value)}>
+                  {ADMIN_MINUTES.map(m => (
+                    <option key={m} value={m}>:{m}</option>
+                  ))}
+                </select>
+              </div>
+            </div>          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <label style={labelStyle}>Duration (mins)</label>
