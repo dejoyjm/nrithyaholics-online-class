@@ -219,24 +219,56 @@ serve(async (req) => {
     }
 
     // ── Gate: one device per learner ─────────────────────────────
-    // Hosts always exempt. For guests:
-    // - recently_left=true → user just left on THIS device.
-    //   Mobile WebRTC often leaves ghost peers behind (left_at never set).
-    //   Remove any ghosts first, then issue fresh token.
-    // - recently_left=false → normal join. Block if already active elsewhere.
+    // Hosts always exempt.
+    // For guests, we check for active peers with this user_id.
+    // A peer is a GHOST (stale mobile WebRTC connection) if:
+    //   - left_at is null (100ms still thinks they're active)
+    //   - joined_at was > GHOST_THRESHOLD_MS ago (not a live active session)
+    // A peer is ACTIVE (real second device) if:
+    //   - left_at is null AND joined_at was recent (< GHOST_THRESHOLD_MS ago)
+    // We remove ghosts and allow join. We block active peers.
+    const GHOST_THRESHOLD_MS = 3 * 60 * 1000  // 3 minutes — safe window
     if (!isHost) {
       const ghostPeerIds = await getGhostPeerIds(roomId, user.id, mgmtToken)
 
-      if (recently_left) {
-        // Clean up ghost peers so the fresh join has a clean slate
-        if (ghostPeerIds.length > 0) {
-          await removeGhostPeers(roomId, ghostPeerIds, mgmtToken)
-          // Brief wait for 100ms to process the removals
-          await new Promise(r => setTimeout(r, 800))
+      if (ghostPeerIds.length > 0) {
+        // Get full peer data to check joined_at timestamps
+        const sessionsRes = await fetch(
+          `https://api.100ms.live/v2/sessions?room_id=${roomId}&active=true`,
+          { headers: { 'Authorization': `Bearer ${mgmtToken}` } }
+        )
+
+        let trueGhosts: string[] = []
+        let activePeers: string[] = []
+
+        if (sessionsRes.ok) {
+          const sessionsData = await sessionsRes.json()
+          const sessions = sessionsData?.data || []
+          const nowMs = Date.now()
+
+          for (const s of sessions) {
+            const peers = s.peers || {}
+            for (const [peerId, peer] of Object.entries(peers) as [string, any][]) {
+              if (peer.user_id === user.id && peer.left_at == null) {
+                const joinedAt = new Date(peer.joined_at).getTime()
+                const ageMs = nowMs - joinedAt
+                if (ageMs > GHOST_THRESHOLD_MS) {
+                  // Old enough to be a ghost — mobile didn't clean up
+                  trueGhosts.push(peerId)
+                } else {
+                  // Recent join — this is a real active session on another device
+                  activePeers.push(peerId)
+                }
+              }
+            }
+          }
+        } else {
+          // Can't reach sessions API — fail open, don't block
+          trueGhosts = ghostPeerIds
         }
-      } else {
-        // Normal join — block if already active on another device
-        if (ghostPeerIds.length > 0) {
+
+        if (activePeers.length > 0) {
+          // Real active session on another device — block
           return new Response(
             JSON.stringify({
               error: 'already_joined',
@@ -244,6 +276,12 @@ serve(async (req) => {
             }),
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
+        }
+
+        if (trueGhosts.length > 0) {
+          // Stale ghosts — clean them up then allow join
+          await removeGhostPeers(roomId, trueGhosts, mgmtToken)
+          await new Promise(r => setTimeout(r, 800))
         }
       }
     }
