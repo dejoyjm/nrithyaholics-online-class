@@ -101,7 +101,7 @@ async function sendBookingConfirmationEmail(
     </div>
 
     <!-- Add to Calendar -->
-    <div style="text-align:center; margin-bottom:16px;">
+    <div style="text-align:center; margin-bottom:24px;">
       <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(sessionTitle)}&dates=${gcalStart}/${gcalEnd}&details=Join+your+NrithyaHolics+class+at+${encodeURIComponent(sessionUrl)}&location=online.nrithyaholics.in"
          target="_blank"
          style="display:inline-block; background:#faf7f2; color:#5a4e47;
@@ -111,20 +111,20 @@ async function sendBookingConfirmationEmail(
       </a>
     </div>
 
-    <div style="text-align:center; margin-bottom:20px;">
-      <a href="${sessionUrl}"
-         style="display:inline-block; background:#c8430a; color:white;
-                text-decoration:none; padding:14px 36px; border-radius:10px;
-                font-size:15px; font-weight:700;">
-        🎬 Join Class
-      </a>
-      <p style="font-size:12px; color:#a09890; margin-top:10px;">
-        The join button becomes active 5 minutes before class starts.
-      </p>
+    <!-- Join link coming notice -->
+    <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px; padding:20px 24px; margin-bottom:24px; text-align:center;">
+      <div style="font-size:20px; margin-bottom:8px;">🔔</div>
+      <div style="font-size:15px; font-weight:700; color:#0c4a6e; margin-bottom:6px;">
+        Your join link is on its way
+      </div>
+      <div style="font-size:13px; color:#0369a1; line-height:1.6;">
+        We'll email you a one-tap join link when the class opens,<br/>
+        <strong>5 minutes before it starts.</strong>
+      </div>
     </div>
 
-    <!-- Test setup — prominent card -->
-    <div style="background:#fff8f0; border:2px solid #c8430a; border-radius:12px; padding:18px 20px; margin-bottom:20px; text-align:center;">
+    <!-- Test setup card -->
+    <div style="background:#fff8f0; border:2px solid #c8430a; border-radius:12px; padding:18px 20px; margin-bottom:24px; text-align:center;">
       <div style="font-size:15px; font-weight:700; color:#0f0c0c; margin-bottom:4px;">
         🎥 Test your camera &amp; mic before class
       </div>
@@ -139,13 +139,13 @@ async function sendBookingConfirmationEmail(
       </a>
     </div>
 
+    <!-- Tips box -->
     <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:16px; margin-bottom:28px;">
       <div style="font-size:13px; color:#78350f; line-height:1.7;">
         <strong>📌 Before your class:</strong><br/>
-        • Please mute your mic before joining<br/>
-        • Join from a device with a stable internet connection<br/>
+        • Please mute your mic when you join<br/>
         • Find a space with enough room to move freely<br/>
-        • Raise your hand when you want to speak — choreo will unmute you
+        • Join from a device with a stable internet connection
       </div>
     </div>
 
