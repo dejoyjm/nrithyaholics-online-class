@@ -41,6 +41,10 @@ async function sendBookingConfirmationEmail(
     })
 
     const sessionUrl = `${APP_URL}/?session=${sessionId}`
+
+    // Google Calendar date format: YYYYMMDDTHHmmssZ
+    const gcalStart = sessionDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    const gcalEnd   = endTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
     const firstName  = toName?.split(' ')[0] || 'there'
 
     const html = `
@@ -96,7 +100,18 @@ async function sendBookingConfirmationEmail(
       </table>
     </div>
 
-    <div style="text-align:center; margin-bottom:28px;">
+    <!-- Add to Calendar -->
+    <div style="text-align:center; margin-bottom:16px;">
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(sessionTitle)}&dates=${gcalStart}/${gcalEnd}&details=Join+your+NrithyaHolics+class+at+${encodeURIComponent(sessionUrl)}&location=online.nrithyaholics.in"
+         target="_blank"
+         style="display:inline-block; background:#faf7f2; color:#5a4e47;
+                text-decoration:none; padding:10px 24px; border-radius:8px;
+                font-size:13px; font-weight:600; border:1px solid #e2dbd4;">
+        📅 Add to Google Calendar
+      </a>
+    </div>
+
+    <div style="text-align:center; margin-bottom:20px;">
       <a href="${sessionUrl}"
          style="display:inline-block; background:#c8430a; color:white;
                 text-decoration:none; padding:14px 36px; border-radius:10px;
@@ -108,13 +123,29 @@ async function sendBookingConfirmationEmail(
       </p>
     </div>
 
+    <!-- Test setup — prominent card -->
+    <div style="background:#fff8f0; border:2px solid #c8430a; border-radius:12px; padding:18px 20px; margin-bottom:20px; text-align:center;">
+      <div style="font-size:15px; font-weight:700; color:#0f0c0c; margin-bottom:4px;">
+        🎥 Test your camera &amp; mic before class
+      </div>
+      <div style="font-size:13px; color:#7a6e65; margin-bottom:14px;">
+        Takes 30 seconds. Avoid surprises on the day.
+      </div>
+      <a href="${APP_URL}/?session=${sessionId}&test=1"
+         style="display:inline-block; background:#c8430a; color:white;
+                text-decoration:none; padding:10px 24px; border-radius:8px;
+                font-size:13px; font-weight:700;">
+        Test Now →
+      </a>
+    </div>
+
     <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:16px; margin-bottom:28px;">
       <div style="font-size:13px; color:#78350f; line-height:1.7;">
         <strong>📌 Before your class:</strong><br/>
-        • <a href="${APP_URL}/?session=${sessionId}&test=1" style="color:#78350f;">Test your camera &amp; mic</a> — opens directly in NrithyaHolics<br/>
+        • Please mute your mic before joining<br/>
         • Join from a device with a stable internet connection<br/>
         • Find a space with enough room to move freely<br/>
-        • You'll be muted on entry — unmute when asked
+        • Raise your hand when you want to speak — choreo will unmute you
       </div>
     </div>
 

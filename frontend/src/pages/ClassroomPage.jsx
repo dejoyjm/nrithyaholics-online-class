@@ -312,7 +312,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   // ── LIVE ──────────────────────────────────────────────────────
   const isGuest = userRole === 'guest'
   const muteParams = isGuest ? '&audio=false&video=false' : '&audio=true&video=true'
-  const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=false&auth_token=${roomToken}&name=${encodeURIComponent(userName)}${muteParams}`
+  const prebuiltUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=${isGuest ? 'true' : 'false'}&auth_token=${roomToken}&name=${encodeURIComponent(userName)}${muteParams}`
 
   // Banner styles per phase
   const bannerStyles = {

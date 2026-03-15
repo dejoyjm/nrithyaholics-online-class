@@ -4,14 +4,8 @@ https://nrithyaholics-online-class.vercel.app/
 
 cd frontend
 npm run dev
-```
 
-That's it. No venv needed — this is a Node/React project, not Python. `npm` handles everything.
 
-It'll print something like:
-```
-  VITE v7.x.x  ready in 300ms
-  ➜  Local:   http://localhost:5173/
 
 Supabase
 Project : nrithyaholics-online-class
@@ -25,9 +19,14 @@ Project : nrithyaholics-online-class
 #Github
 
 git add .
-git commit -m "editing announced session v1"
+git commit -m "Session scheduling - time slot in hours and mins"
 git push origin master
 
+
+#Resend
+nrithyaholics-production
+re_RF68sRX2_6cFrtUW7ePh2A38N9B9fKXdC
+supabase secrets set RESEND_API_KEY=re_RF68sRX2_6cFrtUW7ePh2A38N9B9fKXdC RESEND_FROM_EMAIL=bookings@nrithyaholics.in
 
 #Razor pay
 
