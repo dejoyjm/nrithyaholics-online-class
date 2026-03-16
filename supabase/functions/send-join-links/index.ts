@@ -208,11 +208,14 @@ serve(async (req) => {
       // Manual trigger — send for this specific session regardless of timing
       sessionsQuery = sessionsQuery.eq('id', manualSessionId)
     } else {
-      // Cron trigger — find sessions whose window just opened
-      // scheduled_at - pre_join_minutes is between now-5min and now
+      // Cron trigger — fetch sessions that could plausibly be in window.
+      // We cast a wide net (scheduled within next 30 mins OR started up to 30 mins ago)
+      // then do the precise per-session check in JS where we know pre_join_minutes.
+      // This avoids the bug of filtering on scheduled_at when the window actually
+      // opens at scheduled_at - pre_join_minutes.
       sessionsQuery = sessionsQuery
-        .lte('scheduled_at', new Date(Date.now() + 10 * 60 * 1000).toISOString())  // starts within 10 mins
-        .gte('scheduled_at', new Date(Date.now() - 10 * 60 * 1000).toISOString())  // started no more than 10 mins ago
+        .lte('scheduled_at', new Date(Date.now() + 30 * 60 * 1000).toISOString())
+        .gte('scheduled_at', new Date(Date.now() - 30 * 60 * 1000).toISOString())
     }
 
     const { data: sessions, error: sessionsError } = await sessionsQuery
@@ -226,21 +229,23 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'No eligible sessions', sent: 0 }), { status: 200 })
     }
 
-    console.log(`Found ${sessions.length} eligible session(s)`)
+    console.log(`Found ${sessions.length} candidate session(s) — checking windows`)
 
     let totalSent = 0
 
     for (const session of sessions) {
-      // Double-check timing for cron triggers (not manual)
+      // Precise per-session timing check for cron triggers (not manual)
       if (!manualSessionId) {
         const preJoinMins = session.guest_pre_join_minutes_override ?? 5
         const windowOpenTime = new Date(session.scheduled_at).getTime() - (preJoinMins * 60 * 1000)
         const nowMs = Date.now()
-        // Window must have opened within last 5 minutes
-        if (windowOpenTime < nowMs - 5 * 60 * 1000 || windowOpenTime > nowMs) {
-          console.log(`Session ${session.id} window not in range, skipping`)
+        // Window must have opened within the last 6 minutes
+        // (6 not 5 — gives 1 min slack for cron drift/cold start delay)
+        if (windowOpenTime < nowMs - 6 * 60 * 1000 || windowOpenTime > nowMs) {
+          console.log(`Session ${session.id}: window opens at ${new Date(windowOpenTime).toISOString()}, now is ${new Date(nowMs).toISOString()} — skipping`)
           continue
         }
+        console.log(`Session ${session.id}: window open — sending join links`)
       }
 
       // Get choreographer name
