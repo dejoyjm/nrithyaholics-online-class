@@ -544,4 +544,4 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
     </div>
   )
-
+}
