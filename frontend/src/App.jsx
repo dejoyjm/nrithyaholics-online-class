@@ -137,6 +137,16 @@ export default function App() {
     setUser(null); setProfile(null); setMode('learning')
   }
 
+  const debugBanner = localStorage.getItem('nrh_choreo_apply_step') ? (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99999,
+      background: 'rgba(0,0,0,0.82)', padding: '6px 12px',
+      fontSize: 11, color: '#fff', fontFamily: 'monospace', lineHeight: 1.4,
+    }}>
+      debug: role={profile?.role ?? 'null'} | showChoreoApply={showChoreoApply.toString()} | lsStep={localStorage.getItem('nrh_choreo_apply_step')}
+    </div>
+  ) : null
+
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 900, color: '#faf7f2' }}>
@@ -158,23 +168,23 @@ export default function App() {
   )
 
   if (user && profile && !profile.role) return (
-    <RoleSelectPage user={user} profile={profile}
+    <>{debugBanner}<RoleSelectPage user={user} profile={profile}
       onRoleSelected={async () => {
         setShowChoreoApply(false)
         const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
         setProfile(data)
       }}
-    />
+    /></>
   )
 
   if (user && profile?.role === 'learner' && showChoreoApply) return (
-    <RoleSelectPage user={user} profile={profile}
+    <>{debugBanner}<RoleSelectPage user={user} profile={profile}
       onRoleSelected={async () => {
         setShowChoreoApply(false)
         const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
         setProfile(data)
       }}
-    />
+    /></>
   )
 
   if (currentClassroom) return (
@@ -228,7 +238,7 @@ export default function App() {
   )
 
   return (
-    <HomePage
+    <>{debugBanner}<HomePage
       onLoginClick={() => setShowAuth(true)}
       user={user} profile={profile}
       onSessionClick={(id) => setCurrentSession(id)}
@@ -236,6 +246,6 @@ export default function App() {
       onProfileClick={() => setShowProfile(true)}
       onSwitchToTeaching={() => setMode('teaching')}
       onLogout={logOut}
-    />
+    /></>
   )
 }
