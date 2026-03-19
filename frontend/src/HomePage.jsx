@@ -197,8 +197,10 @@ function SessionCard({ session, onClick, onChoreoClick }) {
   )
 }
 
+const AGE_GROUPS = ['All', 'Kids', 'Teens', 'Adults', 'Seniors']
+
 // ── FilterPanel ────────────────────────────────────────────────
-function FilterPanel({ filters, onChange, onReset, activeCount }) {
+function FilterPanel({ filters, onChange, onReset, activeCount, ageFilter, onAgeChange }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
 
@@ -310,6 +312,24 @@ function FilterPanel({ filters, onChange, onReset, activeCount }) {
             </div>
           </div>
 
+          {/* Age Group */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Age Group</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {AGE_GROUPS.map(ag => (
+                <button key={ag} onClick={() => onAgeChange(ag)}
+                  style={{
+                    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', border: '1px solid #e2dbd4',
+                    background: ageFilter === ag ? '#0f0c0c' : 'white',
+                    color: ageFilter === ag ? 'white' : '#5a4e47',
+                  }}>
+                  {ag === 'All' ? 'All Ages' : ag}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Reset */}
           {activeCount > 0 && (
             <button onClick={() => { onReset(); setOpen(false) }}
@@ -396,8 +416,8 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     }
     // Age group
     if (ageFilter !== 'All') {
-      const groups = s.age_groups || ['All Ages']
-      if (!groups.includes(ageFilter) && !groups.includes('All Ages')) return false
+      const sessionAgeGroups = s.age_groups?.length ? s.age_groups : ['All Ages']
+      if (!sessionAgeGroups.includes(ageFilter) && !sessionAgeGroups.includes('All Ages')) return false
     }
     // Date
     if (filters.date !== 'all' && !isDateInRange(s.scheduled_at, filters.date)) return false
@@ -543,6 +563,8 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
             onChange={updateFilter}
             onReset={resetFilters}
             activeCount={activeFilterCount}
+            ageFilter={ageFilter}
+            onAgeChange={setAgeFilter}
           />
           {/* Active filter pills */}
           {filters.date !== 'all' && (
