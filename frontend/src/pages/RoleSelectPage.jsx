@@ -123,7 +123,7 @@ export default function RoleSelectPage({ user, profile, onRoleSelected }) {
             <div style={{ color: '#faf7f2', fontSize: 17, fontWeight: 700, marginBottom: 6 }}>I want to learn</div>
             <div style={{ color: 'rgba(250,247,242,0.45)', fontSize: 13, lineHeight: 1.5 }}>Browse and book live dance sessions from top choreographers</div>
           </button>
-          <button onClick={() => setStep('apply')} disabled={loading}
+          <button onClick={() => { localStorage.setItem('nrh_choreo_apply_step', JSON.stringify('apply')); setStep('apply') }} disabled={loading}
             style={{ background: 'transparent', border: '2px solid rgba(250,247,242,0.15)', borderRadius: 16, padding: '24px', cursor: 'pointer', textAlign: 'left' }}
             onMouseEnter={e => e.currentTarget.style.borderColor = '#c8430a'}
             onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(250,247,242,0.15)'}>
@@ -142,7 +142,7 @@ export default function RoleSelectPage({ user, profile, onRoleSelected }) {
         Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
       </div>
       <div style={{ background: '#1a1614', border: '1px solid rgba(250,247,242,0.1)', borderRadius: 20, padding: '40px 36px', width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto' }}>
-        <button onClick={() => setStep('choose')} style={{ background: 'none', border: 'none', color: 'rgba(250,247,242,0.4)', fontSize: 13, cursor: 'pointer', marginBottom: 20, padding: 0 }}>← Back</button>
+        <button onClick={() => { localStorage.setItem('nrh_choreo_apply_step', JSON.stringify('choose')); setStep('choose') }} style={{ background: 'none', border: 'none', color: 'rgba(250,247,242,0.4)', fontSize: 13, cursor: 'pointer', marginBottom: 20, padding: 0 }}>← Back</button>
         <h2 style={{ color: '#faf7f2', fontSize: 22, fontWeight: 700, marginBottom: 8, fontFamily: 'Georgia, serif' }}>Apply to teach on NrithyaHolics</h2>
         <p style={{ color: 'rgba(250,247,242,0.45)', fontSize: 13, marginBottom: 28, lineHeight: 1.6 }}>
           We review every application personally. You'll hear back within 1–2 days.
