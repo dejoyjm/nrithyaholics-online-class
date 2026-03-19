@@ -110,8 +110,14 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
     }))
   }
 
-  const upcoming = bookings.filter(b => new Date(b.sessions?.scheduled_at) > new Date())
-  const past = bookings.filter(b => new Date(b.sessions?.scheduled_at) <= new Date())
+  const isStillActive = (s) => {
+    if (!s) return false
+    const sessionEnd = new Date(s.scheduled_at).getTime() + (s.duration_minutes || 60) * 60 * 1000
+    const graceMs = (s.guest_grace_minutes_override ?? platformConfig?.guest_grace_minutes ?? 15) * 60 * 1000
+    return (sessionEnd + graceMs) > Date.now()
+  }
+  const upcoming = bookings.filter(b => isStillActive(b.sessions))
+  const past = bookings.filter(b => !isStillActive(b.sessions))
   const initials = (form.full_name || user.email || '?')[0].toUpperCase()
 
   const inputStyle = {
