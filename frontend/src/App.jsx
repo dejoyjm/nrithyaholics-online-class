@@ -188,6 +188,7 @@ export default function App() {
       onSessionClick={(id) => { setShowProfile(false); setCurrentSession(id) }}
       onSwitchToTeaching={() => { setShowProfile(false); setMode('teaching') }}
       onApplyToTeach={() => { setShowProfile(false); setProfile({ ...profile, role: null }) }}
+      onJoinClass={(sessionId, sessionData) => { setShowProfile(false); setCurrentClassroom({ sessionId, sessionData }) }}
     />
   )
 

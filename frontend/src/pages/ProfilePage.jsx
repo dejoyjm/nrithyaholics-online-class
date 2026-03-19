@@ -18,7 +18,7 @@ function cleanInstagram(val) {
   return val.replace('@', '').trim()
 }
 
-export default function ProfilePage({ user, profile, platformConfig, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick }) {
+export default function ProfilePage({ user, profile, platformConfig, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick, onJoinClass }) {
   const [bookings, setBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
   const [activeTab, setActiveTab] = useState('profile')
@@ -398,7 +398,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
                 {upcoming.length > 0 && (
                   <div style={{ marginBottom: 28 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>UPCOMING ({upcoming.length})</div>
-                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} platformConfig={platformConfig} />)}
+                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} onJoinClass={onJoinClass} platformConfig={platformConfig} />)}
                   </div>
                 )}
                 {past.length > 0 && (
@@ -417,7 +417,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   )
 }
 
-function BookingRow({ booking, isUpcoming, onSessionClick, platformConfig }) {
+function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig }) {
 const session = booking.sessions
 if (!session) return null
 const styleKey = session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '') || ''
@@ -445,9 +445,9 @@ const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= se
           </span>
         </div>
       </div>
-      {canJoinNow && isUpcoming && onSessionClick && (
+      {canJoinNow && isUpcoming && (onJoinClass || onSessionClick) && (
         <button
-          onClick={() => onSessionClick(booking.session_id)}
+          onClick={() => onJoinClass ? onJoinClass(booking.session_id, booking.sessions) : onSessionClick(booking.session_id)}
           style={{ marginTop: 10, marginLeft: 18, background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           🎬 Join Class Now
         </button>
