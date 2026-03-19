@@ -191,6 +191,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
     price:       session?.price_tiers?.[0]?.price || 499,
     max_seats:   session?.max_seats || 20,
     min_seats:   session?.min_seats || 5,
+    age_groups:  session?.age_groups || ['All Ages'],
   })
   const [saving, setSaving] = useState(false)
   const [coverUrl, setCoverUrl] = useState(session?.cover_photo_url || null)
@@ -230,6 +231,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
       min_seats:       form.min_seats,
       max_seats:       form.max_seats,
       cover_photo_url: coverUrl || null,
+      age_groups:      form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
     }
     let error
     if (isEdit) {
@@ -368,6 +370,27 @@ function SessionModal({ user, session, onClose, onSaved }) {
             <div>
               <label style={labelStyle}>Max Seats</label>
               <input type="number" style={inputStyle} value={form.max_seats} onChange={e => set('max_seats', Number(e.target.value))} min="1" />
+            </div>
+          </div>
+
+          {/* Age Groups */}
+          <div>
+            <label style={labelStyle}>Age Groups</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {['Kids', 'Teens', 'Adults', 'Seniors', 'All Ages'].map(ag => {
+                const active = form.age_groups.includes(ag)
+                return (
+                  <button key={ag} type="button" onClick={() => {
+                    const next = active ? form.age_groups.filter(x => x !== ag) : [...form.age_groups, ag]
+                    set('age_groups', next.length > 0 ? next : ['All Ages'])
+                  }} style={{
+                    background: active ? '#5b4fcf' : '#faf7f2',
+                    color: active ? 'white' : '#5a4e47',
+                    border: '1px solid #e2dbd4', borderRadius: 20,
+                    padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: active ? 700 : 400,
+                  }}>{ag}</button>
+                )
+              })}
             </div>
           </div>
 

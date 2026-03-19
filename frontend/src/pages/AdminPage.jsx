@@ -671,6 +671,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
     max_seats: session.max_seats || 20,
     min_seats: session.min_seats || 5,
     status: session.status || 'open',
+    age_groups: session.age_groups || ['All Ages'],
   })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -692,6 +693,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
       max_seats: Number(form.max_seats),
       min_seats: Number(form.min_seats),
       status: form.status,
+      age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
     }).eq('id', session.id)
     if (error) alert(error.message)
     else onSaved()
@@ -772,6 +774,25 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
             <div>
               <label style={labelStyle}>Max Seats</label>
               <input style={inputStyle} type="number" min="1" value={form.max_seats} onChange={e => set('max_seats', Number(e.target.value))} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Age Groups</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {['Kids', 'Teens', 'Adults', 'Seniors', 'All Ages'].map(ag => {
+                const active = form.age_groups.includes(ag)
+                return (
+                  <button key={ag} type="button" onClick={() => {
+                    const next = active ? form.age_groups.filter(x => x !== ag) : [...form.age_groups, ag]
+                    set('age_groups', next.length > 0 ? next : ['All Ages'])
+                  }} style={{
+                    background: active ? '#5b4fcf' : '#faf7f2',
+                    color: active ? 'white' : '#5a4e47',
+                    border: '1px solid #e2dbd4', borderRadius: 20,
+                    padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: active ? 700 : 400,
+                  }}>{ag}</button>
+                )
+              })}
             </div>
           </div>
         </div>

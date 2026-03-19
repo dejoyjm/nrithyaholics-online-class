@@ -335,6 +335,9 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
   // Style filter (quick chips)
   const [styleFilter, setStyleFilter] = useState('All')
 
+  // Age group filter
+  const [ageFilter, setAgeFilter] = useState('All')
+
   // Sort
   const [sort, setSort] = useState('soonest')
 
@@ -368,6 +371,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
   function resetFilters() {
     setFilters({ date: 'all', price: 'all', levels: [], availability: 'open_only' })
     setStyleFilter('All')
+    setAgeFilter('All')
     setSort('soonest')
   }
 
@@ -378,6 +382,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     filters.levels.length > 0,
     filters.availability !== 'open_only',
     styleFilter !== 'All',
+    ageFilter !== 'All',
   ].filter(Boolean).length
 
   // ── Apply filters ──
@@ -388,6 +393,11 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
         tag => tag.toLowerCase().replace(/\s/g, '') === styleFilter.toLowerCase().replace(/\s/g, '')
       )
       if (!match) return false
+    }
+    // Age group
+    if (ageFilter !== 'All') {
+      const groups = s.age_groups || ['All Ages']
+      if (!groups.includes(ageFilter) && !groups.includes('All Ages')) return false
     }
     // Date
     if (filters.date !== 'all' && !isDateInRange(s.scheduled_at, filters.date)) return false
@@ -502,6 +512,19 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
               fontSize: 13, fontWeight: styleFilter === s ? 600 : 400,
               transition: 'all 0.15s',
             }}>{s}</button>
+          ))}
+        </div>
+
+        {/* Age group chips */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+          {['All', 'Kids', 'Teens', 'Adults', 'Seniors'].map(ag => (
+            <button key={ag} onClick={() => setAgeFilter(ag)} style={{
+              background: ageFilter === ag ? '#5b4fcf' : 'rgba(250,247,242,0.07)',
+              color: '#faf7f2', border: '1px solid rgba(250,247,242,0.15)',
+              padding: '5px 14px', borderRadius: 20, cursor: 'pointer',
+              fontSize: 12, fontWeight: ageFilter === ag ? 600 : 400,
+              transition: 'all 0.15s',
+            }}>{ag === 'All' ? 'All Ages' : ag}</button>
           ))}
         </div>
       </div>

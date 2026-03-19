@@ -326,6 +326,9 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
                   {session.skill_level.replace(/_/g, ' ')}
                 </span>
               )}
+              {session.age_groups?.map(ag => (
+                <span key={ag} style={{ background: '#ede9fe', color: '#5b4fcf', fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 20 }}>{ag}</span>
+              ))}
             </div>
             <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0f0c0c', fontFamily: 'Georgia, serif', marginBottom: 8, lineHeight: 1.3 }}>
               {session.title}
@@ -541,4 +544,4 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
     </div>
   )
-}
+
