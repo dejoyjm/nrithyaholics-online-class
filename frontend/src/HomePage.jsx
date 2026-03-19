@@ -375,7 +375,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     setLoading(true)
     const { data, error } = await supabase
       .from('sessions')
-      .select('*, profiles(full_name)')
+      .select('id, title, description, style_tags, skill_level, scheduled_at, duration_mins, max_seats, min_seats, status, price_tiers, choreographer_id, created_at, bookings_count, age_groups, cover_photo_url, profiles(full_name)')
       .in('status', ['open', 'confirmed', 'full'])
       .order('scheduled_at', { ascending: true })
 
@@ -414,9 +414,9 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
       )
       if (!match) return false
     }
-    // Age group
+    // Age group — treat null/empty/non-array age_groups as ['All Ages']
     if (ageFilter !== 'All') {
-      const sessionAgeGroups = s.age_groups?.length ? s.age_groups : ['All Ages']
+      const sessionAgeGroups = Array.isArray(s.age_groups) && s.age_groups.length ? s.age_groups : ['All Ages']
       if (!sessionAgeGroups.includes(ageFilter) && !sessionAgeGroups.includes('All Ages')) return false
     }
     // Date
