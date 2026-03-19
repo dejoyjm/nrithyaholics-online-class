@@ -1,18 +1,41 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
+const LS = 'nrh_choreo_apply_'
+
+function lsGet(key, fallback) {
+  try { const v = localStorage.getItem(LS + key); return v !== null ? JSON.parse(v) : fallback } catch { return fallback }
+}
+function lsSet(key, val) {
+  try { localStorage.setItem(LS + key, JSON.stringify(val)) } catch {}
+}
+function lsClear() {
+  ['step', 'full_name', 'instagram_handle', 'sample_video_url', 'bio', 'style_tags', 'teaching_languages']
+    .forEach(k => { try { localStorage.removeItem(LS + k) } catch {} })
+}
+
 export default function RoleSelectPage({ user, profile, onRoleSelected }) {
-  const [step, setStep] = useState('choose')
+  const [step, setStep] = useState(() => lsGet('step', 'choose'))
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
-    full_name: profile?.full_name || '',
-    instagram_handle: profile?.instagram_handle || '',
-    sample_video_url: profile?.sample_video_url || '',
-    bio: profile?.bio || '',
-    style_tags: profile?.style_tags || [],
-    teaching_languages: profile?.teaching_language ? [profile.teaching_language] : [],
+    full_name: lsGet('full_name', profile?.full_name || ''),
+    instagram_handle: lsGet('instagram_handle', profile?.instagram_handle || ''),
+    sample_video_url: lsGet('sample_video_url', profile?.sample_video_url || ''),
+    bio: lsGet('bio', profile?.bio || ''),
+    style_tags: lsGet('style_tags', profile?.style_tags || []),
+    teaching_languages: lsGet('teaching_languages', profile?.teaching_language ? [profile.teaching_language] : []),
   })
   const [error, setError] = useState('')
+
+  useEffect(() => { lsSet('step', step) }, [step])
+  useEffect(() => {
+    lsSet('full_name', form.full_name)
+    lsSet('instagram_handle', form.instagram_handle)
+    lsSet('sample_video_url', form.sample_video_url)
+    lsSet('bio', form.bio)
+    lsSet('style_tags', form.style_tags)
+    lsSet('teaching_languages', form.teaching_languages)
+  }, [form])
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
@@ -38,7 +61,7 @@ export default function RoleSelectPage({ user, profile, onRoleSelected }) {
       .update({ role: 'learner', profile_complete: true })
       .eq('id', user.id)
     if (error) alert(error.message)
-    else onRoleSelected('learner')
+    else { lsClear(); onRoleSelected('learner') }
     setLoading(false)
   }
 
@@ -66,7 +89,7 @@ export default function RoleSelectPage({ user, profile, onRoleSelected }) {
       profile_complete: false,
     }).eq('id', user.id)
     if (error) alert(error.message)
-    else onRoleSelected('choreographer_pending')
+    else { lsClear(); onRoleSelected('choreographer_pending') }
     setLoading(false)
   }
 
