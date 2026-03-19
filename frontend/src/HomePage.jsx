@@ -378,7 +378,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     setLoading(true)
     const { data, error } = await supabase
       .from('sessions')
-      .select('id, title, description, style_tags, skill_level, scheduled_at, duration_mins, max_seats, min_seats, status, price_tiers, choreographer_id, created_at, bookings_count, age_groups, cover_photo_url, profiles(full_name)')
+      .select('*, profiles(full_name)')
       .in('status', ['open', 'confirmed', 'full'])
       .order('scheduled_at', { ascending: true })
 
