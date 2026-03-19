@@ -316,17 +316,20 @@ function FilterPanel({ filters, onChange, onReset, activeCount, ageFilter, onAge
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Age Group</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {AGE_GROUPS.map(ag => (
-                <button key={ag} onClick={() => onAgeChange(ag)}
-                  style={{
-                    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                    cursor: 'pointer', border: '1px solid #e2dbd4',
-                    background: ageFilter === ag ? '#0f0c0c' : 'white',
-                    color: ageFilter === ag ? 'white' : '#5a4e47',
-                  }}>
-                  {ag === 'All' ? 'All Ages' : ag}
-                </button>
-              ))}
+              {AGE_GROUPS.map(ag => {
+                const isActive = ag === 'All' ? !ageFilter : ageFilter === ag
+                return (
+                  <button key={ag} onClick={() => onAgeChange(ag === 'All' ? null : ag)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                      cursor: 'pointer', border: '1px solid #e2dbd4',
+                      background: isActive ? '#0f0c0c' : 'white',
+                      color: isActive ? 'white' : '#5a4e47',
+                    }}>
+                    {ag === 'All' ? 'All Ages' : ag}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -355,8 +358,8 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
   // Style filter (quick chips)
   const [styleFilter, setStyleFilter] = useState('All')
 
-  // Age group filter
-  const [ageFilter, setAgeFilter] = useState('All')
+  // Age group filter — null means no filter (show all)
+  const [ageFilter, setAgeFilter] = useState(null)
 
   // Sort
   const [sort, setSort] = useState('soonest')
@@ -391,7 +394,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
   function resetFilters() {
     setFilters({ date: 'all', price: 'all', levels: [], availability: 'open_only' })
     setStyleFilter('All')
-    setAgeFilter('All')
+    setAgeFilter(null)
     setSort('soonest')
   }
 
@@ -402,7 +405,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     filters.levels.length > 0,
     filters.availability !== 'open_only',
     styleFilter !== 'All',
-    ageFilter !== 'All',
+    !!ageFilter,
   ].filter(Boolean).length
 
   // ── Apply filters ──
@@ -414,11 +417,9 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
       )
       if (!match) return false
     }
-    // Age group — treat null/empty/non-array age_groups as ['All Ages']
-    if (ageFilter !== 'All') {
-      const sessionAgeGroups = Array.isArray(s.age_groups) && s.age_groups.length ? s.age_groups : ['All Ages']
-      if (!sessionAgeGroups.includes(ageFilter) && !sessionAgeGroups.includes('All Ages')) return false
-    }
+    // Age group — null/'All Ages' = no filter; specific value = must match or session must include 'All Ages'
+    const ageMatch = !ageFilter || ageFilter === 'All Ages' || (Array.isArray(s.age_groups) && s.age_groups.length > 0 && (s.age_groups.includes(ageFilter) || s.age_groups.includes('All Ages')))
+    if (!ageMatch) return false
     // Date
     if (filters.date !== 'all' && !isDateInRange(s.scheduled_at, filters.date)) return false
     // Price
@@ -537,15 +538,18 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
 
         {/* Age group chips */}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 10 }}>
-          {['All', 'Kids', 'Teens', 'Adults', 'Seniors'].map(ag => (
-            <button key={ag} onClick={() => setAgeFilter(ag)} style={{
-              background: ageFilter === ag ? '#5b4fcf' : 'rgba(250,247,242,0.07)',
-              color: '#faf7f2', border: '1px solid rgba(250,247,242,0.15)',
-              padding: '5px 14px', borderRadius: 20, cursor: 'pointer',
-              fontSize: 12, fontWeight: ageFilter === ag ? 600 : 400,
-              transition: 'all 0.15s',
-            }}>{ag === 'All' ? 'All Ages' : ag}</button>
-          ))}
+          {['All Ages', 'Kids', 'Teens', 'Adults', 'Seniors'].map(ag => {
+            const isActive = ag === 'All Ages' ? !ageFilter : ageFilter === ag
+            return (
+              <button key={ag} onClick={() => setAgeFilter(ag === 'All Ages' ? null : ag)} style={{
+                background: isActive ? '#5b4fcf' : 'rgba(250,247,242,0.07)',
+                color: '#faf7f2', border: '1px solid rgba(250,247,242,0.15)',
+                padding: '5px 14px', borderRadius: 20, cursor: 'pointer',
+                fontSize: 12, fontWeight: isActive ? 600 : 400,
+                transition: 'all 0.15s',
+              }}>{ag}</button>
+            )
+          })}
         </div>
       </div>
 
