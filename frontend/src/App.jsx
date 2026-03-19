@@ -27,13 +27,6 @@ export default function App() {
   const [autoOpenTest, setAutoOpenTest] = useState(false)
   // ── Set when arriving via email deep link (?session= param) ──
   const [cameFromEmail, setCameFromEmail] = useState(false)
-  // ── Restore choreo apply page if user was mid-form when app remounted ──
-  const [showChoreoApply, setShowChoreoApply] = useState(() => {
-    try {
-      const rawStep = localStorage.getItem('nrh_choreo_apply_step')
-      return rawStep === 'apply' || rawStep === '"apply"'
-    } catch { return false }
-  })
 
   // Detect URL params on app load — handles:
   // 1. Razorpay payment redirect-back
@@ -163,17 +156,6 @@ export default function App() {
   if (user && profile && !profile.role) return (
     <RoleSelectPage user={user} profile={profile}
       onRoleSelected={async () => {
-        setShowChoreoApply(false)
-        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-        setProfile(data)
-      }}
-    />
-  )
-
-  if (user && profile?.role === 'learner' && showChoreoApply) return (
-    <RoleSelectPage user={user} profile={profile}
-      onRoleSelected={async () => {
-        setShowChoreoApply(false)
         const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
         setProfile(data)
       }}
@@ -227,6 +209,17 @@ export default function App() {
       razorpayReturn={razorpayReturn}
       autoOpenTest={autoOpenTest}
       cameFromEmail={cameFromEmail}
+    />
+  )
+
+  const lsStep = localStorage.getItem('nrh_choreo_apply_step')
+  const midApply = (lsStep === '"apply"' || lsStep === 'apply') && profile?.role === 'learner'
+  if (user && midApply) return (
+    <RoleSelectPage user={user} profile={profile}
+      onRoleSelected={async () => {
+        const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+        setProfile(data)
+      }}
     />
   )
 
