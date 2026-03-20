@@ -82,6 +82,7 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
   const color = getStyleColor(session.style_tags)
   const isNew = session.created_at && (Date.now() - new Date(session.created_at)) < 7 * 86400000
 
+  const [hover, setHover] = useState(false)
   const [onWaitlist, setOnWaitlist] = useState(false)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
 
@@ -106,31 +107,48 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
     setJoiningWaitlist(false)
   }
 
+  const hasCover = !!session.cover_photo_url
+  const hasAvatar = !!session.profiles?.avatar_url
+  const choreoName = session.profiles?.full_name || 'Choreographer'
+  const avatarUrl = session.profiles?.avatar_url
+
   return (
     <div
       onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       style={{
-        background: 'white', borderRadius: 16, overflow: 'hidden',
-        border: '1px solid #e2dbd4', cursor: 'pointer',
-        transition: 'transform 0.2s, box-shadow 0.2s',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.transform = 'translateY(-4px)'
-        e.currentTarget.style.boxShadow = '0 12px 40px rgba(0,0,0,0.12)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.transform = 'translateY(0)'
-        e.currentTarget.style.boxShadow = 'none'
+        background: 'white',
+        borderRadius: 16,
+        overflow: 'hidden',
+        borderTop: '1px solid #e2dbd4',
+        borderRight: '1px solid #e2dbd4',
+        borderBottom: '1px solid #e2dbd4',
+        borderLeft: `3px solid ${color}`,
+        cursor: 'pointer',
+        transform: hover ? 'translateY(-4px)' : 'translateY(0)',
+        boxShadow: hover ? '0 12px 32px rgba(0,0,0,0.12)' : 'none',
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
       }}
     >
-      {/* Cover */}
-      <div style={{
-        height: 130, background: color,
-        display: 'flex', alignItems: 'flex-end',
-        padding: '10px 14px', position: 'relative',
-      }}>
-        {/* Badges */}
-        <div style={{ position: 'absolute', top: 10, left: 14, display: 'flex', gap: 6 }}>
+      {/* ── Image area ── */}
+      <div style={{ position: 'relative', aspectRatio: '16/9', overflow: 'hidden', background: color }}>
+
+        {/* Cover photo */}
+        {hasCover && (
+          <img
+            src={session.cover_photo_url} alt=""
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+          />
+        )}
+
+        {/* Gradient overlay — only when cover photo exists */}
+        {hasCover && (
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)' }} />
+        )}
+
+        {/* Top-left: style tag badge */}
+        <div style={{ position: 'absolute', top: 10, left: 12 }}>
           <span style={{
             background: 'rgba(0,0,0,0.35)', color: 'white',
             fontSize: 10, fontWeight: 700, letterSpacing: 1,
@@ -138,45 +156,83 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
           }}>
             {session.style_tags?.[0] || 'Dance'}
           </span>
+        </div>
+
+        {/* Top-right: NEW / hot / full badges */}
+        <div style={{ position: 'absolute', top: 10, right: 12, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
           {isNew && (
             <span style={{ background: '#e8a020', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>
               NEW
             </span>
           )}
+          {isHot && (
+            <span style={{ background: 'rgba(200,67,10,0.9)', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>
+              🔥 Filling fast
+            </span>
+          )}
+          {isFull && (
+            <span style={{ background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>
+              FULL
+            </span>
+          )}
         </div>
-        {isHot && (
-          <div style={{
-            position: 'absolute', top: 10, right: 14,
-            background: 'rgba(200,67,10,0.9)', color: 'white',
-            fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
-          }}>
-            🔥 Filling fast
+
+        {/* Choreographer presence — varies by photo hierarchy */}
+        {hasCover ? (
+          // Case 1 & 2: cover exists → avatar (or initial) + name at bottom-left over gradient
+          <div
+            onClick={e => { e.stopPropagation(); onChoreoClick?.(session.choreographer_id) }}
+            style={{
+              position: 'absolute', bottom: 10, left: 12,
+              display: 'flex', alignItems: 'center', gap: 8,
+              cursor: onChoreoClick ? 'pointer' : 'default',
+            }}
+          >
+            {hasAvatar ? (
+              <div style={{ width: 40, height: 40, borderRadius: '50%', border: '2px solid white', overflow: 'hidden', flexShrink: 0 }}>
+                <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            ) : (
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', border: '2px solid white',
+                background: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', fontSize: 16, fontWeight: 700, flexShrink: 0,
+              }}>
+                {choreoName[0]}
+              </div>
+            )}
+            <span style={{ color: 'white', fontSize: 13, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+              {choreoName}
+            </span>
+          </div>
+        ) : hasAvatar ? (
+          // Case 3: no cover + avatar → 64px avatar centered, name below
+          <div
+            onClick={e => { e.stopPropagation(); onChoreoClick?.(session.choreographer_id) }}
+            style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: onChoreoClick ? 'pointer' : 'default',
+            }}
+          >
+            <div style={{ width: 64, height: 64, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.8)', overflow: 'hidden' }}>
+              <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+            <span style={{ color: 'white', fontSize: 13, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+              {choreoName}
+            </span>
+          </div>
+        ) : (
+          // Case 4: no cover + no avatar → large monogram centered
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 48, fontWeight: 800, color: 'rgba(255,255,255,0.3)', userSelect: 'none' }}>
+              {choreoName[0]}
+            </span>
           </div>
         )}
-        {isFull && (
-          <div style={{
-            position: 'absolute', top: 10, right: 14,
-            background: 'rgba(0,0,0,0.6)', color: 'white',
-            fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
-          }}>
-            FULL
-          </div>
-        )}
-        {/* Choreo name bottom of cover */}
-        <div
-          onClick={e => { e.stopPropagation(); onChoreoClick && onChoreoClick(session.choreographer_id) }}
-          style={{
-            background: 'rgba(0,0,0,0.45)', color: 'white',
-            fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 20,
-            cursor: onChoreoClick ? 'pointer' : 'default',
-            textDecoration: onChoreoClick ? 'underline' : 'none',
-          }}
-        >
-          {session.profiles?.full_name || 'Choreographer'}
-        </div>
       </div>
 
-      {/* Body */}
+      {/* ── Content area ── */}
       <div style={{ padding: '14px 16px' }}>
         <div style={{
           fontSize: 14, fontWeight: 700, color: '#0f0c0c',
@@ -192,16 +248,11 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{
-            background: '#f0ebe6', color: '#5a4e47',
-            fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20,
-          }}>
+          <span style={{ background: '#f0ebe6', color: '#5a4e47', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20 }}>
             {LEVEL_LABELS[session.skill_level] || session.skill_level || '—'}
           </span>
           <span style={{ fontSize: 12, color: isFull ? '#cc0000' : '#7a6e65' }}>
-            {isFull
-              ? (onWaitlist ? '✓ On waitlist' : 'Session full')
-              : `${seatsLeft} seats left`}
+            {isFull ? (onWaitlist ? '✓ On waitlist' : 'Session full') : `${seatsLeft} seats left`}
           </span>
         </div>
 
@@ -221,9 +272,7 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
               opacity: joiningWaitlist ? 0.7 : 1,
             }}
           >
-            {isFull
-              ? (onWaitlist ? '✓ On Waitlist' : joiningWaitlist ? '...' : 'Waitlist')
-              : 'Book'}
+            {isFull ? (onWaitlist ? '✓ On Waitlist' : joiningWaitlist ? '...' : 'Waitlist') : 'Book'}
           </button>
         </div>
       </div>
@@ -412,7 +461,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     setLoading(true)
     const { data, error } = await supabase
       .from('sessions')
-      .select('*, profiles(full_name)')
+      .select('*, profiles(full_name, avatar_url)')
       .in('status', ['open', 'confirmed', 'full'])
       .order('scheduled_at', { ascending: true })
 
