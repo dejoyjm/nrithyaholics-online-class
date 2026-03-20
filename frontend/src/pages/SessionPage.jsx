@@ -42,7 +42,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail }) {
+export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail, onChoreoClick }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -98,7 +98,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   async function fetchSession() {
     const { data, error } = await supabase
       .from('sessions')
-      .select('*, profiles(full_name, bio, instagram_handle, avatar_url)')
+      .select('*, profiles(full_name, bio, instagram_handle, avatar_url, style_tags, youtube_url)')
       .eq('id', sessionId)
       .single()
     if (error) console.error(error)
@@ -329,9 +329,12 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
       {/* Cover */}
       {session.cover_photo_url && (
-        <div style={{ height: 280, overflow: 'hidden', background: '#0f0c0c' }}>
+        <div style={window.innerWidth < 768
+          ? { aspectRatio: '4/5', overflow: 'hidden', background: '#0f0c0c' }
+          : { height: 380, overflow: 'hidden', background: '#0f0c0c' }
+        }>
           <img src={session.cover_photo_url} alt={session.title}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.85 }} />
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
         </div>
       )}
 
@@ -358,20 +361,79 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             </h1>
           </div>
 
+          {/* Choreographer card — prominent, full-width */}
           {session.profiles && (
-            <div style={{ background: 'white', borderRadius: 16, padding: 20, border: '1px solid #e2dbd4', display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ width: 52, height: 52, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 20, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
-                {session.profiles.avatar_url
-                  ? <img src={session.profiles.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : (session.profiles.full_name?.[0] || '?')}
+            <div style={{ background: 'white', borderRadius: 16, padding: 20, border: '1px solid #e2dbd4', borderLeft: '4px solid #c8430a' }}>
+              {/* Header row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+                <div style={{ width: 64, height: 64, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 22, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
+                  {session.profiles.avatar_url
+                    ? <img src={session.profiles.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : (session.profiles.full_name?.[0] || '?')}
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 2 }}>Your choreographer</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c' }}>{session.profiles.full_name}</div>
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 2 }}>Your choreographer</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c' }}>{session.profiles.full_name}</div>
-                {session.profiles.instagram_handle && (
-                  <div style={{ fontSize: 13, color: '#7a6e65' }}>@{session.profiles.instagram_handle}</div>
-                )}
-              </div>
+
+              {/* Bio — 3 lines max */}
+              {session.profiles.bio && (
+                <p style={{
+                  fontSize: 14, color: '#3a3330', lineHeight: 1.6, margin: '0 0 12px',
+                  display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>
+                  {session.profiles.bio}
+                </p>
+              )}
+
+              {/* Style chips */}
+              {session.profiles.style_tags?.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {session.profiles.style_tags.map(tag => {
+                    const tagColor = styleColors[tag.toLowerCase().replace(/\s/g, '')] || '#c8430a'
+                    return (
+                      <span key={tag} style={{ background: tagColor, color: 'white', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
+                        {tag}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Social pills */}
+              {(session.profiles.instagram_handle || session.profiles.youtube_url) && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                  {session.profiles.instagram_handle && (
+                    <a
+                      href={`https://instagram.com/${session.profiles.instagram_handle}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600, color: '#0f0c0c', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      📸 @{session.profiles.instagram_handle}
+                    </a>
+                  )}
+                  {session.profiles.youtube_url && (
+                    <a
+                      href={session.profiles.youtube_url}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 20, padding: '6px 14px', fontSize: 12, fontWeight: 600, color: '#0f0c0c', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      ▶️ YouTube
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* View full profile */}
+              {onChoreoClick && (
+                <button
+                  onClick={() => onChoreoClick(session.choreographer_id)}
+                  style={{ background: 'transparent', border: '1px solid #c8430a', color: '#c8430a', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  View Full Profile →
+                </button>
+              )}
             </div>
           )}
 
@@ -382,6 +444,21 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             </div>
           )}
 
+          {/* Choreography reference — prominent button */}
+          {session.choreo_reference_url && (
+            <a
+              href={session.choreo_reference_url}
+              target="_blank" rel="noopener noreferrer"
+              style={{
+                display: 'block', background: '#c8430a', color: 'white',
+                borderRadius: 12, padding: '14px 20px', textDecoration: 'none',
+                fontSize: 15, fontWeight: 700, textAlign: 'center',
+              }}
+            >
+              🎬 Watch the Choreography
+            </a>
+          )}
+
           <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #e2dbd4' }}>
             <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 }}>Session Details</div>
             {[
@@ -389,7 +466,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
               ['⏱️', 'Duration', `${session.duration_minutes} minutes`],
               ['👥', 'Seats available', `${totalSeats - (session.bookings_count || 0)} of ${totalSeats}`],
               ['📊', 'Level', session.skill_level?.replace(/_/g, ' ')],
-              ['✅', 'Status', session.status],
             ].map(([icon, label, value]) => (
               <div key={label} style={{ display: 'flex', gap: 16, padding: '12px 0', borderBottom: '1px solid #f0ebe6' }}>
                 <span style={{ fontSize: 18 }}>{icon}</span>

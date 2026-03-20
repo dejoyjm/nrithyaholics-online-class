@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import ImageCropUploader from '../components/ImageCropUploader'
 
 const STYLES = ['Bollywood', 'Bharatanatyam', 'Contemporary', 'Hip Hop', 'Kathak', 'Folk', 'Jazz', 'Fusion']
 const LANGUAGES = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Marathi', 'Punjabi', 'Bengali', 'Gujarati']
@@ -25,7 +26,6 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || null)
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
   const isChoreo = profile?.role === 'choreographer'
   const isApprovedChoreo = isChoreo && profile?.choreographer_approved
@@ -76,22 +76,6 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
     if (error) alert(error.message)
     else setEditMode(false)
     setSaving(false)
-  }
-
-  async function uploadAvatar(file) {
-    if (!file) return
-    const ext = file.name.split('.').pop()
-    const path = `${user.id}/avatar.${ext}`
-    setUploadingPhoto(true)
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true, contentType: file.type })
-    if (uploadError) { alert('Upload failed: ' + uploadError.message); setUploadingPhoto(false); return }
-    const { data } = supabase.storage.from('avatars').getPublicUrl(path)
-    const publicUrl = data.publicUrl + '?t=' + Date.now() // cache bust
-    await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id)
-    setAvatarUrl(publicUrl)
-    setUploadingPhoto(false)
   }
 
   function toggleStyle(s) {
@@ -159,7 +143,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
         {/* HEADER CARD */}
         <div style={{ background: 'white', borderRadius: 20, padding: 28, border: '1px solid #e2dbd4', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-            <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{ flexShrink: 0 }}>
               <div style={{
                 width: 80, height: 80, borderRadius: '50%',
                 background: avatarUrl ? 'transparent' : '#c8430a',
@@ -172,18 +156,6 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
                   : initials
                 }
               </div>
-              {/* Photo upload button */}
-              <label style={{
-                position: 'absolute', bottom: 0, right: 0, width: 26, height: 26,
-                borderRadius: '50%', background: uploadingPhoto ? '#e2dbd4' : '#0f0c0c',
-                border: '2px solid white', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 11, cursor: 'pointer',
-                title: 'Change photo',
-              }}>
-                {uploadingPhoto ? '⏳' : '📷'}
-                <input type="file" accept="image/*" style={{ display: 'none' }}
-                  onChange={e => uploadAvatar(e.target.files[0])} />
-              </label>
             </div>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f0c0c', marginBottom: 2 }}>
@@ -230,6 +202,19 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
               <div style={{ padding: 20, background: '#faf7f2', borderRadius: 12, border: '1px solid #e2dbd4' }}>
                 <div style={{ ...labelStyle, marginBottom: 16 }}>Basic Info</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <ImageCropUploader
+                      bucket="avatars"
+                      path={`${user.id}/avatar.jpg`}
+                      aspectRatio={1}
+                      currentUrl={avatarUrl}
+                      onUploadComplete={async (url) => {
+                        await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id)
+                        setAvatarUrl(url)
+                      }}
+                      label="Profile Photo"
+                    />
+                  </div>
                   <div>
                     <label style={labelStyle}>Full Name</label>
                     <input style={inputStyle} value={form.full_name}

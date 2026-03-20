@@ -691,6 +691,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
     min_seats: session.min_seats || 5,
     status: session.status || 'open',
     age_groups: session.age_groups || ['All Ages'],
+    choreo_reference_url: session.choreo_reference_url || '',
   })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -713,6 +714,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
       min_seats: Number(form.min_seats),
       status: form.status,
       age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
+      choreo_reference_url: form.choreo_reference_url.trim() || null,
     }).eq('id', session.id)
     if (error) alert(error.message)
     else onSaved()
@@ -814,6 +816,14 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
               })}
             </div>
           </div>
+        </div>
+
+        {/* Choreo reference URL */}
+        <div>
+          <label style={labelStyle}>Choreography Reference Link (optional)</label>
+          <input style={inputStyle} value={form.choreo_reference_url}
+            onChange={e => set('choreo_reference_url', e.target.value)}
+            placeholder="Instagram reel, YouTube video, or any link showing the dance..." />
         </div>
 
         {/* Waitlist */}

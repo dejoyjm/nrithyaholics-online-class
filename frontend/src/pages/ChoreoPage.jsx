@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import ImageCropUploader from '../components/ImageCropUploader'
 
 // ── Time picker helpers ──────────────────────────────────────
 // Replaced TIME_SLOTS array with hour + minute dropdowns.
@@ -179,37 +180,27 @@ function SessionModal({ user, session, onClose, onSaved }) {
   })()) : { hour: 9, minute: '00' }
 
   const [form, setForm] = useState({
-    title:       session?.title || '',
-    description: session?.description || '',
-    style:       session?.style_tags?.[0] || 'bollywood',
-    level:       session?.skill_level || 'beginner',
+    title:             session?.title || '',
+    description:       session?.description || '',
+    style:             session?.style_tags?.[0] || 'bollywood',
+    level:             session?.skill_level || 'beginner',
     // ✅ IST-safe local date (not UTC ISO string)
-    date:        session?.scheduled_at ? toLocalDateString(session.scheduled_at) : '',
-    hour:        existingTime.hour,
-    minute:      existingTime.minute,
-    duration:    session?.duration_minutes || 60,
-    price:       session?.price_tiers?.[0]?.price || 499,
-    max_seats:   session?.max_seats || 20,
-    min_seats:   session?.min_seats || 5,
-    age_groups:  session?.age_groups || ['All Ages'],
+    date:              session?.scheduled_at ? toLocalDateString(session.scheduled_at) : '',
+    hour:              existingTime.hour,
+    minute:            existingTime.minute,
+    duration:          session?.duration_minutes || 60,
+    price:             session?.price_tiers?.[0]?.price || 499,
+    max_seats:         session?.max_seats || 20,
+    min_seats:         session?.min_seats || 5,
+    age_groups:        session?.age_groups || ['All Ages'],
+    choreo_reference_url: session?.choreo_reference_url || '',
   })
   const [saving, setSaving] = useState(false)
   const [coverUrl, setCoverUrl] = useState(session?.cover_photo_url || null)
-  const [uploadingCover, setUploadingCover] = useState(false)
+  // Stable storage path for this upload session
+  const [coverPath] = useState(() => `${user.id}/${session?.id || Date.now()}.jpg`)
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
-
-  async function uploadCover(file) {
-    if (!file) return
-    const ext = file.name.split('.').pop()
-    const path = `${user.id}/${Date.now()}.${ext}`
-    setUploadingCover(true)
-    const { error } = await supabase.storage.from('session-covers').upload(path, file, { upsert: true, contentType: file.type })
-    if (error) { alert('Upload failed: ' + error.message); setUploadingCover(false); return }
-    const { data } = supabase.storage.from('session-covers').getPublicUrl(path)
-    setCoverUrl(data.publicUrl)
-    setUploadingCover(false)
-  }
 
   async function handleSave() {
     if (!form.title || !form.date || form.hour === '' || !form.minute) {
@@ -230,8 +221,9 @@ function SessionModal({ user, session, onClose, onSaved }) {
       price_tiers:     [{ seats: form.max_seats, price: form.price }],
       min_seats:       form.min_seats,
       max_seats:       form.max_seats,
-      cover_photo_url: coverUrl || null,
-      age_groups:      form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
+      cover_photo_url:      coverUrl || null,
+      age_groups:           form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
+      choreo_reference_url: form.choreo_reference_url.trim() || null,
     }
     let error
     if (isEdit) {
@@ -265,25 +257,20 @@ function SessionModal({ user, session, onClose, onSaved }) {
 
           {/* Cover photo */}
           <div>
-            <label style={labelStyle}>Cover Photo</label>
-            <div style={{ border: '2px dashed #e2dbd4', borderRadius: 12, padding: 20, textAlign: 'center', background: '#faf7f2', position: 'relative' }}>
-              {coverUrl ? (
-                <div style={{ position: 'relative' }}>
-                  <img src={coverUrl} alt="cover" style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: 8 }} />
-                  <button onClick={() => setCoverUrl(null)}
-                    style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', color: 'white', width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', fontSize: 16 }}>
-                    ×
-                  </button>
-                </div>
-              ) : (
-                <label style={{ cursor: 'pointer' }}>
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
-                  <div style={{ fontSize: 14, color: '#7a6e65' }}>{uploadingCover ? 'Uploading...' : 'Click to upload cover photo'}</div>
-                  <input type="file" accept="image/*" style={{ display: 'none' }}
-                    onChange={e => { if (e.target.files[0]) uploadCover(e.target.files[0]) }} />
-                </label>
-              )}
-            </div>
+            <ImageCropUploader
+              bucket="session-covers"
+              path={coverPath}
+              aspectRatio={4 / 5}
+              currentUrl={coverUrl}
+              onUploadComplete={(url) => setCoverUrl(url)}
+              label="Cover Photo"
+            />
+            {coverUrl && (
+              <button onClick={() => setCoverUrl(null)}
+                style={{ marginTop: 8, background: 'transparent', border: 'none', color: '#cc0000', fontSize: 12, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+                ✕ Remove photo
+              </button>
+            )}
           </div>
 
           {/* Title */}
@@ -392,6 +379,15 @@ function SessionModal({ user, session, onClose, onSaved }) {
                 )
               })}
             </div>
+          </div>
+
+          {/* Choreography Reference Link */}
+          <div>
+            <label style={labelStyle}>Choreography Reference Link (optional)</label>
+            <input style={inputStyle}
+              placeholder="Instagram reel, YouTube video, or any link showing the dance..."
+              value={form.choreo_reference_url}
+              onChange={e => set('choreo_reference_url', e.target.value)} />
           </div>
 
           {/* Save */}
