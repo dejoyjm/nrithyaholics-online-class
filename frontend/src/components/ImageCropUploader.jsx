@@ -85,7 +85,12 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
     setUploading(true)
     setError(null)
     try {
-      const blob = await getCroppedImg(imageSrc, croppedAreaPixels)
+      const [blob, imgEl] = await Promise.all([
+        getCroppedImg(imageSrc, croppedAreaPixels),
+        createImage(imageSrc),
+      ])
+      const focalX = Math.round(((croppedAreaPixels.x + croppedAreaPixels.width / 2) / imgEl.naturalWidth) * 100)
+      const focalY = Math.round(((croppedAreaPixels.y + croppedAreaPixels.height / 2) / imgEl.naturalHeight) * 100)
       const { error: uploadError } = await supabase.storage
         .from(bucket)
         .upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
@@ -93,7 +98,7 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
       const { data } = supabase.storage.from(bucket).getPublicUrl(path)
       const url = data.publicUrl + '?t=' + Date.now()
       setPreviewUrl(url)
-      onUploadComplete(url)
+      onUploadComplete(url, focalX, focalY)
       setShowCropModal(false)
       setImageSrc(null)
     } catch (err) {

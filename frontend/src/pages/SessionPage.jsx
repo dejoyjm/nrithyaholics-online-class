@@ -648,7 +648,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         {session.cover_photo_url && (
           <div style={{ aspectRatio: '4/5', overflow: 'hidden', background: '#0f0c0c' }}>
             <img src={session.cover_photo_url} alt={session.title}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }} />
+              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${session.cover_photo_focal_x ?? 50}% ${session.cover_photo_focal_y ?? 50}%` }} />
           </div>
         )}
 
@@ -689,7 +689,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
           <img
             src={session.cover_photo_url}
             alt={session.title}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${session.cover_photo_focal_x ?? 50}% ${session.cover_photo_focal_y ?? 50}%`, display: 'block' }}
           />
         ) : (
           <div style={{ width: '100%', height: '100%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 36 }}>

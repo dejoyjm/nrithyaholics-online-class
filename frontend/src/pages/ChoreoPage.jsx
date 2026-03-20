@@ -197,6 +197,8 @@ function SessionModal({ user, session, onClose, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
   const [coverUrl, setCoverUrl] = useState(session?.cover_photo_url || null)
+  const [coverFocalX, setCoverFocalX] = useState(session?.cover_photo_focal_x ?? 50)
+  const [coverFocalY, setCoverFocalY] = useState(session?.cover_photo_focal_y ?? 50)
   // Stable storage path for this upload session
   const [coverPath] = useState(() => `${user.id}/${session?.id || Date.now()}.jpg`)
 
@@ -222,6 +224,8 @@ function SessionModal({ user, session, onClose, onSaved }) {
       min_seats:       form.min_seats,
       max_seats:       form.max_seats,
       cover_photo_url:      coverUrl || null,
+      cover_photo_focal_x:  coverUrl ? coverFocalX : null,
+      cover_photo_focal_y:  coverUrl ? coverFocalY : null,
       age_groups:           form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
       choreo_reference_url: form.choreo_reference_url.trim() || null,
     }
@@ -262,7 +266,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
               path={coverPath}
               aspectRatio={4 / 5}
               currentUrl={coverUrl}
-              onUploadComplete={(url) => setCoverUrl(url)}
+              onUploadComplete={(url, fx, fy) => { setCoverUrl(url); setCoverFocalX(fx ?? 50); setCoverFocalY(fy ?? 50) }}
               label="Cover Photo"
             />
             {coverUrl && (

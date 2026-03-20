@@ -138,7 +138,7 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
         {hasCover && (
           <img
             src={session.cover_photo_url} alt=""
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top' }}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${session.cover_photo_focal_x ?? 50}% ${session.cover_photo_focal_y ?? 50}%` }}
           />
         )}
 
