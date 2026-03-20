@@ -692,6 +692,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
     status: session.status || 'open',
     age_groups: session.age_groups || ['All Ages'],
     choreo_reference_url: session.choreo_reference_url || '',
+    card_thumbnail_url: session.card_thumbnail_url || '',
   })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -715,6 +716,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
       status: form.status,
       age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
       choreo_reference_url: form.choreo_reference_url.trim() || null,
+      card_thumbnail_url: form.card_thumbnail_url.trim() || null,
     }).eq('id', session.id)
     if (error) alert(error.message)
     else onSaved()
@@ -824,6 +826,14 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
           <input style={inputStyle} value={form.choreo_reference_url}
             onChange={e => set('choreo_reference_url', e.target.value)}
             placeholder="Instagram reel, YouTube video, or any link showing the dance..." />
+        </div>
+
+        {/* Card thumbnail URL */}
+        <div>
+          <label style={labelStyle}>Card Thumbnail URL (optional)</label>
+          <input style={inputStyle} value={form.card_thumbnail_url}
+            onChange={e => set('card_thumbnail_url', e.target.value)}
+            placeholder="Landscape image URL for the home page browsing card..." />
         </div>
 
         {/* Waitlist */}

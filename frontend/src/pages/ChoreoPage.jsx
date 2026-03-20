@@ -199,8 +199,12 @@ function SessionModal({ user, session, onClose, onSaved }) {
   const [coverUrl, setCoverUrl] = useState(session?.cover_photo_url || null)
   const [coverFocalX, setCoverFocalX] = useState(session?.cover_photo_focal_x ?? 50)
   const [coverFocalY, setCoverFocalY] = useState(session?.cover_photo_focal_y ?? 50)
-  // Stable storage path for this upload session
-  const [coverPath] = useState(() => `${user.id}/${session?.id || Date.now()}.jpg`)
+  const [thumbnailUrl, setThumbnailUrl] = useState(session?.card_thumbnail_url || null)
+  const [thumbnailFocalX, setThumbnailFocalX] = useState(session?.card_thumbnail_focal_x ?? 50)
+  const [thumbnailFocalY, setThumbnailFocalY] = useState(session?.card_thumbnail_focal_y ?? 50)
+  // Stable storage paths for both uploads
+  const [coverPath] = useState(() => `hero/${session?.id || Date.now()}_${Date.now()}.jpg`)
+  const [thumbnailPath] = useState(() => `card/${session?.id || Date.now()}_${Date.now()}.jpg`)
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
@@ -226,6 +230,9 @@ function SessionModal({ user, session, onClose, onSaved }) {
       cover_photo_url:      coverUrl || null,
       cover_photo_focal_x:  coverUrl ? coverFocalX : null,
       cover_photo_focal_y:  coverUrl ? coverFocalY : null,
+      card_thumbnail_url:   thumbnailUrl || null,
+      card_thumbnail_focal_x: thumbnailUrl ? thumbnailFocalX : null,
+      card_thumbnail_focal_y: thumbnailUrl ? thumbnailFocalY : null,
       age_groups:           form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
       choreo_reference_url: form.choreo_reference_url.trim() || null,
     }
@@ -259,20 +266,56 @@ function SessionModal({ user, session, onClose, onSaved }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* Cover photo */}
-          <div>
+          {/* SESSION COVER PHOTO (Portrait 4:5) */}
+          <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c', marginBottom: 2 }}>
+                Session Cover Photo <span style={{ color: '#a09890', fontWeight: 400 }}>(Portrait)</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#7a6e65' }}>
+                Shown full-screen on the session detail page.<br />
+                Best: a full-body dance pose or close-up performance shot.
+              </div>
+            </div>
             <ImageCropUploader
               bucket="session-covers"
               path={coverPath}
               aspectRatio={4 / 5}
               currentUrl={coverUrl}
               onUploadComplete={(url, fx, fy) => { setCoverUrl(url); setCoverFocalX(fx ?? 50); setCoverFocalY(fy ?? 50) }}
-              label="Cover Photo"
+              label=""
             />
             {coverUrl && (
               <button onClick={() => setCoverUrl(null)}
                 style={{ marginTop: 8, background: 'transparent', border: 'none', color: '#cc0000', fontSize: 12, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
-                ✕ Remove photo
+                ✕ Remove
+              </button>
+            )}
+          </div>
+
+          {/* CARD THUMBNAIL (Landscape 16:9) */}
+          <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c', marginBottom: 2 }}>
+                Card Thumbnail <span style={{ color: '#a09890', fontWeight: 400 }}>(Landscape)</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#7a6e65' }}>
+                Shown on the home page browsing card.<br />
+                Best: a wide stage shot, group photo, or promotional banner.
+              </div>
+            </div>
+            <ImageCropUploader
+              bucket="session-covers"
+              path={thumbnailPath}
+              aspectRatio={16 / 9}
+              currentUrl={thumbnailUrl}
+              onUploadComplete={(url, fx, fy) => { setThumbnailUrl(url); setThumbnailFocalX(fx ?? 50); setThumbnailFocalY(fy ?? 50) }}
+              label=""
+            />
+            {thumbnailUrl && (
+              <button onClick={() => setThumbnailUrl(null)}
+                style={{ marginTop: 8, background: 'transparent', border: 'none', color: '#cc0000', fontSize: 12, cursor: 'pointer', padding: 0, fontWeight: 600 }}>
+                ✕ Remove
               </button>
             )}
           </div>

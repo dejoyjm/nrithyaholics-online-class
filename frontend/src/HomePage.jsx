@@ -107,7 +107,10 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
     setJoiningWaitlist(false)
   }
 
-  const hasCover = !!session.cover_photo_url
+  const cardImgUrl = session.card_thumbnail_url || session.cover_photo_url
+  const cardFocalX = session.card_thumbnail_url ? (session.card_thumbnail_focal_x ?? 50) : (session.cover_photo_focal_x ?? 50)
+  const cardFocalY = session.card_thumbnail_url ? (session.card_thumbnail_focal_y ?? 50) : (session.cover_photo_focal_y ?? 50)
+  const hasCover = !!cardImgUrl
   const hasAvatar = !!session.profiles?.avatar_url
   const choreoName = session.profiles?.full_name || 'Choreographer'
   const avatarUrl = session.profiles?.avatar_url
@@ -137,8 +140,8 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
         {/* Cover photo */}
         {hasCover && (
           <img
-            src={session.cover_photo_url} alt=""
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${session.cover_photo_focal_x ?? 50}% ${session.cover_photo_focal_y ?? 50}%` }}
+            src={cardImgUrl} alt=""
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${cardFocalX}% ${cardFocalY}%` }}
           />
         )}
 
