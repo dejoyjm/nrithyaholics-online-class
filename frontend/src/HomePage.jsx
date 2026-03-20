@@ -209,7 +209,7 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
             </span>
           </div>
         ) : hasAvatar ? (
-          // Case 3: no cover + avatar → 64px avatar centered, name below
+          // Case 3: no cover + avatar → 56px avatar centered, name below
           <div
             onClick={e => { e.stopPropagation(); onChoreoClick?.(session.choreographer_id) }}
             style={{
@@ -218,7 +218,7 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
               cursor: onChoreoClick ? 'pointer' : 'default',
             }}
           >
-            <div style={{ width: 64, height: 64, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.8)', overflow: 'hidden' }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', border: '2px solid white', overflow: 'hidden' }}>
               <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
             <span style={{ color: 'white', fontSize: 13, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
@@ -226,10 +226,13 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
             </span>
           </div>
         ) : (
-          // Case 4: no cover + no avatar → large monogram centered
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: 48, fontWeight: 800, color: 'rgba(255,255,255,0.3)', userSelect: 'none' }}>
+          // Case 4: no cover + no avatar → large monogram + name centered
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <span style={{ fontSize: 48, fontWeight: 800, color: 'rgba(255,255,255,0.35)', userSelect: 'none' }}>
               {choreoName[0]}
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600 }}>
+              {choreoName}
             </span>
           </div>
         )}

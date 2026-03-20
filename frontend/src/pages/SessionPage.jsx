@@ -645,10 +645,25 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         </div>
 
         {/* Cover — portrait 4:5 */}
-        {session.cover_photo_url && (
+        {session.cover_photo_url ? (
           <div style={{ aspectRatio: '4/5', overflow: 'hidden', background: '#0f0c0c' }}>
             <img src={session.cover_photo_url} alt={session.title}
               style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${session.cover_photo_focal_x ?? 50}% ${session.cover_photo_focal_y ?? 50}%` }} />
+          </div>
+        ) : (
+          <div style={{ aspectRatio: '4/5', background: color, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 32 }}>
+            {session.profiles?.avatar_url ? (
+              <div style={{ width: 80, height: 80, borderRadius: '50%', overflow: 'hidden', border: '3px solid rgba(255,255,255,0.5)' }}>
+                <img src={session.profiles.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            ) : (
+              <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 32, fontWeight: 800, color: 'white' }}>{session.profiles?.full_name?.[0] || '?'}</span>
+              </div>
+            )}
+            <span style={{ color: 'white', fontSize: 22, fontWeight: 800, fontFamily: 'Georgia, serif', textAlign: 'center', lineHeight: 1.4 }}>
+              {session.title}
+            </span>
           </div>
         )}
 
@@ -692,7 +707,16 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${session.cover_photo_focal_x ?? 50}% ${session.cover_photo_focal_y ?? 50}%`, display: 'block' }}
           />
         ) : (
-          <div style={{ width: '100%', height: '100%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 36 }}>
+          <div style={{ width: '100%', height: '100%', background: color, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 36 }}>
+            {session.profiles?.avatar_url ? (
+              <div style={{ width: 80, height: 80, borderRadius: '50%', overflow: 'hidden', border: '3px solid rgba(255,255,255,0.5)' }}>
+                <img src={session.profiles.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            ) : (
+              <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 32, fontWeight: 800, color: 'white' }}>{session.profiles?.full_name?.[0] || '?'}</span>
+              </div>
+            )}
             <span style={{ color: 'white', fontSize: 26, fontWeight: 800, fontFamily: 'Georgia, serif', textAlign: 'center', lineHeight: 1.4 }}>
               {session.title}
             </span>
