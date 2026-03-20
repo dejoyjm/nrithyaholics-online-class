@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import HomePage from './HomePage'
 import AuthPage from './pages/AuthPage'
 import SessionPage from './pages/SessionPage'
@@ -10,6 +10,17 @@ import ProfilePage from './pages/ProfilePage'
 import SuspendedPage from './pages/SuspendedPage'
 import ChoreoProfilePage from './pages/ChoreoProfilePage'
 import ClassroomPage from './pages/ClassroomPage'
+
+// ── Hash helpers (module-level, no state dependency) ─────────────────────────
+
+function parseHash(hash = window.location.hash) {
+  const h = (hash || '').replace(/^#\/?/, '')
+  if (!h) return { page: 'home', id: null }
+  const parts = h.split('/')
+  return { page: parts[0] || 'home', id: parts[1] || null }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -23,68 +34,143 @@ export default function App() {
   const [currentChoreoId, setCurrentChoreoId] = useState(null)
   const [razorpayReturn, setRazorpayReturn] = useState(null)
   const [currentClassroom, setCurrentClassroom] = useState(null)
-  // ── NEW: auto-open test modal when arriving via email test link ──
   const [autoOpenTest, setAutoOpenTest] = useState(false)
-  // ── Set when arriving via email deep link (?session= param) ──
   const [cameFromEmail, setCameFromEmail] = useState(false)
 
-  // Detect URL params on app load — handles:
-  // 1. Razorpay payment redirect-back
-  // 2. ?session=ID  — deep link to session from email (Join Class button)
-  // 3. ?session=ID&test=1 — deep link + auto-open SetupTestModal
+  // Track whether URL search params handled navigation (takes priority over hash)
+  const urlParamsHandled = useRef(false)
+  // Hash to restore after login completes
+  const pendingHash = useRef(null)
+
+  // ── Hash state application ────────────────────────────────────────────────
+  //
+  // u and p are passed explicitly to avoid stale-closure issues when called
+  // from effects that re-register infrequently (e.g. popstate listener).
+
+  function applyHashState(hash, u, p) {
+    const { page, id } = parseHash(hash)
+
+    // Reset all page-navigation state before applying the new route
+    setCurrentSession(null)
+    setShowProfile(false)
+    setCurrentChoreoId(null)
+    setCurrentClassroom(null)
+    setMode('learning')
+    setRazorpayReturn(null)
+    setAutoOpenTest(false)
+    setCameFromEmail(false)
+
+    switch (page) {
+      case 'session':
+        if (id) setCurrentSession(id)
+        break
+
+      case 'classroom':
+        // Rule 7: restore classroom hash as SessionPage — user re-clicks Join
+        // for a fresh token. The session ID is preserved.
+        if (id) setCurrentSession(id)
+        break
+
+      case 'profile':
+        if (!u) {
+          // Auth guard: remember the hash and show login
+          pendingHash.current = '#/profile'
+          setShowAuth(true)
+          window.location.hash = '#/profile' // keep in URL bar for after-login restore
+        } else {
+          setShowProfile(true)
+        }
+        break
+
+      case 'teach':
+        if (u && p?.role === 'choreographer' && p?.choreographer_approved) {
+          setMode('teaching')
+        }
+        // else fall through — home state already set above
+        break
+
+      case 'admin':
+        // Rule 8: only works when is_admin; otherwise silently redirect to home
+        if (!p?.is_admin) window.location.hash = '#/'
+        // else AdminPage renders automatically from profile.is_admin check
+        break
+
+      default:
+        // home — all state already reset above
+        break
+    }
+  }
+
+  // Public navigation helper: update hash AND React state together
+  function navigateTo(hash) {
+    window.location.hash = hash
+    applyHashState(hash, user, profile)
+  }
+
+  // ── URL params: Razorpay redirect + email deep links (priority over hash) ──
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const orderId        = params.get('razorpay_order_id')
-    const paymentId      = params.get('razorpay_payment_id')
-    const signature      = params.get('razorpay_signature')
-    const paymentSuccess = params.get('payment_success')
-    const paymentError   = params.get('payment_error')
-    const sessionIdParam = params.get('session_id')
-    // ── NEW params ──
+    const orderId         = params.get('razorpay_order_id')
+    const paymentId       = params.get('razorpay_payment_id')
+    const signature       = params.get('razorpay_signature')
+    const paymentSuccess  = params.get('payment_success')
+    const paymentError    = params.get('payment_error')
+    const sessionIdParam  = params.get('session_id')
     const sessionDeepLink = params.get('session')
     const testParam       = params.get('test')
 
-    // Clean URL regardless of which param set we handle
-    if (orderId || paymentSuccess || paymentError || sessionDeepLink) {
-      window.history.replaceState({}, '', window.location.pathname)
-    }
+    // Nothing to handle — leave hash-based restore in charge
+    if (!orderId && !paymentSuccess && !paymentError && !sessionDeepLink) return
 
-    // ── NEW: Email deep link — ?session=ID or ?session=ID&test=1 ──
+    // ── Email deep link: ?session=ID or ?session=ID&test=1 ──
     if (sessionDeepLink) {
+      urlParamsHandled.current = true
+      window.history.replaceState({}, '', window.location.pathname + '#/session/' + sessionDeepLink)
       setCurrentSession(sessionDeepLink)
       setCameFromEmail(true)
       if (testParam === '1') setAutoOpenTest(true)
       return
     }
 
-    // Razorpay: webhook-first path (booking already exists)
+    // ── Webhook path: ?payment_success=1&session_id=X ──
     if (paymentSuccess === '1' && sessionIdParam) {
-      const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
+      urlParamsHandled.current = true
       sessionStorage.removeItem('nrh_pending_payment')
+      window.history.replaceState({}, '', window.location.pathname + '#/session/' + sessionIdParam)
       setCurrentSession(sessionIdParam)
       setRazorpayReturn({ alreadyComplete: true })
       return
     }
 
-    // Razorpay: frontend verify path (booking not yet created)
+    // ── Frontend verify path: ?razorpay_order_id=…&razorpay_payment_id=…&razorpay_signature=… ──
     if (orderId && paymentId && signature) {
+      urlParamsHandled.current = true
       const pending = JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}')
       sessionStorage.removeItem('nrh_pending_payment')
       if (pending.session_id) {
+        window.history.replaceState({}, '', window.location.pathname + '#/session/' + pending.session_id)
         setCurrentSession(pending.session_id)
         setRazorpayReturn({
-          razorpay_order_id:  orderId,
+          razorpay_order_id:   orderId,
           razorpay_payment_id: paymentId,
           razorpay_signature:  decodeURIComponent(signature),
           session_id:          pending.session_id,
           seats:               pending.seats,
           amount_inr:          pending.amount_inr,
         })
+      } else {
+        window.history.replaceState({}, '', window.location.pathname)
       }
+      return
     }
+
+    // Fallback: clean up any remaining search params (e.g. paymentError alone)
+    window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
-  // Fetch platform config once on mount — public read, no auth needed
+  // ── Platform config ───────────────────────────────────────────────────────
+
   useEffect(() => {
     supabase
       .from('platform_config')
@@ -93,6 +179,8 @@ export default function App() {
       .single()
       .then(({ data }) => { if (data) setPlatformConfig(data) })
   }, [])
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -111,6 +199,7 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Profile realtime watch
   useEffect(() => {
     if (!user) return
     const channel = supabase
@@ -128,10 +217,62 @@ export default function App() {
     setLoading(false)
   }
 
+  // ── Hash restoration on initial load ─────────────────────────────────────
+  // Runs once when loading resolves. Skipped if URL params already handled
+  // navigation (magic links, Razorpay redirects take priority — Rule 5).
+
+  useEffect(() => {
+    if (loading) return
+    if (urlParamsHandled.current) return
+    // user and profile are current here: loading=false is set synchronously
+    // with setProfile in fetchProfile, so React batches them together.
+    applyHashState(window.location.hash, user, profile)
+  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Restore pending hash after login ─────────────────────────────────────
+  // If auth was required (e.g. #/profile on refresh while logged out), this
+  // re-applies the saved hash once both user and profile are available.
+
+  useEffect(() => {
+    if (!user || !profile) return
+    if (!pendingHash.current) return
+    const h = pendingHash.current
+    pendingHash.current = null
+    applyHashState(h, user, profile)
+  }, [user?.id, profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Admin hash sync ───────────────────────────────────────────────────────
+  // AdminPage always renders for admins — keep the URL bar in sync.
+
+  useEffect(() => {
+    if (user && profile?.is_admin) {
+      if (window.location.hash !== '#/admin') window.location.hash = '#/admin'
+    }
+  }, [user, profile?.is_admin]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Browser back/forward (popstate) ──────────────────────────────────────
+  // Re-registers when auth changes so the handler sees current user/profile.
+
+  useEffect(() => {
+    const handler = () => applyHashState(window.location.hash, user, profile)
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [user, profile]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+
   const logOut = async () => {
+    window.location.hash = '#/'
     await supabase.auth.signOut()
-    setUser(null); setProfile(null); setMode('learning')
+    setUser(null)
+    setProfile(null)
+    setMode('learning')
+    setCurrentSession(null)
+    setShowProfile(false)
+    setCurrentClassroom(null)
   }
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -167,36 +308,45 @@ export default function App() {
       sessionId={currentClassroom.sessionId}
       sessionData={currentClassroom.sessionData}
       user={user} profile={profile}
-      onLeave={() => setCurrentClassroom(null)}
+      onLeave={() => navigateTo('#/')}
     />
   )
 
   if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') return (
     <ChoreoPage
       user={user} profile={profile} platformConfig={platformConfig}
-      onSwitchToLearning={() => setMode('learning')}
+      onSwitchToLearning={() => navigateTo('#/')}
       onLogout={logOut}
-      onProfileClick={() => { setMode('learning'); setShowProfile(true) }}
-      onStartClass={(session) => setCurrentClassroom({ sessionId: session.id, sessionData: session })}
+      onProfileClick={() => navigateTo('#/profile')}
+      onStartClass={(session) => {
+        // Set state directly + update hash without calling applyHashState
+        // (which would reset state we just set)
+        setCurrentClassroom({ sessionId: session.id, sessionData: session })
+        window.location.hash = '#/classroom/' + session.id
+      }}
     />
   )
 
   if (showProfile) return (
     <ProfilePage
       user={user} profile={profile} platformConfig={platformConfig}
-      onBack={() => setShowProfile(false)}
-      onSessionClick={(id) => { setShowProfile(false); setCurrentSession(id) }}
-      onSwitchToTeaching={() => { setShowProfile(false); setMode('teaching') }}
-      onApplyToTeach={() => { setShowProfile(false); setProfile({ ...profile, role: null }) }}
-      onJoinClass={(sessionId, sessionData) => { setShowProfile(false); setCurrentClassroom({ sessionId, sessionData }) }}
+      onBack={() => navigateTo('#/')}
+      onSessionClick={(id) => navigateTo('#/session/' + id)}
+      onSwitchToTeaching={() => navigateTo('#/teach')}
+      onApplyToTeach={() => { navigateTo('#/'); setProfile({ ...profile, role: null }) }}
+      onJoinClass={(sessionId, sessionData) => {
+        setCurrentClassroom({ sessionId, sessionData })
+        window.location.hash = '#/classroom/' + sessionId
+        setShowProfile(false)
+      }}
     />
   )
 
   if (currentChoreoId) return (
     <ChoreoProfilePage
       choreoId={currentChoreoId} user={user}
-      onBack={() => setCurrentChoreoId(null)}
-      onSessionClick={(id) => { setCurrentChoreoId(null); setCurrentSession(id) }}
+      onBack={() => navigateTo('#/')}
+      onSessionClick={(id) => navigateTo('#/session/' + id)}
       onLoginClick={() => setShowAuth(true)}
     />
   )
@@ -205,7 +355,7 @@ export default function App() {
     <SessionPage
       sessionId={currentSession} user={user} profile={profile}
       platformConfig={platformConfig}
-      onBack={() => { setCurrentSession(null); setRazorpayReturn(null); setAutoOpenTest(false); setCameFromEmail(false) }}
+      onBack={() => navigateTo('#/')}
       onLoginClick={() => setShowAuth(true)}
       razorpayReturn={razorpayReturn}
       autoOpenTest={autoOpenTest}
@@ -213,6 +363,7 @@ export default function App() {
     />
   )
 
+  // Rule 6: choreo apply in progress (localStorage) still routes to RoleSelectPage
   const lsStep = localStorage.getItem('nrh_choreo_apply_step')
   const midApply = (lsStep === '"apply"' || lsStep === 'apply') && profile?.role === 'learner'
   if (user && midApply) return (
@@ -228,10 +379,10 @@ export default function App() {
     <HomePage
       onLoginClick={() => setShowAuth(true)}
       user={user} profile={profile}
-      onSessionClick={(id) => setCurrentSession(id)}
+      onSessionClick={(id) => navigateTo('#/session/' + id)}
       onChoreoClick={(id) => setCurrentChoreoId(id)}
-      onProfileClick={() => setShowProfile(true)}
-      onSwitchToTeaching={() => setMode('teaching')}
+      onProfileClick={() => navigateTo('#/profile')}
+      onSwitchToTeaching={() => navigateTo('#/teach')}
       onLogout={logOut}
     />
   )
