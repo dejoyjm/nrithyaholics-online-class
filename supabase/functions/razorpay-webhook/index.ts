@@ -195,31 +195,54 @@ async function sendBookingConfirmationEmail(
   }
 }
 
+// Timing-safe string comparison — always iterates full length to prevent
+// timing attacks that could reveal the expected signature byte-by-byte.
+function timingSafeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
 serve(async (req) => {
   try {
-    // Razorpay sends webhook secret in header for verification
+    // ── HMAC-SHA256 signature verification ───────────────────────────────────
     const webhookSecret = Deno.env.get('RAZORPAY_WEBHOOK_SECRET')
-    if (webhookSecret) {
-      const signature = req.headers.get('x-razorpay-signature')
-      if (!signature) {
-        return new Response('Unauthorized', { status: 401 })
+
+    // Always read the raw body first — we need it for both verification and parsing.
+    const rawBody = await req.text()
+
+    if (!webhookSecret) {
+      console.warn('RAZORPAY_WEBHOOK_SECRET not set — skipping signature verification (insecure)')
+    } else {
+      const signatureHeader = req.headers.get('x-razorpay-signature')
+      if (!signatureHeader) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid signature' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        )
       }
-      // Verify webhook signature
-      const body = await req.text()
+
       const key = await crypto.subtle.importKey(
         'raw', new TextEncoder().encode(webhookSecret),
         { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
       )
-      const sigBytes = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))
-      const expectedSig = Array.from(new Uint8Array(sigBytes))
+      const sigBytes    = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+      const computedSig = Array.from(new Uint8Array(sigBytes))
         .map(b => b.toString(16).padStart(2, '0')).join('')
-      if (expectedSig !== signature) {
-        return new Response('Invalid signature', { status: 401 })
+
+      if (!timingSafeStringEqual(computedSig, signatureHeader)) {
+        console.error('Webhook signature mismatch — request rejected')
+        return new Response(
+          JSON.stringify({ error: 'Invalid signature' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        )
       }
-      var payload = JSON.parse(body)
-    } else {
-      var payload = await req.json()
     }
+
+    const payload = JSON.parse(rawBody)
 
     if (payload.event !== 'payment.captured') {
       return new Response('OK', { status: 200 })
