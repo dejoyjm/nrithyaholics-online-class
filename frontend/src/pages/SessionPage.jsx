@@ -56,9 +56,19 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [verifying, setVerifying] = useState(false)
   const [showClassroom, setShowClassroom] = useState(false)
   const [showSetupTest, setShowSetupTest] = useState(false)
+  const [onWaitlist, setOnWaitlist] = useState(false)
+  const [joiningWaitlist, setJoiningWaitlist] = useState(false)
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
+
+  // Check waitlist status when session loads and is full
+  useEffect(() => {
+    if (!user || !session || session.status !== 'full') return
+    supabase.from('waitlist').select('id')
+      .eq('session_id', session.id).eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => { if (data) setOnWaitlist(true) })
+  }, [user?.id, session?.id, session?.status])
 
   // Handle redirect-back from Razorpay (params passed from App.jsx)
   useEffect(() => {
@@ -105,6 +115,19 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
     const { data: profile } = await supabase
       .from('profiles').select('full_name').eq('id', user.id).single()
     setUserName(profile?.full_name || '')
+  }
+
+  async function handleJoinWaitlist() {
+    if (!user) { onLoginClick(); return }
+    if (onWaitlist || joiningWaitlist) return
+    setJoiningWaitlist(true)
+    const { error } = await supabase.from('waitlist').insert({
+      session_id: session.id,
+      user_id: user.id,
+      email: user.email || '',
+    })
+    if (!error || error.code === '23505') setOnWaitlist(true)
+    setJoiningWaitlist(false)
   }
 
   async function checkExistingBooking(sid) {
@@ -442,6 +465,45 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             <div style={{ textAlign: 'center', padding: '12px 0' }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>🎭</div>
               <p style={{ fontSize: 13, color: '#7a6e65' }}>This is your session.</p>
+            </div>
+
+          ) : session.status === 'full' ? (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎟️</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', marginBottom: 8 }}>
+                This session is full
+              </h3>
+              <p style={{ fontSize: 14, color: '#7a6e65', marginBottom: 20, lineHeight: 1.6 }}>
+                All seats have been taken.
+              </p>
+              {onWaitlist ? (
+                <div style={{ background: '#e6f4ec', border: '1px solid #22c55e', borderRadius: 10, padding: 16, color: '#1a7a3c', fontSize: 14, fontWeight: 700 }}>
+                  ✓ You're on the waitlist
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, color: '#7a6e65', marginBottom: 16 }}>
+                    Join the waitlist and we'll notify you if a spot opens up.
+                  </p>
+                  <button
+                    onClick={handleJoinWaitlist}
+                    disabled={joiningWaitlist}
+                    style={{
+                      width: '100%', background: '#0f0c0c', color: 'white',
+                      border: 'none', borderRadius: 10, padding: 14,
+                      fontSize: 14, fontWeight: 700,
+                      cursor: joiningWaitlist ? 'not-allowed' : 'pointer',
+                      opacity: joiningWaitlist ? 0.7 : 1,
+                    }}
+                  >
+                    {!user
+                      ? 'Log in to join waitlist'
+                      : joiningWaitlist
+                        ? 'Joining...'
+                        : 'Notify me if a spot opens →'}
+                  </button>
+                </>
+              )}
             </div>
 
           ) : !isBookable ? (

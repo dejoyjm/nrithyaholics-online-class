@@ -70,7 +70,7 @@ function isDateInRange(dateStr, range) {
 }
 
 // ── SessionCard ────────────────────────────────────────────────
-function SessionCard({ session, onClick, onChoreoClick }) {
+function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
   const tiers = session.price_tiers || []
   const lowestPrice = getLowestPrice(tiers)
   const totalSeats = tiers.reduce((sum, t) => sum + t.seats, 0)
@@ -81,6 +81,30 @@ function SessionCard({ session, onClick, onChoreoClick }) {
   const seatsLeft = totalSeats - bookedCount
   const color = getStyleColor(session.style_tags)
   const isNew = session.created_at && (Date.now() - new Date(session.created_at)) < 7 * 86400000
+
+  const [onWaitlist, setOnWaitlist] = useState(false)
+  const [joiningWaitlist, setJoiningWaitlist] = useState(false)
+
+  useEffect(() => {
+    if (!user) return
+    supabase.from('waitlist').select('id')
+      .eq('session_id', session.id).eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => { if (data) setOnWaitlist(true) })
+  }, [user?.id, session.id])
+
+  async function handleWaitlist(e) {
+    e.stopPropagation()
+    if (!user) { onLoginClick?.(); return }
+    if (onWaitlist || joiningWaitlist) return
+    setJoiningWaitlist(true)
+    const { error } = await supabase.from('waitlist').insert({
+      session_id: session.id,
+      user_id: user.id,
+      email: user.email || '',
+    })
+    if (!error || error.code === '23505') setOnWaitlist(true)
+    setJoiningWaitlist(false)
+  }
 
   return (
     <div
@@ -175,7 +199,9 @@ function SessionCard({ session, onClick, onChoreoClick }) {
             {LEVEL_LABELS[session.skill_level] || session.skill_level || '—'}
           </span>
           <span style={{ fontSize: 12, color: isFull ? '#cc0000' : '#7a6e65' }}>
-            {isFull ? 'Join Waitlist' : `${seatsLeft} seats left`}
+            {isFull
+              ? (onWaitlist ? '✓ On waitlist' : 'Session full')
+              : `${seatsLeft} seats left`}
           </span>
         </div>
 
@@ -184,12 +210,20 @@ function SessionCard({ session, onClick, onChoreoClick }) {
             {lowestPrice > 0 ? `₹${lowestPrice}` : 'Free'}
             {tiers.length > 1 && <span style={{ fontSize: 12, fontWeight: 400, color: '#7a6e65' }}> onwards</span>}
           </div>
-          <button style={{
-            background: isFull ? '#333' : '#c8430a',
-            color: 'white', border: 'none', borderRadius: 8,
-            padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>
-            {isFull ? 'Waitlist' : 'Book'}
+          <button
+            onClick={isFull ? handleWaitlist : undefined}
+            disabled={isFull && onWaitlist}
+            style={{
+              background: isFull ? (onWaitlist ? '#1a7a3c' : '#333') : '#c8430a',
+              color: 'white', border: 'none', borderRadius: 8,
+              padding: '8px 16px', fontSize: 13, fontWeight: 600,
+              cursor: (isFull && onWaitlist) ? 'default' : 'pointer',
+              opacity: joiningWaitlist ? 0.7 : 1,
+            }}
+          >
+            {isFull
+              ? (onWaitlist ? '✓ On Waitlist' : joiningWaitlist ? '...' : 'Waitlist')
+              : 'Book'}
           </button>
         </div>
       </div>
@@ -653,6 +687,8 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
                 key={s.id}
                 session={s}
                 onClick={() => onSessionClick(s.id)}
+                user={user}
+                onLoginClick={onLoginClick}
               />
             ))}
           </div>

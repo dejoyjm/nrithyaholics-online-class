@@ -14,7 +14,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [appsRes, usersRes, sessionsRes] = await Promise.all([
+    const [appsRes, usersRes, sessionsRes, waitlistRes] = await Promise.all([
       supabase.from('profiles_with_email').select('*')
         .eq('role', 'choreographer').eq('choreographer_approved', false)
         .order('choreographer_requested_at', { ascending: false }),
@@ -22,10 +22,14 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
         .order('auth_created_at', { ascending: false }),
       supabase.from('sessions').select('*, profiles(full_name, avatar_url)')
         .order('scheduled_at', { ascending: false }),
+      supabase.from('waitlist').select('session_id'),
     ])
     setApplications(appsRes.data || [])
     setUsers(usersRes.data || [])
     setSessions(sessionsRes.data || [])
+    const counts = {}
+    waitlistRes.data?.forEach(w => { counts[w.session_id] = (counts[w.session_id] || 0) + 1 })
+    setWaitlistCounts(counts)
     setLoading(false)
   }
 
@@ -121,6 +125,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
 
   const [adminEditSession, setAdminEditSession] = useState(null)
   const [platformConfig, setPlatformConfig] = useState(null)
+  const [waitlistCounts, setWaitlistCounts] = useState({})
 
   useEffect(() => {
     supabase.from('platform_config')
@@ -334,6 +339,11 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                     </td>
                     <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
                       {s.bookings_count || 0} / {s.max_seats || '—'}
+                      {waitlistCounts[s.id] > 0 && (
+                        <span style={{ marginLeft: 8, background: '#fff8e6', color: '#e8a020', fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20 }}>
+                          +{waitlistCounts[s.id]} waiting
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: '14px 20px' }}>
                       <span style={{
@@ -659,6 +669,15 @@ function toLocalDateString(utcStr) {
 }
 
 function AdminSessionEditModal({ session, onClose, onSaved }) {
+  const [waitlist, setWaitlist] = useState([])
+
+  useEffect(() => {
+    supabase.from('waitlist').select('email, created_at')
+      .eq('session_id', session.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => setWaitlist(data || []))
+  }, [session.id])
+
   const [form, setForm] = useState({
     title: session.title || '',
     description: session.description || '',
@@ -796,6 +815,25 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
             </div>
           </div>
         </div>
+
+        {/* Waitlist */}
+        {waitlist.length > 0 && (
+          <div style={{ marginTop: 24, borderTop: '1px solid #e2dbd4', paddingTop: 20 }}>
+            <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12, fontWeight: 700 }}>
+              Waitlist ({waitlist.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+              {waitlist.map((w, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#faf7f2', padding: '8px 12px', borderRadius: 8 }}>
+                  <span style={{ fontSize: 13, color: '#0f0c0c' }}>{w.email}</span>
+                  <span style={{ fontSize: 11, color: '#7a6e65' }}>
+                    {new Date(w.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 24, display: 'flex', gap: 10 }}>
           <button onClick={onClose}
