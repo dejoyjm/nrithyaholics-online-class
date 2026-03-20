@@ -35,31 +35,22 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(currentUrl || null)
-  const heroCanvasRef = useRef(null)
-  const cardCanvasRef = useRef(null)
+  const previewCanvasRef = useRef(null)
+  const previewW = 160
+  const previewH = Math.round(previewW / aspectRatio)
 
   const drawPreview = useCallback((src, pixels) => {
     if (!src || !pixels) return
     const img = new Image()
     img.onload = () => {
-      // Hero preview: 120×150 (4:5)
-      const hero = heroCanvasRef.current
-      if (hero) {
-        const ctx = hero.getContext('2d')
-        ctx.clearRect(0, 0, hero.width, hero.height)
-        ctx.drawImage(img, pixels.x, pixels.y, pixels.width, pixels.height, 0, 0, hero.width, hero.height)
-      }
-      // Card preview: 90×120 (3:4) — derive from same crop, adjust height
-      const card = cardCanvasRef.current
-      if (card) {
-        const cardHeight = Math.min(pixels.width * (4 / 3), img.height - pixels.y)
-        const ctx = card.getContext('2d')
-        ctx.clearRect(0, 0, card.width, card.height)
-        ctx.drawImage(img, pixels.x, pixels.y, pixels.width, cardHeight, 0, 0, card.width, card.height)
-      }
+      const canvas = previewCanvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, pixels.x, pixels.y, pixels.width, pixels.height, 0, 0, canvas.width, canvas.height)
     }
     img.src = src
-  }, [])
+  }, [aspectRatio])
 
   const onCropComplete = useCallback((_, croppedPixels) => {
     setCroppedAreaPixels(croppedPixels)
@@ -186,44 +177,15 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
               />
             </div>
 
-            {/* Live previews */}
+            {/* Live preview */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 12, color: '#7a6e65', fontWeight: 600, marginBottom: 10 }}>Preview how it will look:</div>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                {/* Hero preview — Session page 4:5 */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e2dbd4', position: 'relative' }}>
-                    {/* Mock page header bar */}
-                    <div style={{ height: 8, background: '#1a1a1a', width: 120 }} />
-                    <canvas ref={heroCanvasRef} width={120} height={150} style={{ display: 'block' }} />
-                  </div>
-                  <span style={{ fontSize: 11, color: '#a09890' }}>Session page</span>
-                </div>
-                {/* Card preview — Home card 3:4 */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                  <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #e2dbd4', position: 'relative', width: 90, height: 120 }}>
-                    <canvas ref={cardCanvasRef} width={90} height={120} style={{ display: 'block' }} />
-                    {/* Mock gradient overlay */}
-                    <div style={{
-                      position: 'absolute', inset: 0,
-                      background: 'linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.7) 100%)',
-                      pointerEvents: 'none',
-                    }} />
-                    {/* Mock style chip top-left */}
-                    <div style={{
-                      position: 'absolute', top: 5, left: 5,
-                      background: '#c8430a', borderRadius: 4,
-                      padding: '1px 5px', fontSize: 8, color: 'white', fontWeight: 700,
-                    }}>DANCE</div>
-                    {/* Mock choreographer name bottom */}
-                    <div style={{
-                      position: 'absolute', bottom: 4, left: 5,
-                      fontSize: 8, color: 'white', fontWeight: 600, lineHeight: 1.2,
-                    }}>Choreographer</div>
-                  </div>
-                  <span style={{ fontSize: 11, color: '#a09890' }}>Home card</span>
-                </div>
-              </div>
+              <div style={{ fontSize: 12, color: '#7a6e65', fontWeight: 600, marginBottom: 8 }}>Preview:</div>
+              <canvas
+                ref={previewCanvasRef}
+                width={previewW}
+                height={previewH}
+                style={{ display: 'block', borderRadius: 8, border: '1px solid #e2dbd4' }}
+              />
             </div>
 
             <div style={{ display: 'flex', gap: 10 }}>

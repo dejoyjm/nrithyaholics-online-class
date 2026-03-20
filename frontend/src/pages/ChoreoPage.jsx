@@ -282,7 +282,14 @@ function SessionModal({ user, session, onClose, onSaved }) {
               path={coverPath}
               aspectRatio={4 / 5}
               currentUrl={coverUrl}
-              onUploadComplete={(url, fx, fy) => { setCoverUrl(url); setCoverFocalX(fx ?? 50); setCoverFocalY(fy ?? 50) }}
+              onUploadComplete={async (url, fx, fy) => {
+                setCoverUrl(url); setCoverFocalX(fx ?? 50); setCoverFocalY(fy ?? 50)
+                if (session?.id) {
+                  await supabase.from('sessions')
+                    .update({ cover_photo_url: url, cover_photo_focal_x: fx ?? 50, cover_photo_focal_y: fy ?? 50 })
+                    .eq('id', session.id).eq('choreographer_id', user.id)
+                }
+              }}
               label=""
             />
             {coverUrl && (
@@ -309,7 +316,14 @@ function SessionModal({ user, session, onClose, onSaved }) {
               path={thumbnailPath}
               aspectRatio={16 / 9}
               currentUrl={thumbnailUrl}
-              onUploadComplete={(url, fx, fy) => { setThumbnailUrl(url); setThumbnailFocalX(fx ?? 50); setThumbnailFocalY(fy ?? 50) }}
+              onUploadComplete={async (url, fx, fy) => {
+                setThumbnailUrl(url); setThumbnailFocalX(fx ?? 50); setThumbnailFocalY(fy ?? 50)
+                if (session?.id) {
+                  await supabase.from('sessions')
+                    .update({ card_thumbnail_url: url, card_thumbnail_focal_x: fx ?? 50, card_thumbnail_focal_y: fy ?? 50 })
+                    .eq('id', session.id).eq('choreographer_id', user.id)
+                }
+              }}
               label=""
             />
             {thumbnailUrl && (
