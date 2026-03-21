@@ -139,6 +139,19 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
   const [platformConfig, setPlatformConfig] = useState(null)
   const [waitlistCounts, setWaitlistCounts] = useState({})
 
+  // Sessions tab filters
+  const [sessionsSearch, setSessionsSearch] = useState('')
+  const [sessionsStatusFilter, setSessionsStatusFilter] = useState('active')
+
+  // Users tab filters
+  const [usersSearch, setUsersSearch] = useState('')
+  const [usersRoleFilter, setUsersRoleFilter] = useState('all')
+  const [usersStatusFilter, setUsersStatusFilter] = useState('active')
+
+  // User drawer edit mode
+  const [drawerEditMode, setDrawerEditMode] = useState(false)
+  const [drawerEditForm, setDrawerEditForm] = useState(null)
+
   useEffect(() => {
     supabase.from('platform_config')
       .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
@@ -151,6 +164,12 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
     await supabase.from('bookings').update({ status: 'cancelled', cancelled_reason: 'admin_cancelled', cancelled_at: new Date().toISOString() }).eq('session_id', sessionId)
     await supabase.from('sessions').update({ status: 'cancelled' }).eq('id', sessionId)
     fetchAll()
+  }
+
+  async function adminSetSessionStatus(sessionId, newStatus) {
+    const { error } = await supabase.from('sessions').update({ status: newStatus }).eq('id', sessionId)
+    if (error) alert(error.message)
+    else fetchAll()
   }
 
   const tabStyle = (t) => ({
@@ -269,119 +288,222 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
           )}
 
           {/* USERS TAB */}
-          {tab === 'users' && (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #f0ebe6' }}>
-                  {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => (
-                    <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u, i) => (
-                  <tr key={u.id} onClick={() => setSelectedUser(u)}
-                    style={{ borderBottom: i < users.length - 1 ? '1px solid #f0ebe6' : 'none', cursor: 'pointer' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#faf7f2'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <td style={{ padding: '14px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
-                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.full_name || u.email || '?')[0].toUpperCase()}
-                        </div>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>{u.full_name || '—'}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{u.email}</td>
-                    <td style={{ padding: '14px 20px' }}>
-                      <span style={{ background: '#f0ebe6', color: '#5a4e47', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize' }}>
-                        {u.role || 'learner'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 20px' }}>
-                      {u.suspended ? (
-                        <span style={{ background: '#fff0f0', color: '#cc0000', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>🚫 Suspended</span>
-                      ) : u.role === 'choreographer' ? (
-                        <span style={{ background: u.choreographer_approved ? '#e6f4ec' : '#fff8e6', color: u.choreographer_approved ? '#1a7a3c' : '#e8a020', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
-                          {u.choreographer_approved ? '✓ Approved' : '⏳ Pending'}
-                        </span>
-                      ) : (
-                        <span style={{ background: '#e6f4ec', color: '#1a7a3c', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>Active</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{formatDate(u.auth_created_at || u.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {tab === 'users' && (() => {
+            const filteredUsers = users.filter(u => {
+              const q = usersSearch.toLowerCase()
+              if (q && !(u.full_name || '').toLowerCase().includes(q) && !(u.email || '').toLowerCase().includes(q)) return false
+              if (usersRoleFilter === 'learner' && u.role !== 'learner') return false
+              if (usersRoleFilter === 'choreographer' && u.role !== 'choreographer') return false
+              if (usersRoleFilter === 'admin' && !u.is_admin) return false
+              if (usersStatusFilter === 'active' && u.suspended) return false
+              if (usersStatusFilter === 'suspended' && !u.suspended) return false
+              return true
+            })
+            function downloadUsersCSV() {
+              const rows = [['Name', 'Email', 'Phone', 'Role', 'Choreo Status', 'Joined', 'Suspended']]
+              filteredUsers.forEach(u => rows.push([
+                u.full_name || '',
+                u.email || '',
+                u.phone || '',
+                u.role || 'learner',
+                u.role === 'choreographer' ? (u.choreographer_approved ? 'Approved' : 'Pending') : '—',
+                formatDate(u.auth_created_at || u.created_at),
+                u.suspended ? 'Yes' : 'No',
+              ]))
+              const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+              const blob = new Blob([csv], { type: 'text/csv' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a'); a.href = url; a.download = 'users.csv'; a.click()
+              URL.revokeObjectURL(url)
+            }
+            return (
+              <>
+                <div style={{ display: 'flex', gap: 12, padding: '16px 20px', borderBottom: '1px solid #f0ebe6', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    placeholder="Search users..."
+                    value={usersSearch}
+                    onChange={e => setUsersSearch(e.target.value)}
+                    style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, width: 200, outline: 'none' }}
+                  />
+                  <select value={usersRoleFilter} onChange={e => setUsersRoleFilter(e.target.value)}
+                    style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
+                    <option value="all">All roles</option>
+                    <option value="learner">Learner</option>
+                    <option value="choreographer">Choreographer</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <select value={usersStatusFilter} onChange={e => setUsersStatusFilter(e.target.value)}
+                    style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                  <button onClick={downloadUsersCSV}
+                    style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#5a4e47', marginLeft: 'auto' }}>
+                    📥 Download CSV
+                  </button>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #f0ebe6' }}>
+                      {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => (
+                        <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((u, i) => (
+                      <tr key={u.id} onClick={() => { setSelectedUser(u); setDrawerEditMode(false); setDrawerEditForm(null) }}
+                        style={{ borderBottom: i < filteredUsers.length - 1 ? '1px solid #f0ebe6' : 'none', cursor: 'pointer' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#faf7f2'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '14px 20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
+                              {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.full_name || u.email || '?')[0].toUpperCase()}
+                            </div>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>{u.full_name || '—'}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{u.email}</td>
+                        <td style={{ padding: '14px 20px' }}>
+                          <span style={{ background: '#f0ebe6', color: '#5a4e47', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize' }}>
+                            {u.role || 'learner'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>
+                          {u.suspended ? (
+                            <span style={{ background: '#fff0f0', color: '#cc0000', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>🚫 Suspended</span>
+                          ) : u.role === 'choreographer' ? (
+                            <span style={{ background: u.choreographer_approved ? '#e6f4ec' : '#fff8e6', color: u.choreographer_approved ? '#1a7a3c' : '#e8a020', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
+                              {u.choreographer_approved ? '✓ Approved' : '⏳ Pending'}
+                            </span>
+                          ) : (
+                            <span style={{ background: '#e6f4ec', color: '#1a7a3c', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>Active</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{formatDate(u.auth_created_at || u.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )
+          })()}
 
           {/* SESSIONS TAB */}
-          {tab === 'sessions' && (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #f0ebe6' }}>
-                  {['Session', 'Choreographer', 'Date', 'Seats', 'Status', ''].map(h => (
-                    <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.map((s, i) => (
-                  <tr key={s.id} style={{ borderBottom: i < sessions.length - 1 ? '1px solid #f0ebe6' : 'none' }}>
-                    <td style={{ padding: '14px 20px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#f0ebe6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {s.cover_photo_url
-                            ? <img src={s.cover_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            : <span style={{ fontSize: 18 }}>🎭</span>
-                          }
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14, color: '#0f0c0c' }}>{s.title}</div>
-                          <div style={{ fontSize: 12, color: '#7a6e65' }}>{s.style_tags?.join(', ')}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
-                      {s.profiles?.full_name || '—'}
-                    </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47', whiteSpace: 'nowrap' }}>
-                      {new Date(s.scheduled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
-                      {s.bookings_count || 0} / {s.max_seats || '—'}
-                      {waitlistCounts[s.id] > 0 && (
-                        <span style={{ marginLeft: 8, background: '#fff8e6', color: '#e8a020', fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20 }}>
-                          +{waitlistCounts[s.id]} waiting
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 20px' }}>
-                      <span style={{
-                        background: s.status === 'confirmed' ? '#e6f4ec' : s.status === 'open' ? '#fff8e6' : '#f0ebe6',
-                        color: s.status === 'confirmed' ? '#1a7a3c' : s.status === 'open' ? '#e8a020' : '#7a6e65',
-                        fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase'
-                      }}>
-                        {s.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 20px' }}>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {['open','draft','confirmed'].includes(s.status) && (
-                          <button onClick={() => setAdminEditSession(s)} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>✏️ Edit</button>
-                        )}
-                        {['open','confirmed','draft'].includes(s.status) && (
-                          <button onClick={() => adminCancelSession(s.id)} style={{ background: '#fff0f0', border: '1px solid #ffcccc', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#cc0000' }}>✕ Cancel</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          {tab === 'sessions' && (() => {
+            const filteredSessions = sessions.filter(s => {
+              const q = sessionsSearch.toLowerCase()
+              if (q && !(s.title || '').toLowerCase().includes(q)) return false
+              if (sessionsStatusFilter === 'active') return ['open', 'confirmed', 'draft'].includes(s.status)
+              if (sessionsStatusFilter === 'completed') return s.status === 'completed'
+              if (sessionsStatusFilter === 'cancelled') return s.status === 'cancelled'
+              return true
+            })
+            function downloadSessionsCSV() {
+              const rows = [['Title', 'Choreographer', 'Date (IST)', 'Status', 'Seats Booked', 'Max Seats', 'Price', 'Style']]
+              filteredSessions.forEach(s => rows.push([
+                s.title || '',
+                s.profiles?.full_name || '',
+                new Date(s.scheduled_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }),
+                s.status || '',
+                s.bookings_count || 0,
+                s.max_seats || '',
+                s.price_tiers?.[0]?.price || '',
+                s.style_tags?.join('; ') || '',
+              ]))
+              const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+              const blob = new Blob([csv], { type: 'text/csv' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a'); a.href = url; a.download = 'sessions.csv'; a.click()
+              URL.revokeObjectURL(url)
+            }
+            function statusBadge(status) {
+              const cfg = {
+                confirmed: ['#e6f4ec', '#1a7a3c'],
+                open:      ['#fff8e6', '#e8a020'],
+                draft:     ['#f0ebe6', '#7a6e65'],
+                completed: ['#e8f4fd', '#1a5db5'],
+                cancelled: ['#fff0f0', '#cc0000'],
+              }[status] || ['#f0ebe6', '#7a6e65']
+              return <span style={{ background: cfg[0], color: cfg[1], fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase' }}>{status}</span>
+            }
+            return (
+              <>
+                <div style={{ display: 'flex', gap: 12, padding: '16px 20px', borderBottom: '1px solid #f0ebe6', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    placeholder="Search sessions..."
+                    value={sessionsSearch}
+                    onChange={e => setSessionsSearch(e.target.value)}
+                    style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, width: 220, outline: 'none' }}
+                  />
+                  <select value={sessionsStatusFilter} onChange={e => setSessionsStatusFilter(e.target.value)}
+                    style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
+                    <option value="active">Active</option>
+                    <option value="all">All</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                  <button onClick={downloadSessionsCSV}
+                    style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#5a4e47', marginLeft: 'auto' }}>
+                    📥 Download CSV
+                  </button>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #f0ebe6' }}>
+                      {['Session', 'Choreographer', 'Date', 'Seats', 'Status', ''].map(h => (
+                        <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSessions.map((s, i) => (
+                      <tr key={s.id} style={{ borderBottom: i < filteredSessions.length - 1 ? '1px solid #f0ebe6' : 'none' }}>
+                        <td style={{ padding: '14px 20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#f0ebe6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {s.cover_photo_url
+                                ? <img src={s.cover_photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <span style={{ fontSize: 18 }}>🎭</span>
+                              }
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 14, color: '#0f0c0c' }}>{s.title}</div>
+                              <div style={{ fontSize: 12, color: '#7a6e65' }}>{s.style_tags?.join(', ')}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{s.profiles?.full_name || '—'}</td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47', whiteSpace: 'nowrap' }}>
+                          {new Date(s.scheduled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
+                          {s.bookings_count || 0} / {s.max_seats || '—'}
+                          {waitlistCounts[s.id] > 0 && (
+                            <span style={{ marginLeft: 8, background: '#fff8e6', color: '#e8a020', fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20 }}>
+                              +{waitlistCounts[s.id]} waiting
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>{statusBadge(s.status)}</td>
+                        <td style={{ padding: '14px 20px' }}>
+                          <SessionRowActions
+                            session={s}
+                            onEdit={() => setAdminEditSession(s)}
+                            onCancel={() => adminCancelSession(s.id)}
+                            onSetStatus={(st) => adminSetSessionStatus(s.id, st)}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )
+          })()}
         </div>
 
         {/* BOOKINGS TAB */}
@@ -421,7 +543,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
       {selectedUser && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', justifyContent: 'flex-end' }}
-          onClick={() => setSelectedUser(null)}
+          onClick={() => { setSelectedUser(null); setDrawerEditMode(false); setDrawerEditForm(null) }}
         >
           <div
             style={{ background: 'white', width: '100%', maxWidth: 480, height: '100vh', overflowY: 'auto', padding: 36 }}
@@ -429,7 +551,17 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
               <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif' }}>User Profile</h2>
-              <button onClick={() => setSelectedUser(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65' }}>×</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {!drawerEditMode && (
+                  <button
+                    onClick={() => { setDrawerEditMode(true); setDrawerEditForm({ full_name: selectedUser.full_name || '', phone: selectedUser.phone || '', admin_notes: selectedUser.admin_notes || '' }) }}
+                    style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}
+                  >
+                    ✏️ Edit
+                  </button>
+                )}
+                <button onClick={() => { setSelectedUser(null); setDrawerEditMode(false); setDrawerEditForm(null) }} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65' }}>×</button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
@@ -448,6 +580,54 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               </div>
             </div>
 
+            {/* EDIT MODE */}
+            {drawerEditMode && drawerEditForm && (() => {
+              const inputStyle = { width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', color: '#0f0c0c' }
+              const labelStyle = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
+              async function saveEdits() {
+                const { error } = await supabase.from('profiles').update({
+                  full_name: drawerEditForm.full_name.trim() || null,
+                  phone: drawerEditForm.phone.trim() || null,
+                  admin_notes: drawerEditForm.admin_notes.trim() || null,
+                }).eq('id', selectedUser.id)
+                if (error) { alert(error.message); return }
+                await fetchAll()
+                const { data } = await supabase.from('profiles_with_email').select('*').eq('id', selectedUser.id).single()
+                if (data) setSelectedUser(data)
+                setDrawerEditMode(false)
+                setDrawerEditForm(null)
+              }
+              return (
+                <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 20, marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, color: '#e8a020', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 }}>✏️ Edit User</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div>
+                      <label style={labelStyle}>Full Name</label>
+                      <input style={inputStyle} value={drawerEditForm.full_name} onChange={e => setDrawerEditForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Full name" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Phone</label>
+                      <input style={inputStyle} value={drawerEditForm.phone} onChange={e => setDrawerEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91 98765 43210" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Admin Notes</label>
+                      <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical', lineHeight: 1.5 }} value={drawerEditForm.admin_notes} onChange={e => setDrawerEditForm(f => ({ ...f, admin_notes: e.target.value }))} placeholder="Internal notes — not visible to user" />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => { setDrawerEditMode(false); setDrawerEditForm(null) }}
+                        style={{ flex: 1, background: 'white', border: '1px solid #e2dbd4', color: '#7a6e65', padding: '10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                        Cancel
+                      </button>
+                      <button onClick={saveEdits}
+                        style={{ flex: 2, background: '#0f0c0c', color: 'white', border: 'none', padding: '10px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                        Save Changes
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 10, color: '#e8a020', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>⚡ Admin Override</div>
               <AdminAvatarUploader
@@ -461,6 +641,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               {[
                 ['Role', selectedUser.role || 'learner'],
                 ['Choreo Status', selectedUser.role === 'choreographer' ? (selectedUser.choreographer_approved ? '✓ Approved' : '⏳ Pending') : '—'],
+                ['Phone', selectedUser.phone || '—'],
                 ['Instagram', selectedUser.instagram_handle ? `@${selectedUser.instagram_handle}` : '—'],
                 ['Joined', formatDate(selectedUser.auth_created_at || selectedUser.created_at)],
               ].map(([label, value]) => (
@@ -510,10 +691,12 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               </div>
             )}
 
-            <div style={{ marginBottom: 24 }}>
-              <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Internal Notes</div>
-              <AdminNotes userId={selectedUser.id} existingNotes={selectedUser.admin_notes} />
-            </div>
+            {!drawerEditMode && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Internal Notes</div>
+                <AdminNotes userId={selectedUser.id} existingNotes={selectedUser.admin_notes} />
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selectedUser.role === 'choreographer' && !selectedUser.choreographer_approved && !selectedUser.suspended && (
@@ -1058,6 +1241,55 @@ function PlatformSettingsTab({ onConfigSaved }) {
         style={{ background: saved ? '#1a7a3c' : '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
         {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Settings'}
       </button>
+    </div>
+  )
+}
+
+// ── SessionRowActions ─────────────────────────────────────────
+function SessionRowActions({ session: s, onEdit, onCancel, onSetStatus }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e) {
+      if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  const items = [
+    { label: '✏️ Edit', action: () => { setOpen(false); onEdit() }, always: true },
+    { label: '↩️ Reopen', action: () => { setOpen(false); onSetStatus('open') }, always: true },
+    { label: '✓ Confirm', action: () => { setOpen(false); onSetStatus('confirmed') }, hide: s.status === 'confirmed' },
+    { label: '✓ Mark Completed', action: () => { setOpen(false); onSetStatus('completed') }, hide: s.status === 'completed' },
+    { label: '✕ Cancel', action: () => { setOpen(false); onCancel() }, hide: s.status === 'cancelled', danger: true },
+  ].filter(item => !item.hide)
+
+  return (
+    <div ref={btnRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', color: '#5a4e47', whiteSpace: 'nowrap' }}
+      >
+        ⚡ Actions ▾
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2dbd4', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, minWidth: 190, overflow: 'hidden' }}>
+          {items.map(item => (
+            <button
+              key={item.label}
+              onClick={item.action}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', fontSize: 13, background: 'white', border: 'none', cursor: 'pointer', color: item.danger ? '#cc0000' : '#0f0c0c', fontWeight: 500 }}
+              onMouseEnter={e => { e.currentTarget.style.background = item.danger ? '#fff0f0' : '#faf7f2' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white' }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
