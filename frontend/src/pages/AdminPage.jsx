@@ -7,6 +7,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
   const [applications, setApplications] = useState([])
   const [users, setUsers] = useState([])
   const [sessions, setSessions] = useState([])
+  const [allBookings, setAllBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState(null)
   const [confirmAction, setConfirmAction] = useState(null)
@@ -15,7 +16,8 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [appsRes, usersRes, sessionsRes, waitlistRes] = await Promise.all([
+    const since60d = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+    const [appsRes, usersRes, sessionsRes, waitlistRes, bookingsRes] = await Promise.all([
       supabase.from('profiles_with_email').select('*')
         .eq('role', 'choreographer').eq('choreographer_approved', false)
         .order('choreographer_requested_at', { ascending: false }),
@@ -24,10 +26,15 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
       supabase.from('sessions').select('*, profiles(full_name, avatar_url)')
         .order('scheduled_at', { ascending: false }),
       supabase.from('waitlist').select('session_id'),
+      supabase.from('bookings')
+        .select('id, status, credits_paid, razorpay_payment_id, razorpay_order_id, created_at, confirmation_email_sent_at, reminder_email_sent_at, join_link_sent_at, joined_at, left_at, booked_by, session_id, profiles!booked_by(full_name), sessions!session_id(id, title, scheduled_at, status)')
+        .gt('created_at', since60d)
+        .order('created_at', { ascending: false }),
     ])
     setApplications(appsRes.data || [])
     setUsers(usersRes.data || [])
     setSessions(sessionsRes.data || [])
+    setAllBookings(bookingsRes.data || [])
     const counts = {}
     waitlistRes.data?.forEach(w => { counts[w.session_id] = (counts[w.session_id] || 0) + 1 })
     setWaitlistCounts(counts)
@@ -205,6 +212,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
           </button>
           <button style={tabStyle('users')} onClick={() => setTab('users')}>Users</button>
           <button style={tabStyle('sessions')} onClick={() => setTab('sessions')}>Sessions</button>
+          <button style={tabStyle('bookings')} onClick={() => setTab('bookings')}>📊 Bookings</button>
           <button style={tabStyle('settings')} onClick={() => setTab('settings')}>⚙️ Settings</button>
         </div>
 
@@ -371,6 +379,15 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
             </table>
           )}
         </div>
+
+        {/* BOOKINGS TAB */}
+        {tab === 'bookings' && (
+          <BookingsTab
+            allBookings={allBookings}
+            users={users}
+            onRefresh={fetchAll}
+          />
+        )}
 
         {/* PLATFORM SETTINGS TAB */}
         {tab === 'settings' && (
@@ -1037,6 +1054,309 @@ function PlatformSettingsTab({ onConfigSaved }) {
         style={{ background: saved ? '#1a7a3c' : '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
         {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Settings'}
       </button>
+    </div>
+  )
+}
+
+// ── BookingsTab ────────────────────────────────────────────────
+function BookingsTab({ allBookings, users, onRefresh }) {
+  const [expandedSessions, setExpandedSessions] = useState({})
+  const [sendingConfirm, setSendingConfirm] = useState({}) // bookingId -> bool
+
+  const now = Date.now()
+  const FIVE_MINS = 5 * 60 * 1000
+
+  // Flatten bookings with email from users state
+  const enriched = allBookings.map(b => ({
+    ...b,
+    full_name: b.profiles?.full_name,
+    email: users.find(u => u.id === b.booked_by)?.email || '',
+    session_title: b.sessions?.title || '',
+    scheduled_at: b.sessions?.scheduled_at || '',
+    session_status: b.sessions?.status || '',
+  }))
+
+  // Issue detection
+  function isConfirmEmailIssue(b) {
+    if (b.confirmation_email_sent_at) return false
+    if (!b.razorpay_payment_id) return false
+    return new Date(b.created_at).getTime() < now - FIVE_MINS
+  }
+  function isManualRecovery(b) {
+    return (b.razorpay_order_id || '').startsWith('manual_recovery_')
+  }
+  const issues = enriched.filter(b => isConfirmEmailIssue(b) || isManualRecovery(b))
+
+  // Today's stats
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0)
+  const todayBookings = enriched.filter(b => new Date(b.created_at) >= todayStart)
+  const todayRevenue = todayBookings.reduce((s, b) => s + (b.credits_paid || 0), 0)
+  const pendingEmails = enriched.filter(b => isConfirmEmailIssue(b)).length
+
+  // Group by session
+  const bySession = {}
+  enriched.forEach(b => {
+    const sid = b.session_id
+    if (!bySession[sid]) bySession[sid] = { session_title: b.session_title, scheduled_at: b.scheduled_at, session_status: b.session_status, bookings: [] }
+    bySession[sid].bookings.push(b)
+  })
+  const sessionGroups = Object.entries(bySession)
+    .sort(([, a], [, b]) => new Date(b.scheduled_at) - new Date(a.scheduled_at))
+
+  function toggleSession(sid) {
+    setExpandedSessions(s => ({ ...s, [sid]: !s[sid] }))
+  }
+
+  function isExpanded(sid) {
+    if (sid in expandedSessions) return expandedSessions[sid]
+    // Default: expand if has issues
+    const group = bySession[sid]
+    return group?.bookings.some(b => isConfirmEmailIssue(b) || isManualRecovery(b)) || false
+  }
+
+  async function sendConfirmEmail(booking) {
+    setSendingConfirm(s => ({ ...s, [booking.id]: true }))
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-booking-confirmation`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ booking_id: booking.id }),
+        }
+      )
+      if (res.ok) onRefresh()
+      else { const err = await res.json(); alert(err.error || 'Failed to send') }
+    } catch (e) { alert('Error: ' + e.message) }
+    setSendingConfirm(s => ({ ...s, [booking.id]: false }))
+  }
+
+  function formatISTShort(ts) {
+    if (!ts) return ''
+    return new Date(ts).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
+    })
+  }
+
+  function cellStatus(ts, label) {
+    return ts
+      ? <span title={formatISTShort(ts)} style={{ color: '#1a7a3c', cursor: 'default' }}>✅</span>
+      : <span style={{ color: '#a09890' }}>—</span>
+  }
+
+  function confEmailCell(b) {
+    if (b.confirmation_email_sent_at) return <span title={formatISTShort(b.confirmation_email_sent_at)} style={{ color: '#1a7a3c', cursor: 'default' }}>✅</span>
+    if (isConfirmEmailIssue(b)) return <span style={{ color: '#c8430a', fontWeight: 700 }}>⚠️</span>
+    return <span style={{ color: '#a09890' }}>—</span>
+  }
+
+  function reminderCell(b) {
+    if (b.reminder_email_sent_at) return <span title={formatISTShort(b.reminder_email_sent_at)} style={{ color: '#1a7a3c', cursor: 'default' }}>✅</span>
+    const sessionMs = new Date(b.scheduled_at).getTime()
+    if (now < sessionMs - 25 * 60 * 60 * 1000) return <span style={{ color: '#a09890' }}>—</span>
+    if (!b.reminder_email_sent_at && now >= sessionMs - 24 * 60 * 60 * 1000) return <span style={{ color: '#c8430a', fontWeight: 700 }}>⚠️</span>
+    return <span style={{ color: '#a09890' }}>—</span>
+  }
+
+  function joinLinkCell(b) {
+    if (b.join_link_sent_at) return <span title={formatISTShort(b.join_link_sent_at)} style={{ color: '#1a7a3c', cursor: 'default' }}>✅</span>
+    const sessionMs = new Date(b.scheduled_at).getTime()
+    if (now < sessionMs - 30 * 60 * 1000) return <span style={{ color: '#a09890' }}>—</span>
+    if (!b.join_link_sent_at && now >= sessionMs) return <span style={{ color: '#c8430a', fontWeight: 700 }}>⚠️</span>
+    return <span style={{ color: '#a09890' }}>—</span>
+  }
+
+  function joinedCell(b) {
+    if (b.joined_at) return <span title={formatISTShort(b.joined_at)} style={{ color: '#1a7a3c', cursor: 'default' }}>✅ {formatISTShort(b.joined_at)}</span>
+    const sessionMs = new Date(b.scheduled_at).getTime()
+    const durationMs = 60 * 60 * 1000 // assume 60min fallback
+    if (now > sessionMs + durationMs && !b.joined_at) return <span style={{ color: '#7a6e65', fontStyle: 'italic' }}>✗ No show</span>
+    if (now < sessionMs) return <span style={{ color: '#a09890' }}>—</span>
+    return <span style={{ color: '#a09890' }}>—</span>
+  }
+
+  function paidCell(b) {
+    if (isManualRecovery(b)) return <span style={{ color: '#e8a020', fontWeight: 700, fontSize: 12 }}>🔧 Manual</span>
+    if (b.razorpay_payment_id) return <span title={b.razorpay_payment_id} style={{ color: '#1a7a3c', cursor: 'default' }}>✅</span>
+    return <span style={{ color: '#a09890' }}>—</span>
+  }
+
+  function rowHasIssue(b) {
+    return isConfirmEmailIssue(b) || isManualRecovery(b)
+  }
+
+  function downloadCSV(sessionId) {
+    const group = bySession[sessionId]
+    if (!group) return
+    const rows = [
+      ['Full Name', 'Email', 'Amount Paid (₹)', 'Payment ID', 'Order ID', 'Booking Time (IST)', 'Payment Type', 'Conf Email Sent', 'Reminder Sent', 'Join Link Sent', 'Joined Class', 'Time Joined (IST)', 'Notes']
+    ]
+    group.bookings.forEach(b => {
+      const userEmail = users.find(u => u.id === b.booked_by)?.email || ''
+      rows.push([
+        b.profiles?.full_name || '',
+        userEmail,
+        b.credits_paid || '',
+        b.razorpay_payment_id || '',
+        b.razorpay_order_id || '',
+        formatISTShort(b.created_at),
+        isManualRecovery(b) ? 'Manual Recovery' : 'Razorpay',
+        b.confirmation_email_sent_at ? formatISTShort(b.confirmation_email_sent_at) : '',
+        b.reminder_email_sent_at ? formatISTShort(b.reminder_email_sent_at) : '',
+        b.join_link_sent_at ? formatISTShort(b.join_link_sent_at) : '',
+        b.joined_at ? 'Yes' : 'No',
+        b.joined_at ? formatISTShort(b.joined_at) : '',
+        '',
+      ])
+    })
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const safeName = (group.session_title || sessionId).replace(/[^a-zA-Z0-9 ]/g, '').replace(/ /g, '_')
+    const dateStr = new Date(group.scheduled_at).toISOString().slice(0, 10)
+    const filename = `${safeName}_${dateStr}_bookings.csv`
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const statPillStyle = { background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 20, padding: '6px 16px', fontSize: 13, fontWeight: 600, color: '#0f0c0c' }
+  const thStyle = { padding: '8px 10px', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 0.8, textAlign: 'left', whiteSpace: 'nowrap' }
+  const tdStyle = { padding: '8px 10px', fontSize: 13, borderBottom: '1px solid #f0ebe6', verticalAlign: 'middle' }
+
+  return (
+    <div style={{ marginTop: 24 }}>
+
+      {/* SECTION 1 — Attention Banner */}
+      {issues.length > 0 && (
+        <div style={{ background: '#fff0f0', border: '1px solid #ffcccc', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#cc0000', marginBottom: 12 }}>
+            ⚠️ {issues.length} booking{issues.length > 1 ? 's' : ''} need attention
+          </div>
+          {issues.map(b => (
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #ffcccc', gap: 12 }}>
+              <div style={{ fontSize: 13, color: '#0f0c0c', flex: 1 }}>
+                {isManualRecovery(b) ? '🔧 ' : '✉️ '}
+                <strong>{b.email || b.full_name}</strong> — {b.session_title}
+                {isConfirmEmailIssue(b) && !isManualRecovery(b) && (
+                  <span style={{ color: '#7a6e65', marginLeft: 6 }}>— confirmation email not sent</span>
+                )}
+              </div>
+              <button
+                onClick={() => sendConfirmEmail(b)}
+                disabled={sendingConfirm[b.id]}
+                style={{
+                  background: sendingConfirm[b.id] ? '#a09890' : '#c8430a', color: 'white',
+                  border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12,
+                  fontWeight: 700, cursor: sendingConfirm[b.id] ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                {sendingConfirm[b.id] ? '⏳ Sending...' : 'Send Confirmation Email'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* SECTION 2 — Today's Summary */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
+        <span style={statPillStyle}>📦 {todayBookings.length} bookings today</span>
+        <span style={statPillStyle}>₹{todayRevenue} revenue today</span>
+        <span style={{ ...statPillStyle, background: pendingEmails > 0 ? '#fff8e6' : undefined, borderColor: pendingEmails > 0 ? '#e8a020' : undefined, color: pendingEmails > 0 ? '#c8430a' : '#a09890' }}>
+          ✉️ {pendingEmails} emails pending
+        </span>
+        <span style={{ ...statPillStyle, background: issues.length > 0 ? '#fff0f0' : undefined, borderColor: issues.length > 0 ? '#ffcccc' : undefined, color: issues.length > 0 ? '#cc0000' : '#a09890' }}>
+          ⚠️ {issues.length} issues
+        </span>
+      </div>
+
+      {/* SECTION 3 — Session Cards */}
+      {sessionGroups.length === 0 && (
+        <div style={{ textAlign: 'center', color: '#a09890', padding: 40 }}>No bookings in the last 60 days</div>
+      )}
+      {sessionGroups.map(([sid, group]) => {
+        const groupIssues = group.bookings.filter(b => rowHasIssue(b))
+        const groupRevenue = group.bookings.reduce((s, b) => s + (b.credits_paid || 0), 0)
+        const expanded = isExpanded(sid)
+        return (
+          <div key={sid} style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
+            {/* Card header */}
+            <div
+              onClick={() => toggleSession(sid)}
+              style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', cursor: 'pointer', gap: 12, borderBottom: expanded ? '1px solid #f0ebe6' : 'none' }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: '#0f0c0c' }}>{group.session_title}</span>
+                  <span style={{ fontSize: 12, color: '#7a6e65' }}>
+                    {new Date(group.scheduled_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })} IST
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase',
+                    background: group.session_status === 'confirmed' ? '#e6f4ec' : group.session_status === 'open' ? '#fff8e6' : '#f0ebe6',
+                    color: group.session_status === 'confirmed' ? '#1a7a3c' : group.session_status === 'open' ? '#e8a020' : '#7a6e65',
+                  }}>{group.session_status}</span>
+                </div>
+                <div style={{ fontSize: 12, color: '#7a6e65', marginTop: 4 }}>
+                  {group.bookings.length} bookings · ₹{groupRevenue} revenue
+                  {groupIssues.length > 0 && (
+                    <span style={{ marginLeft: 8, background: '#fff8e6', color: '#c8430a', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
+                      ⚠️ {groupIssues.length} issues
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={e => { e.stopPropagation(); downloadCSV(sid) }}
+                style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#5a4e47', whiteSpace: 'nowrap' }}
+              >
+                📥 CSV
+              </button>
+              <span style={{ fontSize: 18, color: '#a09890' }}>{expanded ? '▾' : '▸'}</span>
+            </div>
+
+            {/* Card body */}
+            {expanded && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#faf7f2' }}>
+                      <th style={thStyle}>Name</th>
+                      <th style={thStyle}>Email</th>
+                      <th style={thStyle}>Paid</th>
+                      <th style={thStyle}>Conf Email</th>
+                      <th style={thStyle}>Reminder</th>
+                      <th style={thStyle}>Join Link</th>
+                      <th style={thStyle}>Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.bookings.map(b => {
+                      const hasIssue = rowHasIssue(b)
+                      const didJoin = !!b.joined_at
+                      const rowBg = hasIssue ? '#fff8f5' : didJoin ? '#f0f8f0' : 'white'
+                      const borderLeft = hasIssue ? '3px solid #c8430a' : 'none'
+                      return (
+                        <tr key={b.id} style={{ background: rowBg, borderLeft }}>
+                          <td style={{ ...tdStyle, fontWeight: 600 }}>{b.full_name || '—'}</td>
+                          <td style={{ ...tdStyle, color: '#5a4e47' }}>{b.email}</td>
+                          <td style={tdStyle}>{paidCell(b)}</td>
+                          <td style={tdStyle}>{confEmailCell(b)}</td>
+                          <td style={tdStyle}>{reminderCell(b)}</td>
+                          <td style={tdStyle}>{joinLinkCell(b)}</td>
+                          <td style={{ ...tdStyle, fontSize: 12 }}>{joinedCell(b)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
