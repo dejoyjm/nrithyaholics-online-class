@@ -289,6 +289,17 @@ serve(async (req) => {
     const userName  = profile?.full_name || user.email?.split('@')[0] || 'Participant'
     const roomToken = await getRoomToken(roomId, user.id, hmsRole, userName, tokenValidFrom, tokenExpiry)
 
+    // Stamp joined_at on the booking (first join only, guests only)
+    if (!isHost) {
+      supabase.from('bookings')
+        .update({ joined_at: new Date().toISOString() })
+        .eq('session_id', session_id)
+        .eq('booked_by', user.id)
+        .eq('status', 'confirmed')
+        .is('joined_at', null)
+        .then(() => {}) // fire and forget — never blocks token issuance
+    }
+
     return new Response(
       JSON.stringify({
         token: roomToken, room_id: roomId, role: hmsRole, user_name: userName,

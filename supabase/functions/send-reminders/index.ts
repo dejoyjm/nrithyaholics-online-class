@@ -310,6 +310,11 @@ serve(async (req) => {
         if (sent) {
           totalSent++
           console.log(`24h reminder sent to ${email} for session ${session.id}`)
+          await supabase.from('bookings')
+            .update({ reminder_email_sent_at: new Date().toISOString() })
+            .eq('session_id', session.id)
+            .eq('booked_by', booking.booked_by)
+            .eq('status', 'confirmed')
         }
       }
     }

@@ -180,11 +180,13 @@ async function sendBookingConfirmationEmail(
 
     if (!res.ok) {
       console.error('Resend error:', await res.text())
-    } else {
-      console.log('Webhook: booking confirmation email sent to:', toEmail)
+      return false
     }
+    console.log('Webhook: booking confirmation email sent to:', toEmail)
+    return true
   } catch (err) {
     console.error('sendBookingConfirmationEmail (webhook) failed silently:', err)
+    return false
   }
 }
 
@@ -443,17 +445,25 @@ serve(async (req) => {
     // mobile UPI redirect chain and causes a broken payment UX.
     // Use EdgeRuntime.waitUntil to send email AFTER the response.
     if (sessionData) {
-      const emailPromise = sendBookingConfirmationEmail(
-        userEmail,
-        learnerName,
-        sessionData.title,
-        sessionData.scheduled_at,
-        sessionData.duration_minutes || 60,
-        amount_inr,
-        seats,
-        choreographerName,
-        session_id,
-      )
+      const emailAndStampPromise = (async () => {
+        const sent = await sendBookingConfirmationEmail(
+          userEmail,
+          learnerName,
+          sessionData.title,
+          sessionData.scheduled_at,
+          sessionData.duration_minutes || 60,
+          amount_inr,
+          seats,
+          choreographerName,
+          session_id,
+        )
+        if (sent) {
+          await supabase.from('bookings')
+            .update({ confirmation_email_sent_at: new Date().toISOString() })
+            .eq('razorpay_order_id', order_id)
+            .eq('status', 'confirmed')
+        }
+      })()
       const adminPromise = sendAdminNotification({
         resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
         success: true,
@@ -468,10 +478,10 @@ serve(async (req) => {
       })
       try {
         // @ts-ignore — EdgeRuntime is available in Supabase Deno environment
-        EdgeRuntime.waitUntil(Promise.all([emailPromise, adminPromise]))
+        EdgeRuntime.waitUntil(Promise.all([emailAndStampPromise, adminPromise]))
       } catch {
         // Local dev fallback — fire without blocking
-        Promise.all([emailPromise, adminPromise]).catch(e => console.error('Email error:', e))
+        Promise.all([emailAndStampPromise, adminPromise]).catch(e => console.error('Email error:', e))
       }
     }
 

@@ -202,12 +202,14 @@ async function sendBookingConfirmationEmail(
     if (!res.ok) {
       const err = await res.text()
       console.error('Resend error:', err)
-    } else {
-      console.log('Booking confirmation email sent to:', toEmail)
+      return false
     }
+    console.log('Booking confirmation email sent to:', toEmail)
+    return true
   } catch (err) {
     // Never block the booking response due to email failure
     console.error('sendBookingConfirmationEmail failed silently:', err)
+    return false
   }
 }
 
@@ -452,17 +454,25 @@ serve(async (req) => {
       // Use EdgeRuntime.waitUntil so Supabase keeps the function alive
       // long enough for the email fetch to complete, without delaying
       // the response back to the user.
-      const emailPromise = sendBookingConfirmationEmail(
-        user.email,
-        learnerName,
-        sessionData.title,
-        sessionData.scheduled_at,
-        sessionData.duration_minutes || 60,
-        amount_inr,
-        seats || 1,
-        choreographerName,
-        session_id,
-      )
+      const emailAndStampPromise = (async () => {
+        const sent = await sendBookingConfirmationEmail(
+          user.email!,
+          learnerName,
+          sessionData.title,
+          sessionData.scheduled_at,
+          sessionData.duration_minutes || 60,
+          amount_inr,
+          seats || 1,
+          choreographerName,
+          session_id,
+        )
+        if (sent) {
+          await supabase.from('bookings')
+            .update({ confirmation_email_sent_at: new Date().toISOString() })
+            .eq('razorpay_order_id', razorpay_order_id)
+            .eq('status', 'confirmed')
+        }
+      })()
       const adminPromise = sendAdminNotification({
         resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
         success: true,
@@ -477,10 +487,10 @@ serve(async (req) => {
       })
       try {
         // @ts-ignore — EdgeRuntime is available in Supabase Deno environment
-        EdgeRuntime.waitUntil(Promise.all([emailPromise, adminPromise]))
+        EdgeRuntime.waitUntil(Promise.all([emailAndStampPromise, adminPromise]))
       } catch {
         // EdgeRuntime not available in local dev — just await directly
-        await Promise.all([emailPromise, adminPromise])
+        await Promise.all([emailAndStampPromise, adminPromise])
       }
     }
 

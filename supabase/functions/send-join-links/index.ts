@@ -323,6 +323,11 @@ serve(async (req) => {
         if (sent) {
           totalSent++
           console.log(`Join link sent to ${email} for session ${session.id}`)
+          await supabase.from('bookings')
+            .update({ join_link_sent_at: new Date().toISOString() })
+            .eq('session_id', session.id)
+            .eq('booked_by', booking.booked_by)
+            .eq('status', 'confirmed')
         }
       }
     }
