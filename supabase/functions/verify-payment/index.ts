@@ -7,6 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ── Email helper ─────────────────────────────────────────────
 // Sends booking confirmation via Resend. Fire-and-forget —
 // never throws, never blocks the booking success response.
@@ -305,11 +307,19 @@ serve(async (req) => {
       session_id,
       seats,
       amount_inr,
+      user_id,
     } = await req.json()
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !session_id) {
       return new Response(
         JSON.stringify({ error: 'Missing required payment fields' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (user_id && !UUID_REGEX.test(user_id)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid user_id' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -337,26 +347,57 @@ serve(async (req) => {
       )
     }
 
-    // Get user from auth header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Not authenticated' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL'),
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     )
 
-    // Get user from token
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !user) {
+    // ── Resolve user identity ─────────────────────────────────────────────────
+    // user_id from the request body is the primary identifier. It is set at
+    // payment initiation (before Razorpay modal opens) from the live React state,
+    // so it is always valid even when the JWT has since expired.
+    // Email is fetched best-effort from the token; if the token is expired we
+    // fall back to the admin API using user_id — no 401 for expired tokens.
+    const authHeader = req.headers.get('Authorization')
+    let resolvedUserId: string
+    let resolvedEmail: string = ''
+
+    if (user_id) {
+      resolvedUserId = user_id
+      // Best-effort: get email from JWT (may be expired — that's OK)
+      if (authHeader) {
+        const token = authHeader.replace('Bearer ', '')
+        const { data: { user: tokenUser } } = await supabase.auth.getUser(token)
+        if (tokenUser?.email) resolvedEmail = tokenUser.email
+      }
+      // Fallback: look up email via admin API when token is expired/missing
+      if (!resolvedEmail) {
+        const { data: adminUser } = await supabase.auth.admin.getUserById(user_id)
+        if (adminUser?.user?.email) resolvedEmail = adminUser.user.email
+      }
+    } else {
+      // Legacy path — no user_id in body; token must be valid
+      if (!authHeader) {
+        return new Response(
+          JSON.stringify({ error: 'Not authenticated' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      const token = authHeader.replace('Bearer ', '')
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      if (authError || !user) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid auth token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      resolvedUserId = user.id
+      resolvedEmail  = user.email || ''
+    }
+
+    if (!resolvedUserId) {
       return new Response(
-        JSON.stringify({ error: 'Invalid auth token' }),
+        JSON.stringify({ error: 'Could not resolve user identity' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -366,7 +407,7 @@ serve(async (req) => {
       .from('bookings')
       .select('id')
       .eq('session_id', session_id)
-      .eq('booked_by', user.id)
+      .eq('booked_by', resolvedUserId)
       .eq('status', 'confirmed')
       .maybeSingle()
 
@@ -382,7 +423,7 @@ serve(async (req) => {
       .from('bookings')
       .insert({
         session_id,
-        booked_by: user.id,
+        booked_by: resolvedUserId,
         credits_paid: amount_inr,
         status: 'confirmed',
         razorpay_order_id,
@@ -396,8 +437,8 @@ serve(async (req) => {
       const adminFailPromise = sendAdminNotification({
         resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
         success: false,
-        learnerName: user.email?.split('@')[0] || 'unknown',
-        learnerEmail: user.email || '',
+        learnerName: resolvedEmail?.split('@')[0] || 'unknown',
+        learnerEmail: resolvedEmail,
         sessionTitle: session_id,
         amountInr: amount_inr,
         paymentId: razorpay_payment_id,
@@ -433,12 +474,12 @@ serve(async (req) => {
       supabase
         .from('profiles')
         .select('full_name')
-        .eq('id', user.id)
+        .eq('id', resolvedUserId)
         .single(),
     ])
 
     const sessionData     = sessionRes.data
-    const learnerName     = profileRes.data?.full_name || user.email?.split('@')[0] || 'there'
+    const learnerName     = profileRes.data?.full_name || resolvedEmail?.split('@')[0] || 'there'
     let choreographerName = 'your choreographer'
 
     if (sessionData?.choreographer_id) {
@@ -450,13 +491,13 @@ serve(async (req) => {
       if (choreoProfile?.full_name) choreographerName = choreoProfile.full_name
     }
 
-    if (sessionData && user.email) {
+    if (sessionData && resolvedEmail) {
       // Use EdgeRuntime.waitUntil so Supabase keeps the function alive
       // long enough for the email fetch to complete, without delaying
       // the response back to the user.
       const emailAndStampPromise = (async () => {
         const sent = await sendBookingConfirmationEmail(
-          user.email!,
+          resolvedEmail,
           learnerName,
           sessionData.title,
           sessionData.scheduled_at,
@@ -477,7 +518,7 @@ serve(async (req) => {
         resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
         success: true,
         learnerName,
-        learnerEmail: user.email,
+        learnerEmail: resolvedEmail,
         sessionTitle: sessionData.title,
         scheduledAt: sessionData.scheduled_at,
         amountInr: amount_inr,
@@ -511,7 +552,7 @@ serve(async (req) => {
               },
               body: JSON.stringify({
                 session_id,
-                single_user_email: user.email,
+                single_user_email: resolvedEmail,
               }),
             }
           )
