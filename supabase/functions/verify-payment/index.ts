@@ -211,6 +211,85 @@ async function sendBookingConfirmationEmail(
   }
 }
 
+// ── Admin notification email ──────────────────────────────────
+// Fires on every booking attempt (success or failure). Never throws.
+async function sendAdminNotification(opts: {
+  resendApiKey: string
+  success: boolean
+  learnerName: string
+  learnerEmail: string
+  sessionTitle: string
+  scheduledAt?: string
+  amountInr: number
+  paymentId: string
+  orderId: string
+  sessionId: string
+  errorMessage?: string
+}) {
+  try {
+    if (!opts.resendApiKey) return
+    const nowStr = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric',
+      month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+    })
+    const row = (label: string, value: string) =>
+      `<tr><td style="padding:4px 12px 4px 0;color:#555;white-space:nowrap;"><b>${label}</b></td><td style="padding:4px 0;">${value}</td></tr>`
+
+    let subject: string
+    let html: string
+
+    if (opts.success) {
+      const dateStr = opts.scheduledAt
+        ? new Date(opts.scheduledAt).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric',
+            month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+          }) + ' IST'
+        : 'N/A'
+      subject = `✅ New booking — ${opts.learnerName} for ${opts.sessionTitle}`
+      html = `<html><body style="font-family:Arial,sans-serif;padding:24px;background:#f5f5f5;">
+<div style="max-width:520px;background:white;border-radius:12px;padding:24px;border-top:4px solid #166534;">
+<h2 style="color:#166534;margin:0 0 16px;">✅ New Booking Confirmed</h2>
+<table style="border-collapse:collapse;width:100%;font-size:14px;">
+${row('Student', `${opts.learnerName} (${opts.learnerEmail})`)}
+${row('Session', opts.sessionTitle)}
+${row('Date', dateStr)}
+${row('Amount', `₹${opts.amountInr}`)}
+${row('Payment ID', opts.paymentId)}
+${row('Order ID', opts.orderId)}
+${row('Time', `${nowStr} IST`)}
+${row('Status', '<b style="color:#166534;">CONFIRMED ✅</b>')}
+</table></div></body></html>`
+    } else {
+      subject = `❌ Booking FAILED — ${opts.paymentId} — ${opts.sessionTitle}`
+      html = `<html><body style="font-family:Arial,sans-serif;padding:24px;background:#f5f5f5;">
+<div style="max-width:520px;background:white;border-radius:12px;padding:24px;border-top:4px solid #991b1b;">
+<h2 style="color:#991b1b;margin:0 0 8px;">❌ Booking FAILED</h2>
+<p style="color:#991b1b;font-weight:bold;margin:0 0 16px;">Payment captured but booking insert failed.<br/>ACTION NEEDED: Manual booking required.</p>
+<table style="border-collapse:collapse;width:100%;font-size:14px;">
+${row('Payment ID', opts.paymentId)}
+${row('Order ID', opts.orderId)}
+${row('Error', opts.errorMessage || 'unknown')}
+${row('Student email', opts.learnerEmail || 'N/A')}
+${row('Session ID', opts.sessionId)}
+${row('Time', `${nowStr} IST`)}
+</table></div></body></html>`
+    }
+
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${opts.resendApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'NrithyaHolics Online <bookings@nrithyaholics.in>',
+        to: ['nrithyaholics@gmail.com'],
+        subject,
+        html,
+      }),
+    })
+  } catch (err) {
+    console.error('sendAdminNotification failed silently:', err)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -312,6 +391,24 @@ serve(async (req) => {
 
     if (bookingError) {
       console.error('Booking insert failed:', bookingError)
+      const adminFailPromise = sendAdminNotification({
+        resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
+        success: false,
+        learnerName: user.email?.split('@')[0] || 'unknown',
+        learnerEmail: user.email || '',
+        sessionTitle: session_id,
+        amountInr: amount_inr,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+        sessionId: session_id,
+        errorMessage: bookingError.message,
+      })
+      try {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(adminFailPromise)
+      } catch {
+        await adminFailPromise
+      }
       return new Response(
         JSON.stringify({ error: 'Failed to create booking: ' + bookingError.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -366,12 +463,24 @@ serve(async (req) => {
         choreographerName,
         session_id,
       )
+      const adminPromise = sendAdminNotification({
+        resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
+        success: true,
+        learnerName,
+        learnerEmail: user.email,
+        sessionTitle: sessionData.title,
+        scheduledAt: sessionData.scheduled_at,
+        amountInr: amount_inr,
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id,
+        sessionId: session_id,
+      })
       try {
         // @ts-ignore — EdgeRuntime is available in Supabase Deno environment
-        EdgeRuntime.waitUntil(emailPromise)
+        EdgeRuntime.waitUntil(Promise.all([emailPromise, adminPromise]))
       } catch {
         // EdgeRuntime not available in local dev — just await directly
-        await emailPromise
+        await Promise.all([emailPromise, adminPromise])
       }
     }
 
