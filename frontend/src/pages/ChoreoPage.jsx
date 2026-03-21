@@ -282,6 +282,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
               path={coverPath}
               aspectRatio={4 / 5}
               currentUrl={coverUrl}
+              allowCropAdjust={true}
               onUploadComplete={async (url, fx, fy) => {
                 setCoverUrl(url); setCoverFocalX(fx ?? 50); setCoverFocalY(fy ?? 50)
                 if (session?.id) {
@@ -316,6 +317,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
               path={thumbnailPath}
               aspectRatio={16 / 9}
               currentUrl={thumbnailUrl}
+              allowCropAdjust={true}
               onUploadComplete={async (url, fx, fy) => {
                 setThumbnailUrl(url); setThumbnailFocalX(fx ?? 50); setThumbnailFocalY(fy ?? 50)
                 if (session?.id) {

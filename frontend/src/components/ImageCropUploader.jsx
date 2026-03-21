@@ -26,7 +26,18 @@ async function getCroppedImg(imageSrc, croppedAreaPixels) {
   return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
 }
 
-export default function ImageCropUploader({ bucket, path, aspectRatio, currentUrl, onUploadComplete, label }) {
+// Fetches an external URL as a data URL to sidestep CORS on canvas operations
+async function fetchAsDataUrl(url) {
+  const response = await fetch(url)
+  const blob = await response.blob()
+  return new Promise(resolve => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.readAsDataURL(blob)
+  })
+}
+
+export default function ImageCropUploader({ bucket, path, aspectRatio, currentUrl, onUploadComplete, label, allowCropAdjust }) {
   const [imageSrc, setImageSrc] = useState(null)
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
@@ -35,6 +46,7 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(currentUrl || null)
+  const [isAdjustMode, setIsAdjustMode] = useState(false)
   const previewCanvasRef = useRef(null)
   const previewW = 160
   const previewH = Math.round(previewW / aspectRatio)
@@ -57,18 +69,51 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
     drawPreview(imageSrc, croppedPixels)
   }, [imageSrc, drawPreview])
 
+  function openModal(src, adjustMode) {
+    setImageSrc(src)
+    setIsAdjustMode(adjustMode)
+    setShowCropModal(true)
+    setCrop({ x: 0, y: 0 })
+    setZoom(1)
+  }
+
+  function handleCancel() {
+    setShowCropModal(false)
+    setImageSrc(null)
+    setIsAdjustMode(false)
+  }
+
   function onFileChange(e) {
     if (!e.target.files?.[0]) return
     const reader = new FileReader()
-    reader.onload = () => {
-      setImageSrc(reader.result)
-      setShowCropModal(true)
-      setCrop({ x: 0, y: 0 })
-      setZoom(1)
-    }
+    reader.onload = () => openModal(reader.result, false)
     reader.readAsDataURL(e.target.files[0])
-    // Reset input so the same file can be re-selected
     e.target.value = ''
+  }
+
+  async function handleAdjustCrop() {
+    setError(null)
+    try {
+      const dataUrl = await fetchAsDataUrl(previewUrl)
+      openModal(dataUrl, true)
+    } catch {
+      setError('Could not load image for crop adjustment')
+    }
+  }
+
+  async function handleAdjustSave() {
+    if (!croppedAreaPixels || !imageSrc) return
+    try {
+      const imgEl = await createImage(imageSrc)
+      const focalX = Math.round(((croppedAreaPixels.x + croppedAreaPixels.width / 2) / imgEl.naturalWidth) * 100)
+      const focalY = Math.round(((croppedAreaPixels.y + croppedAreaPixels.height / 2) / imgEl.naturalHeight) * 100)
+      onUploadComplete(previewUrl, focalX, focalY)
+      setShowCropModal(false)
+      setImageSrc(null)
+      setIsAdjustMode(false)
+    } catch {
+      setError('Could not save crop position')
+    }
   }
 
   async function handleCropAndUpload() {
@@ -103,6 +148,13 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
     ? { width: 100, height: 100, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }
     : { width: '100%', aspectRatio: '4/5', maxWidth: 200, borderRadius: 10, overflow: 'hidden' }
 
+  const btnStyle = {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8,
+    padding: '8px 16px', fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', color: '#5a4e47', whiteSpace: 'nowrap',
+  }
+
   return (
     <div>
       {label && (
@@ -116,15 +168,17 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
           <div style={previewContainerStyle}>
             <img src={previewUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
-          <label style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8,
-            padding: '8px 16px', fontSize: 13, fontWeight: 600,
-            cursor: 'pointer', color: '#5a4e47', whiteSpace: 'nowrap',
-          }}>
-            📷 Change photo
-            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={onFileChange} />
-          </label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {allowCropAdjust && (
+              <button onClick={handleAdjustCrop} style={btnStyle}>
+                🔄 Adjust Crop
+              </button>
+            )}
+            <label style={btnStyle}>
+              📷 Change photo
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={onFileChange} />
+            </label>
+          </div>
         </div>
       ) : (
         <label style={{
@@ -149,11 +203,14 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
         }}>
           <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#0f0c0c', marginBottom: 16 }}>
-              Crop Photo
+              {isAdjustMode ? 'Adjust Crop' : 'Crop Photo'}
             </div>
 
             <div style={{ fontSize: 12, color: '#a09890', fontStyle: 'italic', marginBottom: 12 }}>
-              💡 Tip: Position your face and costume to fill the frame. Avoid large empty spaces at top.
+              {isAdjustMode
+                ? '🔄 Drag to reposition the crop area. No re-upload needed.'
+                : '💡 Tip: Position your face and costume to fill the frame. Avoid large empty spaces at top.'
+              }
             </div>
 
             <div style={{ position: 'relative', height: 300, background: '#111', borderRadius: 10, overflow: 'hidden', marginBottom: 20 }}>
@@ -190,7 +247,7 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
 
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => { setShowCropModal(false); setImageSrc(null) }}
+                onClick={handleCancel}
                 style={{
                   flex: 1, background: 'transparent', border: '1px solid #e2dbd4',
                   color: '#7a6e65', padding: '12px', borderRadius: 8, cursor: 'pointer',
@@ -200,7 +257,7 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
                 Cancel
               </button>
               <button
-                onClick={handleCropAndUpload}
+                onClick={isAdjustMode ? handleAdjustSave : handleCropAndUpload}
                 disabled={uploading}
                 style={{
                   flex: 2, background: uploading ? '#a09890' : '#c8430a', color: 'white',
@@ -208,7 +265,7 @@ export default function ImageCropUploader({ bucket, path, aspectRatio, currentUr
                   cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700,
                 }}
               >
-                {uploading ? 'Uploading...' : 'Crop & Upload'}
+                {isAdjustMode ? 'Save Crop Position' : uploading ? 'Uploading...' : 'Crop & Upload'}
               </button>
             </div>
           </div>

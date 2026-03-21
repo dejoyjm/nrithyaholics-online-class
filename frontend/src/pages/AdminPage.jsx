@@ -564,6 +564,7 @@ function AdminAvatarUploader({ userId, avatarUrl, onUpdate }) {
       path={path}
       aspectRatio={1}
       currentUrl={avatarUrl}
+      allowCropAdjust={true}
       label="Profile Photo"
       onUploadComplete={async (url) => {
         await supabase.from('profiles').update({ avatar_url: url }).eq('id', userId)
@@ -781,6 +782,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
             path={coverPath}
             aspectRatio={4 / 5}
             currentUrl={form.cover_photo_url}
+            allowCropAdjust={true}
             label="Session Cover Photo (4:5)"
             onUploadComplete={(url, fx, fy) => {
               set('cover_photo_url', url)
@@ -886,6 +888,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
             path={thumbnailPath}
             aspectRatio={16 / 9}
             currentUrl={form.card_thumbnail_url}
+            allowCropAdjust={true}
             label="Card Thumbnail (16:9)"
             onUploadComplete={(url, fx, fy) => {
               set('card_thumbnail_url', url)

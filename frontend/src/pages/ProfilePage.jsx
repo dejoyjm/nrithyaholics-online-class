@@ -208,6 +208,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
                       path={`${user.id}/avatar.jpg`}
                       aspectRatio={1}
                       currentUrl={avatarUrl}
+                      allowCropAdjust={true}
                       onUploadComplete={async (url) => {
                         await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id)
                         setAvatarUrl(url)
