@@ -11,6 +11,7 @@ import SuspendedPage from './pages/SuspendedPage'
 import ChoreoProfilePage from './pages/ChoreoProfilePage'
 import ClassroomPage from './pages/ClassroomPage'
 import SetupTestModal from './pages/SetupTestModal'
+import ProfileCompletePrompt from './components/ProfileCompletePrompt'
 
 // ── Hash helpers (module-level, no state dependency) ─────────────────────────
 
@@ -38,6 +39,7 @@ export default function App() {
   const [autoOpenTest, setAutoOpenTest] = useState(false)
   const [cameFromEmail, setCameFromEmail] = useState(false)
   const [showQuickSetupModal, setShowQuickSetupModal] = useState(false)
+  const [showProfilePrompt, setShowProfilePrompt] = useState(false)
 
   // Track whether URL search params handled navigation (takes priority over hash)
   const urlParamsHandled = useRef(false)
@@ -226,6 +228,10 @@ export default function App() {
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
     setProfile(data)
     setLoading(false)
+    const skipped = sessionStorage.getItem('nrh_profile_prompt_skipped')
+    if (!skipped && data && (!data.full_name || !data.phone)) {
+      setShowProfilePrompt(true)
+    }
   }
 
   // ── Hash restoration on initial load ─────────────────────────────────────
@@ -408,6 +414,17 @@ export default function App() {
             setShowQuickSetupModal(false)
             window.history.replaceState({}, '', window.location.pathname + window.location.hash)
           }}
+        />
+      )}
+      {showProfilePrompt && user && profile && (
+        <ProfileCompletePrompt
+          user={user}
+          profile={profile}
+          onComplete={(updates) => {
+            setProfile(p => ({ ...p, ...updates }))
+            setShowProfilePrompt(false)
+          }}
+          onSkip={() => setShowProfilePrompt(false)}
         />
       )}
     </>
