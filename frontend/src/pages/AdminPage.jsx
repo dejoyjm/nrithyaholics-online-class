@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import ImageCropUploader from '../components/ImageCropUploader'
 
 export default function AdminPage({ user, onLogout, onConfigChange }) {
   const [tab, setTab] = useState('applications')
@@ -426,6 +427,15 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               </div>
             </div>
 
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 10, color: '#e8a020', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>⚡ Admin Override</div>
+              <AdminAvatarUploader
+                userId={selectedUser.id}
+                avatarUrl={selectedUser.avatar_url}
+                onUpdate={(url) => setSelectedUser(s => ({ ...s, avatar_url: url }))}
+              />
+            </div>
+
             <div style={{ background: '#faf7f2', borderRadius: 12, padding: '4px 0', marginBottom: 24 }}>
               {[
                 ['Role', selectedUser.role || 'learner'],
@@ -542,6 +552,24 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
         />
       )}
     </div>
+  )
+}
+
+// ── AdminAvatarUploader ────────────────────────────────────────
+function AdminAvatarUploader({ userId, avatarUrl, onUpdate }) {
+  const [path] = useState(() => `${userId}/avatar_${Date.now()}.jpg`)
+  return (
+    <ImageCropUploader
+      bucket="avatars"
+      path={path}
+      aspectRatio={1}
+      currentUrl={avatarUrl}
+      label="Profile Photo"
+      onUploadComplete={async (url) => {
+        await supabase.from('profiles').update({ avatar_url: url }).eq('id', userId)
+        onUpdate(url)
+      }}
+    />
   )
 }
 
@@ -692,10 +720,17 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
     status: session.status || 'open',
     age_groups: session.age_groups || ['All Ages'],
     choreo_reference_url: session.choreo_reference_url || '',
+    cover_photo_url: session.cover_photo_url || '',
+    cover_photo_focal_x: session.cover_photo_focal_x ?? 50,
+    cover_photo_focal_y: session.cover_photo_focal_y ?? 50,
     card_thumbnail_url: session.card_thumbnail_url || '',
+    card_thumbnail_focal_x: session.card_thumbnail_focal_x ?? 50,
+    card_thumbnail_focal_y: session.card_thumbnail_focal_y ?? 50,
   })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const [coverPath] = useState(() => `hero/${session.id}_${Date.now()}.jpg`)
+  const [thumbnailPath] = useState(() => `card/${session.id}_${Date.now()}.jpg`)
 
   const inputStyle = { width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', color: '#0f0c0c' }
   const labelStyle = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
@@ -716,7 +751,12 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
       status: form.status,
       age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
       choreo_reference_url: form.choreo_reference_url.trim() || null,
+      cover_photo_url: form.cover_photo_url.trim() || null,
+      cover_photo_focal_x: form.cover_photo_url.trim() ? form.cover_photo_focal_x : null,
+      cover_photo_focal_y: form.cover_photo_url.trim() ? form.cover_photo_focal_y : null,
       card_thumbnail_url: form.card_thumbnail_url.trim() || null,
+      card_thumbnail_focal_x: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_x : null,
+      card_thumbnail_focal_y: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_y : null,
     }).eq('id', session.id)
     if (error) alert(error.message)
     else onSaved()
@@ -734,11 +774,21 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65' }}>×</button>
         </div>
 
-        {session.cover_photo_url && (
-          <div style={{ marginBottom: 20, borderRadius: 10, overflow: 'hidden' }}>
-            <img src={session.cover_photo_url} alt="" style={{ width: '100%', height: 120, objectFit: 'cover' }} />
-          </div>
-        )}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: '#e8a020', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>⚡ Admin Override</div>
+          <ImageCropUploader
+            bucket="session-covers"
+            path={coverPath}
+            aspectRatio={4 / 5}
+            currentUrl={form.cover_photo_url}
+            label="Session Cover Photo (4:5)"
+            onUploadComplete={(url, fx, fy) => {
+              set('cover_photo_url', url)
+              set('cover_photo_focal_x', fx ?? 50)
+              set('cover_photo_focal_y', fy ?? 50)
+            }}
+          />
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
@@ -828,12 +878,21 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
             placeholder="Instagram reel, YouTube video, or any link showing the dance..." />
         </div>
 
-        {/* Card thumbnail URL */}
-        <div>
-          <label style={labelStyle}>Card Thumbnail URL (optional)</label>
-          <input style={inputStyle} value={form.card_thumbnail_url}
-            onChange={e => set('card_thumbnail_url', e.target.value)}
-            placeholder="Landscape image URL for the home page browsing card..." />
+        {/* Card thumbnail uploader */}
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, color: '#e8a020', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>⚡ Admin Override</div>
+          <ImageCropUploader
+            bucket="session-covers"
+            path={thumbnailPath}
+            aspectRatio={16 / 9}
+            currentUrl={form.card_thumbnail_url}
+            label="Card Thumbnail (16:9)"
+            onUploadComplete={(url, fx, fy) => {
+              set('card_thumbnail_url', url)
+              set('card_thumbnail_focal_x', fx ?? 50)
+              set('card_thumbnail_focal_y', fy ?? 50)
+            }}
+          />
         </div>
 
         {/* Waitlist */}
