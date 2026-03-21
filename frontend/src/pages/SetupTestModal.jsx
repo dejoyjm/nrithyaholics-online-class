@@ -54,7 +54,7 @@ function TipCard({ icon, tip }) {
   )
 }
 
-export default function SetupTestModal({ onClose, isChoreo }) {
+export default function SetupTestModal({ onClose, isChoreo, standaloneMode }) {
   const [phase, setPhase] = useState('intro') // intro | checking | result
   const [checkingLabel, setCheckingLabel] = useState('Checking your camera')
   const [issues, setIssues] = useState([])   // { icon, title, tip, severity }
@@ -295,10 +295,12 @@ export default function SetupTestModal({ onClose, isChoreo }) {
             <div style={{ textAlign: 'center', padding: '12px 0 20px' }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🎯</div>
               <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f0c0c', fontFamily: 'Georgia, serif', marginBottom: 8 }}>
-                Quick Check
+                {standaloneMode ? 'Test Your Camera & Mic' : 'Quick Check'}
               </h2>
               <p style={{ fontSize: 14, color: '#7a6e65', lineHeight: 1.6, margin: 0 }}>
-                Takes about 10 seconds. We'll make sure your camera, mic and internet are ready so you don't miss a beat.
+                {standaloneMode
+                  ? "Let's make sure you're ready for class."
+                  : "Takes about 10 seconds. We'll make sure your camera, mic and internet are ready so you don't miss a beat."}
               </p>
             </div>
             <button onClick={runChecks} style={{
@@ -360,7 +362,11 @@ export default function SetupTestModal({ onClose, isChoreo }) {
                   You're all set!
                 </div>
                 <div style={{ fontSize: 14, color: '#7a6e65' }}>
-                  {isChoreo ? 'Everything looks great. You\'re ready to teach.' : 'Everything looks great. See you on the dance floor!'}
+                  {standaloneMode
+                    ? '✅ You\'re all set! Your join link will arrive 5 minutes before class starts.'
+                    : isChoreo
+                      ? 'Everything looks great. You\'re ready to teach.'
+                      : 'Everything looks great. See you on the dance floor!'}
                 </div>
               </div>
             )}
@@ -411,7 +417,7 @@ export default function SetupTestModal({ onClose, isChoreo }) {
               <button onClick={onClose} style={{
                 flex: 2, background: '#0f0c0c', color: 'white', border: 'none',
                 borderRadius: 10, padding: '12px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              }}>{hasErrors ? 'Continue anyway' : allClear ? 'Great, let\'s go!' : 'Got it, continue'}</button>
+              }}>{hasErrors ? 'Continue anyway' : allClear ? (standaloneMode ? 'Done' : 'Great, let\'s go!') : 'Got it, continue'}</button>
             </div>
           </>
         )}

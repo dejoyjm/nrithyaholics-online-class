@@ -100,17 +100,6 @@ async function sendBookingConfirmationEmail(
       </table>
     </div>
 
-    <!-- Add to Calendar -->
-    <div style="text-align:center; margin-bottom:24px;">
-      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(sessionTitle)}&dates=${gcalStart}/${gcalEnd}&details=Join+your+NrithyaHolics+class+at+${encodeURIComponent(sessionUrl)}&location=online.nrithyaholics.in"
-         target="_blank"
-         style="display:inline-block; background:#faf7f2; color:#5a4e47;
-                text-decoration:none; padding:10px 24px; border-radius:8px;
-                font-size:13px; font-weight:600; border:1px solid #e2dbd4;">
-        📅 Add to Google Calendar
-      </a>
-    </div>
-
     <!-- Join link coming notice -->
     <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px; padding:20px 24px; margin-bottom:24px; text-align:center;">
       <div style="font-size:20px; margin-bottom:8px;">🔔</div>
@@ -123,19 +112,23 @@ async function sendBookingConfirmationEmail(
       </div>
     </div>
 
-    <!-- Test setup card -->
-    <div style="background:#fff8f0; border:2px solid #c8430a; border-radius:12px; padding:18px 20px; margin-bottom:24px; text-align:center;">
-      <div style="font-size:15px; font-weight:700; color:#0f0c0c; margin-bottom:4px;">
-        🎥 Test your camera &amp; mic before class
-      </div>
-      <div style="font-size:13px; color:#7a6e65; margin-bottom:14px;">
-        Takes 30 seconds. Avoid surprises on the day.
-      </div>
-      <a href="${APP_URL}/?session=${sessionId}&test=1"
-         style="display:inline-block; background:#c8430a; color:white;
-                text-decoration:none; padding:10px 24px; border-radius:8px;
-                font-size:13px; font-weight:700;">
-        Test Now →
+    <!-- Action buttons -->
+    <div style="max-width:400px; margin:0 auto 24px;">
+      <a href="${APP_URL}/?test=1"
+         style="display:block; background:#c8430a; color:white; text-decoration:none;
+                padding:16px; border-radius:8px; font-size:14px; font-weight:700;
+                text-align:center; margin-bottom:8px;">
+        🎤 Test Your Camera &amp; Mic
+        <div style="font-size:12px; font-weight:400; margin-top:4px; opacity:0.85;">
+          Takes 30 seconds — do this a day before class
+        </div>
+      </a>
+      <a href="https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(sessionTitle)}&dates=${gcalStart}/${gcalEnd}&details=Join+your+NrithyaHolics+class+at+${encodeURIComponent(sessionUrl)}&location=online.nrithyaholics.in"
+         target="_blank"
+         style="display:block; background:white; color:#3a2e2e; text-decoration:none;
+                padding:16px; border-radius:8px; font-size:14px; font-weight:600;
+                text-align:center; border:1px solid #e2dbd4;">
+        📅 Add to Google Calendar
       </a>
     </div>
 

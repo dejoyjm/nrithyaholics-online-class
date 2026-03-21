@@ -10,6 +10,7 @@ import ProfilePage from './pages/ProfilePage'
 import SuspendedPage from './pages/SuspendedPage'
 import ChoreoProfilePage from './pages/ChoreoProfilePage'
 import ClassroomPage from './pages/ClassroomPage'
+import SetupTestModal from './pages/SetupTestModal'
 
 // ── Hash helpers (module-level, no state dependency) ─────────────────────────
 
@@ -36,11 +37,14 @@ export default function App() {
   const [currentClassroom, setCurrentClassroom] = useState(null)
   const [autoOpenTest, setAutoOpenTest] = useState(false)
   const [cameFromEmail, setCameFromEmail] = useState(false)
+  const [showQuickSetupModal, setShowQuickSetupModal] = useState(false)
 
   // Track whether URL search params handled navigation (takes priority over hash)
   const urlParamsHandled = useRef(false)
   // Hash to restore after login completes
   const pendingHash = useRef(null)
+  // Set when ?test=1 arrives without ?session= — show modal after loading resolves
+  const pendingQuickTest = useRef(false)
 
   // ── Hash state application ────────────────────────────────────────────────
   //
@@ -121,7 +125,14 @@ export default function App() {
     const testParam       = params.get('test')
 
     // Nothing to handle — leave hash-based restore in charge
-    if (!orderId && !paymentSuccess && !paymentError && !sessionDeepLink) return
+    if (!orderId && !paymentSuccess && !paymentError && !sessionDeepLink && testParam !== '1') return
+
+    // ── Standalone setup test: ?test=1 (no session param) ──
+    if (testParam === '1' && !sessionDeepLink) {
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+      pendingQuickTest.current = true
+      return
+    }
 
     // ── Email deep link: ?session=ID or ?session=ID&test=1 ──
     if (sessionDeepLink) {
@@ -227,6 +238,10 @@ export default function App() {
     // user and profile are current here: loading=false is set synchronously
     // with setProfile in fetchProfile, so React batches them together.
     applyHashState(window.location.hash, user, profile)
+    if (pendingQuickTest.current) {
+      pendingQuickTest.current = false
+      setShowQuickSetupModal(true)
+    }
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Restore pending hash after login ─────────────────────────────────────
@@ -376,14 +391,25 @@ export default function App() {
   )
 
   return (
-    <HomePage
-      onLoginClick={() => setShowAuth(true)}
-      user={user} profile={profile}
-      onSessionClick={(id) => navigateTo('#/session/' + id)}
-      onChoreoClick={(id) => setCurrentChoreoId(id)}
-      onProfileClick={() => navigateTo('#/profile')}
-      onSwitchToTeaching={() => navigateTo('#/teach')}
-      onLogout={logOut}
-    />
+    <>
+      <HomePage
+        onLoginClick={() => setShowAuth(true)}
+        user={user} profile={profile}
+        onSessionClick={(id) => navigateTo('#/session/' + id)}
+        onChoreoClick={(id) => setCurrentChoreoId(id)}
+        onProfileClick={() => navigateTo('#/profile')}
+        onSwitchToTeaching={() => navigateTo('#/teach')}
+        onLogout={logOut}
+      />
+      {showQuickSetupModal && (
+        <SetupTestModal
+          standaloneMode={true}
+          onClose={() => {
+            setShowQuickSetupModal(false)
+            window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+          }}
+        />
+      )}
+    </>
   )
 }
