@@ -289,18 +289,33 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
 
           {/* USERS TAB */}
           {tab === 'users' && (() => {
+            function getUserStatus(u) {
+              if (u.suspended) return { label: '🚫 Suspended', bg: '#fff0f0', color: '#cc0000' }
+              if (!u.last_sign_in_at) return { label: 'Never logged in', bg: '#f5f5f5', color: '#a09890' }
+              const daysSince = (Date.now() - new Date(u.last_sign_in_at)) / (1000 * 60 * 60 * 24)
+              if (daysSince <= 30) return { label: 'Active', bg: '#e6f4ec', color: '#1a7a3c' }
+              return { label: 'Inactive', bg: '#fff8e6', color: '#e8a020' }
+            }
             const filteredUsers = users.filter(u => {
               const q = usersSearch.toLowerCase()
               if (q && !(u.full_name || '').toLowerCase().includes(q) && !(u.email || '').toLowerCase().includes(q)) return false
               if (usersRoleFilter === 'learner' && u.role !== 'learner') return false
               if (usersRoleFilter === 'choreographer' && u.role !== 'choreographer') return false
               if (usersRoleFilter === 'admin' && !u.is_admin) return false
-              if (usersStatusFilter === 'active' && u.suspended) return false
-              if (usersStatusFilter === 'suspended' && !u.suspended) return false
+              if (usersStatusFilter === 'suspended') return u.suspended
+              if (usersStatusFilter === 'never') return !u.last_sign_in_at
+              if (usersStatusFilter === 'active') {
+                if (u.suspended || !u.last_sign_in_at) return false
+                return (Date.now() - new Date(u.last_sign_in_at)) / (1000 * 60 * 60 * 24) <= 30
+              }
+              if (usersStatusFilter === 'inactive') {
+                if (u.suspended || !u.last_sign_in_at) return false
+                return (Date.now() - new Date(u.last_sign_in_at)) / (1000 * 60 * 60 * 24) > 30
+              }
               return true
             })
             function downloadUsersCSV() {
-              const rows = [['Name', 'Email', 'Phone', 'Role', 'Choreo Status', 'Joined', 'Suspended']]
+              const rows = [['Name', 'Email', 'Phone', 'Role', 'Choreo Status', 'First Seen', 'Last Login', 'Status', 'Suspended']]
               filteredUsers.forEach(u => rows.push([
                 u.full_name || '',
                 u.email || '',
@@ -308,6 +323,8 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                 u.role || 'learner',
                 u.role === 'choreographer' ? (u.choreographer_approved ? 'Approved' : 'Pending') : '—',
                 formatDate(u.auth_created_at || u.created_at),
+                u.last_sign_in_at ? formatDate(u.last_sign_in_at) : 'Never',
+                getUserStatus(u).label,
                 u.suspended ? 'Yes' : 'No',
               ]))
               const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -334,8 +351,10 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                   </select>
                   <select value={usersStatusFilter} onChange={e => setUsersStatusFilter(e.target.value)}
                     style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}>
-                    <option value="all">All</option>
+                    <option value="all">All statuses</option>
                     <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="never">Never logged in</option>
                     <option value="suspended">Suspended</option>
                   </select>
                   <button onClick={downloadUsersCSV}
@@ -346,46 +365,46 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #f0ebe6' }}>
-                      {['Name', 'Email', 'Role', 'Status', 'Joined'].map(h => (
+                      {['Name', 'Email', 'Role', 'Status', 'First Seen', 'Last Login'].map(h => (
                         <th key={h} style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((u, i) => (
-                      <tr key={u.id} onClick={() => { setSelectedUser(u); setDrawerEditMode(false); setDrawerEditForm(null) }}
-                        style={{ borderBottom: i < filteredUsers.length - 1 ? '1px solid #f0ebe6' : 'none', cursor: 'pointer' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#faf7f2'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <td style={{ padding: '14px 20px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
-                              {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.full_name || u.email || '?')[0].toUpperCase()}
+                    {filteredUsers.map((u, i) => {
+                      const status = getUserStatus(u)
+                      return (
+                        <tr key={u.id} onClick={() => { setSelectedUser(u); setDrawerEditMode(false); setDrawerEditForm(null) }}
+                          style={{ borderBottom: i < filteredUsers.length - 1 ? '1px solid #f0ebe6' : 'none', cursor: 'pointer' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#faf7f2'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <td style={{ padding: '14px 20px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#c8430a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700, flexShrink: 0, overflow: 'hidden' }}>
+                                {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.full_name || u.email || '?')[0].toUpperCase()}
+                              </div>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>{u.full_name || '—'}</span>
                             </div>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>{u.full_name || '—'}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{u.email}</td>
-                        <td style={{ padding: '14px 20px' }}>
-                          <span style={{ background: '#f0ebe6', color: '#5a4e47', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize' }}>
-                            {u.role || 'learner'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '14px 20px' }}>
-                          {u.suspended ? (
-                            <span style={{ background: '#fff0f0', color: '#cc0000', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>🚫 Suspended</span>
-                          ) : u.role === 'choreographer' ? (
-                            <span style={{ background: u.choreographer_approved ? '#e6f4ec' : '#fff8e6', color: u.choreographer_approved ? '#1a7a3c' : '#e8a020', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
-                              {u.choreographer_approved ? '✓ Approved' : '⏳ Pending'}
+                          </td>
+                          <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{u.email}</td>
+                          <td style={{ padding: '14px 20px' }}>
+                            <span style={{ background: '#f0ebe6', color: '#5a4e47', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'capitalize' }}>
+                              {u.role || 'learner'}
                             </span>
-                          ) : (
-                            <span style={{ background: '#e6f4ec', color: '#1a7a3c', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>Active</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{formatDate(u.auth_created_at || u.created_at)}</td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td style={{ padding: '14px 20px' }}>
+                            <span style={{ background: status.bg, color: status.color, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
+                              {status.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px 20px', fontSize: 13, color: '#7a6e65' }}>{formatDate(u.auth_created_at || u.created_at)}</td>
+                          <td style={{ padding: '14px 20px', fontSize: 13, color: u.last_sign_in_at ? '#7a6e65' : '#a09890', fontStyle: u.last_sign_in_at ? 'normal' : 'italic' }}>
+                            {u.last_sign_in_at ? formatDate(u.last_sign_in_at) : '— never —'}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </>
