@@ -27,7 +27,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
         .order('scheduled_at', { ascending: false }),
       supabase.from('waitlist').select('session_id'),
       supabase.from('bookings')
-        .select('id, status, credits_paid, razorpay_payment_id, razorpay_order_id, created_at, confirmation_email_sent_at, reminder_email_sent_at, join_link_sent_at, joined_at, left_at, booked_by, session_id, profiles!booked_by(full_name), sessions!session_id(id, title, scheduled_at, status)')
+        .select('id, status, credits_paid, razorpay_payment_id, razorpay_order_id, created_at, confirmation_email_sent_at, reminder_email_sent_at, join_link_sent_at, joined_at, left_at, booked_by, session_id, profiles!booked_by(full_name), sessions(id, title, scheduled_at, status)')
         .gt('created_at', since60d)
         .eq('status', 'confirmed')
         .order('created_at', { ascending: false }),
@@ -35,6 +35,9 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
     setApplications(appsRes.data || [])
     setUsers(usersRes.data || [])
     setSessions(sessionsRes.data || [])
+    console.log('[fetchAll] bookingsRes data count:', bookingsRes.data?.length,
+      'error:', bookingsRes.error?.message,
+      'sample:', bookingsRes.data?.[0])
     setAllBookings(bookingsRes.data || [])
     const counts = {}
     waitlistRes.data?.forEach(w => { counts[w.session_id] = (counts[w.session_id] || 0) + 1 })
