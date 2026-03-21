@@ -203,11 +203,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // Allow manual trigger for a specific session (for testing)
+    // Allow manual trigger for a specific session (for testing or per-user send)
     let manualSessionId: string | null = null
+    let singleUserEmail: string | null = null
     try {
       const body = await req.json()
       manualSessionId = body?.session_id || null
+      singleUserEmail = body?.single_user_email || null
     } catch { /* no body — cron trigger */ }
 
     // ── Find eligible sessions ────────────────────────────────────────────────
@@ -219,7 +221,11 @@ serve(async (req) => {
       .from('sessions')
       .select('id, title, scheduled_at, duration_minutes, choreographer_id, reminder_24h_sent_at')
       .in('status', ['open', 'confirmed'])
-      .is('reminder_24h_sent_at', null)
+
+    // In single-user mode, bypass the already-sent check so admin can re-send
+    if (!singleUserEmail) {
+      sessionsQuery = sessionsQuery.is('reminder_24h_sent_at', null)
+    }
 
     if (manualSessionId) {
       // Manual: send for this session regardless of timing
@@ -267,18 +273,22 @@ serve(async (req) => {
 
       if (bookingsError || !bookings || bookings.length === 0) {
         console.log(`No confirmed bookings for session ${session.id} — marking sent`)
-        await supabase.from('sessions')
-          .update({ reminder_24h_sent_at: new Date().toISOString() })
-          .eq('id', session.id)
+        if (!singleUserEmail) {
+          await supabase.from('sessions')
+            .update({ reminder_24h_sent_at: new Date().toISOString() })
+            .eq('id', session.id)
+        }
         continue
       }
 
       console.log(`Sending 24h reminders for session ${session.id} to ${bookings.length} learner(s)`)
 
-      // Mark immediately to prevent duplicates from parallel cron runs
-      await supabase.from('sessions')
-        .update({ reminder_24h_sent_at: new Date().toISOString() })
-        .eq('id', session.id)
+      // Mark immediately to prevent duplicates from parallel cron runs (skip in single-user mode)
+      if (!singleUserEmail) {
+        await supabase.from('sessions')
+          .update({ reminder_24h_sent_at: new Date().toISOString() })
+          .eq('id', session.id)
+      }
 
       for (const booking of bookings) {
         const { data: profile } = await supabase
@@ -293,6 +303,9 @@ serve(async (req) => {
           console.error('No email for user', booking.booked_by)
           continue
         }
+
+        // Single-user mode: skip everyone except the target
+        if (singleUserEmail && email !== singleUserEmail) continue
 
         const name = profile?.full_name || email.split('@')[0]
 
