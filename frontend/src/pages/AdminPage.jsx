@@ -1063,6 +1063,11 @@ function PlatformSettingsTab({ onConfigSaved }) {
 function BookingsTab({ allBookings, users, onRefresh }) {
   const [expandedSessions, setExpandedSessions] = useState({})
   const [sendingConfirm, setSendingConfirm] = useState({}) // bookingId -> bool
+  const [filterStatus, setFilterStatus] = useState('active')
+  // 'active' = open+confirmed+completed, 'all' = everything, 'cancelled' = cancelled only
+  const [filterSearch, setFilterSearch] = useState('')
+  const [filterDays, setFilterDays] = useState(60)
+  // 60, 30, 7, 1 (today only)
 
   const now = Date.now()
   const FIVE_MINS = 5 * 60 * 1000
@@ -1076,6 +1081,13 @@ function BookingsTab({ allBookings, users, onRefresh }) {
     scheduled_at: b.sessions?.scheduled_at || '',
     session_status: b.sessions?.status || '',
   }))
+  console.log('[BookingsTab] enriched count:', enriched.length,
+    'sample created_at:', enriched[0]?.created_at,
+    'todayStart UTC:', (() => {
+      const n = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
+      const d = new Date(n); d.setUTCHours(0,0,0,0); d.setTime(d.getTime() - 5.5*60*60*1000)
+      return d.toISOString()
+    })())
 
   // Issue detection
   function isConfirmEmailIssue(b) {
@@ -1088,14 +1100,29 @@ function BookingsTab({ allBookings, users, onRefresh }) {
   }
   const issues = enriched.filter(b => isConfirmEmailIssue(b) || isManualRecovery(b))
 
-  // Today's stats
-  const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
-  const todayStart = new Date(nowIST)
-  todayStart.setUTCHours(0, 0, 0, 0)
-  todayStart.setTime(todayStart.getTime() - 5.5 * 60 * 60 * 1000)
-  const todayBookings = enriched.filter(b => new Date(b.created_at) >= todayStart)
+  // Period stats (filterDays-aware, IST-correct for today)
+  let periodStart
+  if (filterDays === 1) {
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
+    periodStart = new Date(nowIST)
+    periodStart.setUTCHours(0, 0, 0, 0)
+    periodStart.setTime(periodStart.getTime() - 5.5 * 60 * 60 * 1000)
+  } else {
+    periodStart = new Date(Date.now() - filterDays * 24 * 60 * 60 * 1000)
+  }
+  const todayBookings = enriched.filter(b => new Date(b.created_at) >= periodStart)
+  console.log('[BookingsTab] todayBookings count:', todayBookings.length)
   const todayRevenue = todayBookings.reduce((s, b) => s + (b.credits_paid || 0), 0)
   const pendingEmails = enriched.filter(b => isConfirmEmailIssue(b)).length
+
+  const periodLabel = filterDays === 1 ? 'bookings today'
+    : filterDays === 7 ? 'bookings this week'
+    : filterDays === 30 ? 'bookings last 30d'
+    : 'bookings last 60d'
+  const revenuePeriodLabel = filterDays === 1 ? 'revenue today'
+    : filterDays === 7 ? 'revenue this week'
+    : filterDays === 30 ? 'revenue last 30d'
+    : 'revenue last 60d'
 
   // Group by session
   const bySession = {}
@@ -1105,6 +1132,12 @@ function BookingsTab({ allBookings, users, onRefresh }) {
     bySession[sid].bookings.push(b)
   })
   const sessionGroups = Object.entries(bySession)
+    .filter(([, group]) => {
+      if (filterStatus === 'active') return ['open', 'confirmed', 'completed'].includes(group.session_status)
+      if (filterStatus === 'cancelled') return group.session_status === 'cancelled'
+      return true // 'all'
+    })
+    .filter(([, group]) => !filterSearch || group.session_title.toLowerCase().includes(filterSearch.toLowerCase()))
     .sort(([, a], [, b]) => new Date(b.scheduled_at) - new Date(a.scheduled_at))
 
   function toggleSession(sid) {
@@ -1264,10 +1297,39 @@ function BookingsTab({ allBookings, users, onRefresh }) {
         </div>
       )}
 
+      {/* FILTER BAR */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+        <input
+          placeholder="Search sessions..."
+          value={filterSearch}
+          onChange={e => setFilterSearch(e.target.value)}
+          style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, width: 200, outline: 'none' }}
+        />
+        <select
+          value={filterStatus}
+          onChange={e => setFilterStatus(e.target.value)}
+          style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}
+        >
+          <option value="active">Active sessions</option>
+          <option value="all">All sessions</option>
+          <option value="cancelled">Cancelled only</option>
+        </select>
+        <select
+          value={filterDays}
+          onChange={e => setFilterDays(Number(e.target.value))}
+          style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }}
+        >
+          <option value={1}>Today</option>
+          <option value={7}>Last 7 days</option>
+          <option value={30}>Last 30 days</option>
+          <option value={60}>Last 60 days</option>
+        </select>
+      </div>
+
       {/* SECTION 2 — Today's Summary */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 24 }}>
-        <span style={statPillStyle}>📦 {todayBookings.length} bookings today</span>
-        <span style={statPillStyle}>₹{todayRevenue} revenue today</span>
+        <span style={statPillStyle}>📦 {todayBookings.length} {periodLabel}</span>
+        <span style={statPillStyle}>₹{todayRevenue} {revenuePeriodLabel}</span>
         <span style={{ ...statPillStyle, background: pendingEmails > 0 ? '#fff8e6' : undefined, borderColor: pendingEmails > 0 ? '#e8a020' : undefined, color: pendingEmails > 0 ? '#c8430a' : '#a09890' }}>
           ✉️ {pendingEmails} emails pending
         </span>
