@@ -53,6 +53,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
       .from('bookings')
       .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
       .eq('booked_by', user.id)
+      .eq('status', 'confirmed')
       .order('created_at', { ascending: false })
     setBookings(data || [])
     setLoadingBookings(false)
