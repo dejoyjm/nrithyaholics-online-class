@@ -225,6 +225,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             session_id: session.id,
             seats,
             amount_inr,
+            user_id: user.id,
           }, token)
 
           if (result.success) {
