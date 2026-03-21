@@ -1352,24 +1352,38 @@ function BookingsTab({ allBookings, users, onRefresh }) {
   function isManualRecovery(b) {
     return (b.razorpay_order_id || '').startsWith('manual_recovery_')
   }
-  const allIssues = enriched.filter(b => isConfirmEmailIssue(b) || isManualRecovery(b))
+  const allIssues = enriched.filter(b =>
+    (isConfirmEmailIssue(b) || isManualRecovery(b)) &&
+    ['open', 'confirmed'].includes(b.session_status) &&
+    !b.admin_resolved_at
+  )
   const issues = allIssues.filter(b => {
-    if (filterResolved === 'hide_resolved') return !b.admin_resolved_at
-    if (filterResolved === 'resolved_only') return !!b.admin_resolved_at
+    if (filterResolved === 'resolved_only') return false // allIssues already excludes resolved
     return true
   })
 
-  // Period stats (filterDays-aware, IST-correct for today)
+  // Period stats — IST-correct todayStart
+  const nowMs = Date.now()
+  const istOffsetMs = 5.5 * 60 * 60 * 1000
+  const nowIST = new Date(nowMs + istOffsetMs)
+  const todayStartIST = new Date(Date.UTC(
+    nowIST.getUTCFullYear(),
+    nowIST.getUTCMonth(),
+    nowIST.getUTCDate(),
+    0, 0, 0, 0
+  ))
+  const todayStartUTC = new Date(todayStartIST.getTime() - istOffsetMs)
+
   let periodStart
   if (filterDays === 1) {
-    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
-    periodStart = new Date(nowIST)
-    periodStart.setUTCHours(0, 0, 0, 0)
-    periodStart.setTime(periodStart.getTime() - 5.5 * 60 * 60 * 1000)
+    periodStart = todayStartUTC
   } else {
-    periodStart = new Date(Date.now() - filterDays * 24 * 60 * 60 * 1000)
+    periodStart = new Date(nowMs - filterDays * 24 * 60 * 60 * 1000)
   }
-  const todayBookings = enriched.filter(b => new Date(b.created_at) >= periodStart)
+  const todayBookings = enriched.filter(b =>
+    new Date(b.created_at) >= periodStart &&
+    b.session_status !== 'cancelled'
+  )
   console.log('[BookingsTab] todayBookings count:', todayBookings.length)
   const todayRevenue = todayBookings.reduce((s, b) => s + (b.credits_paid || 0), 0)
   const pendingEmails = enriched.filter(b => isConfirmEmailIssue(b)).length
