@@ -29,6 +29,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
       supabase.from('bookings')
         .select('id, status, credits_paid, razorpay_payment_id, razorpay_order_id, created_at, confirmation_email_sent_at, reminder_email_sent_at, join_link_sent_at, joined_at, left_at, booked_by, session_id, profiles!booked_by(full_name), sessions!session_id(id, title, scheduled_at, status)')
         .gt('created_at', since60d)
+        .eq('status', 'confirmed')
         .order('created_at', { ascending: false }),
     ])
     setApplications(appsRes.data || [])
@@ -1088,7 +1089,10 @@ function BookingsTab({ allBookings, users, onRefresh }) {
   const issues = enriched.filter(b => isConfirmEmailIssue(b) || isManualRecovery(b))
 
   // Today's stats
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0)
+  const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000)
+  const todayStart = new Date(nowIST)
+  todayStart.setUTCHours(0, 0, 0, 0)
+  todayStart.setTime(todayStart.getTime() - 5.5 * 60 * 60 * 1000)
   const todayBookings = enriched.filter(b => new Date(b.created_at) >= todayStart)
   const todayRevenue = todayBookings.reduce((s, b) => s + (b.credits_paid || 0), 0)
   const pendingEmails = enriched.filter(b => isConfirmEmailIssue(b)).length
