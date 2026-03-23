@@ -118,7 +118,7 @@ serve(async (req) => {
     // on THIS device within the last 90 seconds. We skip the peer check
     // because 100ms takes up to 60s to clear a departed peer, causing
     // false "already joined" blocks on legitimate rejoins.
-    const { session_id, recently_left } = await req.json()
+    const { session_id, recently_left, is_music_bot } = await req.json()
 
     if (!session_id) return new Response(
       JSON.stringify({ error: 'session_id required' }),
@@ -157,6 +157,30 @@ serve(async (req) => {
     const isAdmin  = profile?.is_admin === true
     const hmsRole  = (isChoreo || isAdmin) ? 'host' : 'guest'
     const isHost   = hmsRole === 'host'
+
+    // ── Music bot fast path — skip all time/booking/device gates ─────────────
+    if (is_music_bot) {
+      if (!isChoreo && !isAdmin) return new Response(
+        JSON.stringify({ error: 'Only the session choreographer or admin can start a music bot' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+
+      let musicRoomId = session.room_id
+      const mgmtToken = await getManagementToken()
+      if (!musicRoomId) {
+        musicRoomId = await createRoom(session_id, mgmtToken)
+        await supabase.from('sessions').update({ room_id: musicRoomId }).eq('id', session_id)
+      }
+
+      const now = Math.floor(Date.now() / 1000)
+      const farFuture = now + 6 * 60 * 60 // 6 hours
+      const musicToken = await getRoomToken(musicRoomId, `music-bot-${user.id}`, 'music', 'Music', now, farFuture)
+
+      return new Response(
+        JSON.stringify({ token: musicToken, room_id: musicRoomId, role: 'music' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     const { data: config } = await supabase
       .from('platform_config')

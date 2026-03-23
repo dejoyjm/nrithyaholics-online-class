@@ -12,6 +12,7 @@ import ChoreoProfilePage from './pages/ChoreoProfilePage'
 import ClassroomPage from './pages/ClassroomPage'
 import SetupTestModal from './pages/SetupTestModal'
 import ProfileCompletePrompt from './components/ProfileCompletePrompt'
+import MusicBotPage from './pages/MusicBotPage'
 
 // ── Hash helpers (module-level, no state dependency) ─────────────────────────
 
@@ -294,6 +295,10 @@ export default function App() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  // Music bot page — headless Puppeteer page, bypasses all auth/session logic.
+  // URL: https://online.nrithyaholics.in/?token=XXX&track_url=YYY#/music-bot
+  if (window.location.hash.startsWith('#/music-bot')) return <MusicBotPage />
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
