@@ -25,6 +25,14 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   // phase: 'calm' | 'countdown' | 'overtime' | 'critical'
   const [banner, setBanner] = useState(null)
 
+  // Music bot state
+  const [musicBotStatus, setMusicBotStatus] = useState(null) // null | 'starting' | 'playing' | 'paused' | 'stopped'
+  const [musicBotId, setMusicBotId] = useState(null)
+  const [musicPosition, setMusicPosition] = useState(0)
+  const [musicDuration, setMusicDuration] = useState(0)
+  const [musicVolume, setMusicVolume] = useState(70)
+  const [showMusicPanel, setShowMusicPanel] = useState(true)
+
   const iframeRef = useRef(null)
   const countdownRef = useRef(null)
   const endTimerRef = useRef(null)
@@ -143,6 +151,41 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     }
   }, [status, tokenExpiresAt, sessionEndsAt])
 
+  // ── Fetch current music bot state when classroom becomes ready ──
+  useEffect(() => {
+    if (status !== 'ready' || userRole !== 'host' || !session?.music_track_url) return
+    supabase.from('sessions')
+      .select('music_bot_id, music_bot_status')
+      .eq('id', sessionId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setMusicBotId(data.music_bot_id || null)
+          setMusicBotStatus(data.music_bot_status || null)
+        }
+      })
+  }, [status, userRole])
+
+  // ── Auto-stop music when session ends ──────────────────────────
+  useEffect(() => {
+    if (status === 'ended' && musicBotId) {
+      handleStopMusic()
+    }
+  }, [status])
+
+  // ── Music position polling (every 2s while playing) ─────────────
+  useEffect(() => {
+    if (musicBotStatus !== 'playing') return
+    const interval = setInterval(async () => {
+      const result = await callMusicControl('status')
+      if (result && !result.error) {
+        setMusicPosition(result.currentTime || 0)
+        setMusicDuration(result.duration || 0)
+      }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [musicBotStatus])
+
   async function fetchToken() {
     setStatus('fetching')
     try {
@@ -201,6 +244,74 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
       setStatus('error')
       setErrorMsg('Failed to connect. Please check your connection and try again.')
     }
+  }
+
+  // ── Music bot helpers ─────────────────────────────────────────
+  async function getMusicAuthToken() {
+    const { data: { session: authSession } } = await supabase.auth.getSession()
+    return authSession?.access_token
+  }
+
+  async function callMusicControl(action, value) {
+    const token = await getMusicAuthToken()
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/music-bot-control`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ session_id: sessionId, action, value }),
+    })
+    return res.json()
+  }
+
+  async function handleStartMusic() {
+    setMusicBotStatus('starting')
+    try {
+      const token = await getMusicAuthToken()
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/start-music-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+      const data = await res.json()
+      if (data.bot_id) setMusicBotId(data.bot_id)
+    } catch (err) {
+      console.error('Failed to start music bot:', err)
+      setMusicBotStatus(null)
+    }
+  }
+
+  async function handlePauseMusic() {
+    await callMusicControl('pause')
+    setMusicBotStatus('paused')
+  }
+
+  async function handleResumeMusic() {
+    await callMusicControl('resume')
+    setMusicBotStatus('playing')
+  }
+
+  async function handleSeekMusic(seconds) {
+    await callMusicControl('seek', seconds)
+    setMusicPosition(seconds)
+  }
+
+  async function handleVolumeMusic(vol) {
+    await callMusicControl('volume', vol)
+    setMusicVolume(vol)
+  }
+
+  async function handleStopMusic() {
+    try {
+      const token = await getMusicAuthToken()
+      await fetch(`${SUPABASE_URL}/functions/v1/stop-music-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+    } catch (err) {
+      console.error('Failed to stop music bot:', err)
+    }
+    setMusicBotStatus('stopped')
+    setMusicBotId(null)
   }
 
   // ── FETCHING ──────────────────────────────────────────────────
@@ -385,7 +496,10 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
-            onClick={() => setStatus('left')}
+            onClick={async () => {
+              if (musicBotId) await handleStopMusic()
+              setStatus('left')
+            }}
             style={{ background: '#dc2626', border: 'none', color: 'white', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
           >
             Leave
@@ -410,6 +524,43 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         </div>
       )}
 
+      {/* ── Music control overlay — host only ── */}
+      {userRole === 'host' && session?.music_track_url && (
+        showMusicPanel ? (
+          <MusicControls
+            session={session}
+            botStatus={musicBotStatus}
+            botId={musicBotId}
+            position={musicPosition}
+            duration={musicDuration}
+            volume={musicVolume}
+            onStart={handleStartMusic}
+            onPause={handlePauseMusic}
+            onResume={handleResumeMusic}
+            onSeek={handleSeekMusic}
+            onVolume={handleVolumeMusic}
+            onStop={handleStopMusic}
+            onCollapse={() => setShowMusicPanel(false)}
+          />
+        ) : (
+          <div
+            onClick={() => setShowMusicPanel(true)}
+            style={{
+              position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 50, background: 'rgba(15,12,12,0.92)', border: '1px solid rgba(200,67,10,0.4)',
+              borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6,
+              color: '#faf7f2', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >
+            🎵 Music
+            {musicBotStatus === 'playing' && (
+              <span style={{ color: '#22c55e', fontSize: 10, fontWeight: 700 }}>● LIVE</span>
+            )}
+          </div>
+        )
+      )}
+
       <iframe
         ref={iframeRef}
         src={prebuiltUrl}
@@ -424,6 +575,108 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes flashBanner { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
       `}</style>
+    </div>
+  )
+}
+
+function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, onCollapse }) {
+  function fmtTime(secs) {
+    if (!secs || isNaN(secs)) return '0:00'
+    const m = Math.floor(secs / 60)
+    const s = Math.floor(secs % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  const progressPct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0
+
+  function handleProgressClick(e) {
+    if (!duration) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    onSeek(Math.floor(pct * duration))
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 50, background: 'rgba(15,12,12,0.92)',
+      borderRadius: 12, padding: '10px 16px',
+      border: '1px solid rgba(200,67,10,0.4)',
+      minWidth: 300, maxWidth: 360,
+    }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#faf7f2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>
+          🎵 {session.music_track_title || 'Music'}
+        </div>
+        <button
+          onClick={onCollapse}
+          style={{ background: 'none', border: 'none', color: '#a09890', fontSize: 16, cursor: 'pointer', padding: '0 0 0 8px', lineHeight: 1 }}
+          title="Collapse"
+        >✕</button>
+      </div>
+
+      {/* State: not started / stopped */}
+      {(!botStatus || botStatus === 'stopped') && (
+        <button
+          onClick={onStart}
+          style={{ width: '100%', background: '#c8430a', border: 'none', borderRadius: 8, padding: '10px', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+        >
+          ▶ Start Music
+        </button>
+      )}
+
+      {/* State: starting */}
+      {botStatus === 'starting' && (
+        <div style={{ textAlign: 'center', color: '#a09890', fontSize: 13, padding: '8px 0' }}>
+          ⏳ Starting music...
+        </div>
+      )}
+
+      {/* State: playing or paused */}
+      {(botStatus === 'playing' || botStatus === 'paused') && (
+        <>
+          {/* Progress bar */}
+          <div
+            onClick={handleProgressClick}
+            style={{ height: 6, background: '#3a2e2e', borderRadius: 3, marginBottom: 4, cursor: 'pointer', position: 'relative' }}
+          >
+            <div style={{ height: '100%', width: `${progressPct}%`, background: '#c8430a', borderRadius: 3, transition: 'width 0.5s linear' }} />
+          </div>
+          {/* Time labels */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#7a6e65', marginBottom: 10 }}>
+            <span>{fmtTime(position)}</span>
+            <span>{fmtTime(duration)}</span>
+          </div>
+
+          {/* Transport controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            {botStatus === 'playing' ? (
+              <>
+                <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, letterSpacing: 0.5, background: 'rgba(34,197,94,0.1)', padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap' }}>🔴 LIVE</span>
+                <button onClick={onPause} style={{ flex: 1, background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 8, padding: '8px', color: '#faf7f2', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>⏸ Pause</button>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 10, color: '#a09890', fontWeight: 600, whiteSpace: 'nowrap' }}>⏸ Paused</span>
+                <button onClick={onResume} style={{ flex: 1, background: '#c8430a', border: 'none', borderRadius: 8, padding: '8px', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>▶ Resume</button>
+              </>
+            )}
+            <button onClick={onStop} style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 8, padding: '8px 10px', color: '#a09890', fontSize: 12, cursor: 'pointer' }} title="Stop music">■</button>
+          </div>
+
+          {/* Volume */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>🔊</span>
+            <input
+              type="range" min="0" max="100" value={volume}
+              onChange={e => onVolume(Number(e.target.value))}
+              style={{ flex: 1, accentColor: '#c8430a', cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 11, color: '#7a6e65', width: 30, textAlign: 'right', flexShrink: 0 }}>{volume}%</span>
+          </div>
+        </>
+      )}
     </div>
   )
 }
