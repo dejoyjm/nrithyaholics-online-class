@@ -25,7 +25,7 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
 
   // Grant microphone + display-capture permissions to the app origin
   const appUrl = process.env.APP_URL || 'https://online.nrithyaholics.in'
-  await browser.defaultBrowserContext().overridePermissions(appUrl, ['microphone', 'display-capture'])
+  await browser.defaultBrowserContext().overridePermissions(appUrl, ['microphone'])
 
   // Forward all bot-page console output to Railway logs for debugging
   page.on('console', (msg) => {
