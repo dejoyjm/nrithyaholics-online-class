@@ -28,10 +28,16 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
   await browser.defaultBrowserContext().overridePermissions(appUrl, ['microphone'])
 
   // Forward all bot-page console output to Railway logs for debugging
-  page.on('console', (msg) => {
-    const text = msg.text()
-    if (msg.type() === 'error') console.error(`[bot-page] ${text}`)
-    else if (text.startsWith('[MusicBot]')) console.log(`[bot-page] ${text}`)
+  page.on('console', async (msg) => {
+    if (msg.type() === 'error') {
+      const args = await Promise.all(
+        msg.args().map(arg => arg.jsonValue().catch(() => arg.toString()))
+      )
+      console.error('[bot-page]', ...args)
+    } else {
+      const text = msg.text()
+      if (text.startsWith('[MusicBot]')) console.log(`[bot-page] ${text}`)
+    }
   })
   page.on('pageerror', (err) => console.error('[bot-page] uncaught error:', err.message))
 

@@ -49,6 +49,12 @@ export default function MusicBotPage() {
       const customAudioTrack = destination.stream.getAudioTracks()[0]
       if (!customAudioTrack) throw new Error('[MusicBot] No audio track from MediaStreamDestination')
 
+      // Start playback and resume AudioContext now so the stream is live before addTrack.
+      // --autoplay-policy=no-user-gesture-required (Puppeteer arg) allows this without gesture.
+      await audioCtx.resume()
+      await audio.play()
+      console.log('[MusicBot] MP3 playback started, AudioContext active')
+
       const botControl = async (action, value) => {
         try {
           switch (action) {
