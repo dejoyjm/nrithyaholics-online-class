@@ -12,9 +12,9 @@ import { HMSReactiveStore } from '@100mslive/react-sdk'
  *
  * For track_type === 'youtube':
  *   Uses YouTube IFrame Player API for playback control.
- *   Captures tab audio via navigator.mediaDevices.getDisplayMedia().
- *   Puppeteer is launched with --auto-select-tab-capture-source=NrithyaHolics
- *   so Chrome auto-selects this tab without a picker dialog.
+ *   Captures tab audio via navigator.mediaDevices.getDisplayMedia({ audio, video }).
+ *   Puppeteer is launched with --use-fake-ui-for-media-stream (auto-approves) and
+ *   --auto-select-tab-capture-source=NrithyaHolics (auto-selects this tab by title).
  *
  * No UI is shown to users — this page is only ever opened by the bot server.
  */
@@ -144,30 +144,24 @@ export default function MusicBotPage() {
         })
       })
 
-      console.log('[MusicBot] YouTube player ready, capturing audio via AudioContext...')
+      console.log('[MusicBot] YouTube player ready, capturing tab audio via getDisplayMedia...')
 
-      // Puppeteer launches with --disable-web-security, so we can reach into the
-      // cross-origin YouTube iframe and grab its <video> element directly.
-      // Web Audio API: createMediaElementSource(<video>) → MediaStreamDestination → track.
-      const audioCtx = new AudioContext()
-      const destination = audioCtx.createMediaStreamDestination()
+      // --use-fake-ui-for-media-stream (already in Puppeteer launch args) auto-approves
+      // getDisplayMedia without a user gesture or picker dialog.
+      // --auto-select-tab-capture-source=NrithyaHolics (also in launch args) auto-selects
+      // this tab (document.title must be 'NrithyaHolics', set at top of initYouTube).
+      // video: true required — Chrome ignores audio-only getDisplayMedia requests.
+      const tabStream = await navigator.mediaDevices.getDisplayMedia({
+        audio: true,
+        video: { width: 1, height: 1 },
+      })
+      // Stop video track immediately — we only need audio
+      tabStream.getVideoTracks().forEach(t => t.stop())
 
-      // YT.Player wraps a div; the actual iframe is a child of that div.
-      const ytContainer = document.getElementById('yt-player')
-      const ytIframe = ytContainer ? ytContainer.querySelector('iframe') : null
-      if (!ytIframe) throw new Error('[MusicBot] YouTube iframe element not found in DOM')
+      const customAudioTrack = tabStream.getAudioTracks()[0]
+      if (!customAudioTrack) throw new Error('[MusicBot] No audio track from getDisplayMedia tab capture')
 
-      const videoEl = ytIframe.contentDocument && ytIframe.contentDocument.querySelector('video')
-      if (!videoEl) throw new Error('[MusicBot] YouTube <video> not found inside iframe (--disable-web-security required)')
-
-      const source = audioCtx.createMediaElementSource(videoEl)
-      source.connect(destination)
-      if (audioCtx.state === 'suspended') await audioCtx.resume()
-
-      const customAudioTrack = destination.stream.getAudioTracks()[0]
-      if (!customAudioTrack) throw new Error('[MusicBot] No audio track from AudioContext destination')
-
-      console.log('[MusicBot] AudioContext pipeline connected to YouTube video element')
+      console.log('[MusicBot] Tab audio captured successfully')
 
       const botControl = async (action, value) => {
         try {
@@ -208,7 +202,7 @@ export default function MusicBotPage() {
         customAudioTrack,
         botControl,
         cleanup: () => {
-          try { audioCtx.close() } catch (_) {}
+          tabStream.getTracks().forEach(t => t.stop())
           try { player.destroy() } catch (_) {}
         },
       }
