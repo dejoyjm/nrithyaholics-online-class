@@ -1,36 +1,10 @@
 const puppeteer = require('puppeteer')
 const { v4: uuid } = require('uuid')
-const { execSync } = require('child_process')
 
 // Map of bot_id → { browser, page }
 const activeBots = new Map()
 
-/**
- * For YouTube URLs, use yt-dlp to extract a direct audio stream URL.
- * This is more reliable than embedding a YouTube player in a headless browser
- * (no ads, no interstitials, works with age-restricted content).
- */
-function resolveAudioUrl(trackUrl, trackType) {
-  if (trackType !== 'youtube') return trackUrl
-  try {
-    console.log(`[yt-dlp] resolving audio URL for: ${trackUrl}`)
-    // -f bestaudio: pick the best audio-only format
-    // -g: print the direct URL without downloading
-    const audioUrl = execSync(
-      `yt-dlp -f "bestaudio[ext=webm]/bestaudio/best" -g "${trackUrl}"`,
-      { timeout: 30000 }
-    ).toString().trim()
-    console.log(`[yt-dlp] resolved to: ${audioUrl.slice(0, 80)}...`)
-    return audioUrl
-  } catch (err) {
-    console.error('[yt-dlp] failed, falling back to original URL:', err.message)
-    return trackUrl
-  }
-}
-
 async function startBot({ room_id, token, track_url, track_type, session_id }) {
-  const audioUrl = resolveAudioUrl(track_url, track_type)
-
   const browser = await puppeteer.launch({
     headless: 'new',
     args: [
@@ -39,35 +13,41 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
       '--use-fake-ui-for-media-stream',
       '--autoplay-policy=no-user-gesture-required',
       '--disable-web-security',
-      '--disable-features=IsolateOrigins,site-per-process',
-      // Required for Web Audio API to work in headless
+      // Disable features that can interfere with audio capture and autoplay
+      '--disable-features=IsolateOrigins,site-per-process,PreloadMediaEngagementData,MediaEngagementBypassAutoplayPolicies',
       '--allow-running-insecure-content',
+      // Auto-select this tab when getDisplayMedia is called (no picker dialog)
+      '--auto-select-tab-capture-source=NrithyaHolics',
     ],
   })
 
   const page = await browser.newPage()
 
-  // Grant microphone permission to the app origin
+  // Grant microphone + display-capture permissions to the app origin
   const appUrl = process.env.APP_URL || 'https://online.nrithyaholics.in'
-  await browser.defaultBrowserContext().overridePermissions(appUrl, ['microphone'])
+  await browser.defaultBrowserContext().overridePermissions(appUrl, ['microphone', 'display-capture'])
 
-  // Suppress console noise from the bot page
+  // Forward all bot-page console output to Railway logs for debugging
   page.on('console', (msg) => {
-    if (msg.type() === 'error') console.error(`[bot-page] ${msg.text()}`)
+    const text = msg.text()
+    if (msg.type() === 'error') console.error(`[bot-page] ${text}`)
+    else if (text.startsWith('[MusicBot]')) console.log(`[bot-page] ${text}`)
   })
   page.on('pageerror', (err) => console.error('[bot-page] uncaught error:', err.message))
 
   // Build the bot page URL — params in query string, route in hash
+  // track_url is passed as-is; the bot page handles type-specific playback
   const params = new URLSearchParams({
     token,
-    track_url: audioUrl,
+    track_url,
     track_type,
     session_id,
   })
   const botPageUrl = `${appUrl}/?${params.toString()}#/music-bot`
 
-  console.log(`[startBot] navigating to bot page (session=${session_id})`)
-  await page.goto(botPageUrl, { waitUntil: 'networkidle0', timeout: 60000 })
+  console.log(`[startBot] navigating to bot page (session=${session_id} type=${track_type})`)
+  // Use 'load' not 'networkidle0' — YouTube pages never reach networkidle0
+  await page.goto(botPageUrl, { waitUntil: 'load', timeout: 60000 })
 
   // Wait up to 45 seconds for the bot to join the room and signal readiness
   await page.waitForFunction('window.botReady === true', { timeout: 45000 })

@@ -5,26 +5,26 @@ import { HMSReactiveStore } from '@100mslive/react-sdk'
  * MusicBotPage — headless page opened by the Puppeteer music bot.
  *
  * URL format (set in bot.js):
- *   https://online.nrithyaholics.in/?token=XXX&track_url=YYY&track_type=ZZZ&session_id=WWW#/music-bot
+ *   https://<app>/?token=XXX&track_url=YYY&track_type=ZZZ&session_id=WWW#/music-bot
  *
- * This page:
- *  1. Reads params from window.location.search
- *  2. Sets up Web Audio API pipeline: Audio element → AudioContext → MediaStreamDestination
- *  3. Joins the 100ms room with the 'music' role using the custom audio track
- *  4. Exposes window.botControl(action, value) for Puppeteer to call
- *  5. Sets window.botReady = true when joined and ready
+ * For track_type === 'mp3':
+ *   Uses an <audio> element + Web Audio API pipeline (same as before).
+ *
+ * For track_type === 'youtube':
+ *   Uses YouTube IFrame Player API for playback control.
+ *   Captures tab audio via navigator.mediaDevices.getDisplayMedia().
+ *   Puppeteer is launched with --auto-select-tab-capture-source=NrithyaHolics
+ *   so Chrome auto-selects this tab without a picker dialog.
  *
  * No UI is shown to users — this page is only ever opened by the bot server.
  */
 export default function MusicBotPage() {
-  const audioRef    = useRef(null)
-  const audioCtxRef = useRef(null)
-  const hmsRef      = useRef(null)
+  const hmsRef = useRef(null)
 
   useEffect(() => {
-    const params   = new URLSearchParams(window.location.search)
-    const token    = params.get('token')
-    const trackUrl = params.get('track_url')
+    const params    = new URLSearchParams(window.location.search)
+    const token     = params.get('token')
+    const trackUrl  = params.get('track_url')
     const trackType = params.get('track_type')
 
     if (!token || !trackUrl) {
@@ -32,97 +32,52 @@ export default function MusicBotPage() {
       return
     }
 
-    async function init() {
-      // 1. Create audio element pointing at the resolved stream URL
+    console.log(`[MusicBot] Starting — type=${trackType}`)
+
+    // ── MP3 path ─────────────────────────────────────────────────
+    async function initMp3() {
       const audio = new Audio()
       audio.crossOrigin = 'anonymous'
       audio.preload = 'auto'
       audio.src = trackUrl
-      audioRef.current = audio
 
-      // 2. Build Web Audio pipeline
-      //    Audio element → MediaElementSource → MediaStreamDestination
-      //    We do NOT connect to audioCtx.destination — the bot server
-      //    should NOT play audio through its speakers; it only streams
-      //    the audio track into the 100ms room.
-      const audioCtx = new AudioContext()
-      audioCtxRef.current = audioCtx
-
-      const source      = audioCtx.createMediaElementSource(audio)
+      const audioCtx   = new AudioContext()
+      const source     = audioCtx.createMediaElementSource(audio)
       const destination = audioCtx.createMediaStreamDestination()
       source.connect(destination)
 
       const customAudioTrack = destination.stream.getAudioTracks()[0]
-      if (!customAudioTrack) {
-        throw new Error('[MusicBot] Failed to get audio track from MediaStreamDestination')
-      }
+      if (!customAudioTrack) throw new Error('[MusicBot] No audio track from MediaStreamDestination')
 
-      // 3. Join 100ms room with the custom audio track
-      const hms        = new HMSReactiveStore()
-      const hmsActions = hms.getHMSActions()
-      hmsRef.current   = hmsActions
-
-      await hmsActions.join({
-        authToken: token,
-        userName:  'Music',
-        // Inject the Web Audio API stream as the published audio track
-        // so 100ms streams it to all room peers instead of mic input.
-        audioTrack: {
-          enabled: true,
-        },
-        settings: {
-          isAudioMuted: false,
-          isVideoMuted: true,
-        },
-      })
-
-      // After joining, replace the default audio track with our custom one.
-      // This ensures the Web Audio API output (not the mic) is what gets
-      // published to the room.
-      try {
-        await hmsActions.addTrack(customAudioTrack, 'audio')
-      } catch (err) {
-        // addTrack may fail if the SDK manages tracks differently;
-        // the join with audioTrack config above may suffice.
-        console.warn('[MusicBot] addTrack fallback:', err.message)
-      }
-
-      // 4. Expose control interface to Puppeteer
-      window.botControl = async (action, value) => {
+      const botControl = async (action, value) => {
         try {
           switch (action) {
             case 'play':
               if (audioCtx.state === 'suspended') await audioCtx.resume()
               await audio.play()
               return { ok: true, action: 'play' }
-
             case 'pause':
               audio.pause()
               return { ok: true, action: 'pause' }
-
             case 'resume':
               if (audioCtx.state === 'suspended') await audioCtx.resume()
               await audio.play()
               return { ok: true, action: 'resume' }
-
             case 'seek':
               audio.currentTime = Number(value)
               return { ok: true, action: 'seek', currentTime: audio.currentTime }
-
             case 'volume':
               audio.volume = Math.max(0, Math.min(100, Number(value))) / 100
               return { ok: true, action: 'volume', volume: audio.volume * 100 }
-
             case 'status':
               return {
-                ok:          true,
+                ok: true,
                 currentTime: audio.currentTime,
                 duration:    audio.duration || 0,
                 paused:      audio.paused,
                 volume:      Math.round(audio.volume * 100),
                 ended:       audio.ended,
               }
-
             default:
               return { error: 'Unknown action: ' + action }
           }
@@ -131,8 +86,157 @@ export default function MusicBotPage() {
         }
       }
 
-      // 5. Signal readiness to Puppeteer's waitForFunction
-      window.botReady = true
+      return {
+        customAudioTrack,
+        botControl,
+        cleanup: () => {
+          audio.pause()
+          audio.src = ''
+          audioCtx.close()
+        },
+      }
+    }
+
+    // ── YouTube path ──────────────────────────────────────────────
+    async function initYouTube() {
+      // Set document title so --auto-select-tab-capture-source=NrithyaHolics matches
+      document.title = 'NrithyaHolics'
+
+      // Extract video ID from YouTube URL
+      function extractVideoId(url) {
+        const m = url.match(/[?&]v=([^&#]+)/) || url.match(/youtu\.be\/([^?&#]+)/)
+        return m ? m[1] : null
+      }
+      const videoId = extractVideoId(trackUrl)
+      if (!videoId) throw new Error('[MusicBot] Could not extract YouTube video ID from: ' + trackUrl)
+
+      console.log('[MusicBot] Loading YouTube IFrame API for videoId:', videoId)
+
+      // Load YouTube IFrame Player API — set callback BEFORE appending script
+      await new Promise((resolve) => {
+        window.onYouTubeIframeAPIReady = resolve
+        const tag = document.createElement('script')
+        tag.src = 'https://www.youtube.com/iframe_api'
+        document.head.appendChild(tag)
+      })
+
+      // Create a hidden player div
+      const playerDiv = document.createElement('div')
+      playerDiv.id = 'yt-player'
+      playerDiv.style.cssText = 'position:fixed;bottom:0;right:0;width:1px;height:1px;opacity:0.01;pointer-events:none'
+      document.body.appendChild(playerDiv)
+
+      // Create YouTube player and wait for onReady
+      const player = await new Promise((resolve, reject) => {
+        new window.YT.Player('yt-player', {
+          height: '1',
+          width:  '1',
+          videoId,
+          playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
+          events: {
+            onReady: (e) => {
+              e.target.setVolume(70)
+              e.target.playVideo()
+              resolve(e.target)
+            },
+            onError: (e) => reject(new Error('[MusicBot] YouTube player error code: ' + e.data)),
+          },
+        })
+      })
+
+      console.log('[MusicBot] YouTube player ready, capturing tab audio...')
+
+      // Capture tab audio via getDisplayMedia.
+      // --auto-select-tab-capture-source=NrithyaHolics auto-selects this tab in headless Chrome.
+      // video: true is required; Chrome won't capture audio-only without it in some versions.
+      const tabStream = await navigator.mediaDevices.getDisplayMedia({
+        audio: true,
+        video: { width: 1, height: 1 },
+      })
+      // Stop the video track immediately — we only need audio
+      tabStream.getVideoTracks().forEach(t => t.stop())
+
+      const customAudioTrack = tabStream.getAudioTracks()[0]
+      if (!customAudioTrack) throw new Error('[MusicBot] No audio track from tab capture')
+
+      console.log('[MusicBot] Tab audio captured successfully')
+
+      const botControl = async (action, value) => {
+        try {
+          switch (action) {
+            case 'play':
+              player.playVideo()
+              return { ok: true, action: 'play' }
+            case 'pause':
+              player.pauseVideo()
+              return { ok: true, action: 'pause' }
+            case 'resume':
+              player.playVideo()
+              return { ok: true, action: 'resume' }
+            case 'seek':
+              player.seekTo(Number(value), true) // true = allow seeking ahead of buffer
+              return { ok: true, action: 'seek', currentTime: player.getCurrentTime() }
+            case 'volume':
+              player.setVolume(Number(value)) // YouTube IFrame API takes 0–100 directly
+              return { ok: true, action: 'volume', volume: player.getVolume() }
+            case 'status':
+              return {
+                ok:          true,
+                currentTime: player.getCurrentTime(),
+                duration:    player.getDuration(),
+                paused:      player.getPlayerState() !== 1, // 1 = YT.PlayerState.PLAYING
+                volume:      player.getVolume(),
+                ended:       player.getPlayerState() === 0, // 0 = YT.PlayerState.ENDED
+              }
+            default:
+              return { error: 'Unknown action: ' + action }
+          }
+        } catch (err) {
+          return { error: err.message }
+        }
+      }
+
+      return {
+        customAudioTrack,
+        botControl,
+        cleanup: () => {
+          tabStream.getAudioTracks().forEach(t => t.stop())
+          try { player.destroy() } catch (_) {}
+        },
+      }
+    }
+
+    // ── Common: join 100ms + expose controls + signal ready ───────
+    let doCleanup = () => {}
+
+    async function init() {
+      const { customAudioTrack, botControl, cleanup } = trackType === 'youtube'
+        ? await initYouTube()
+        : await initMp3()
+
+      doCleanup = cleanup
+
+      // Join 100ms room
+      const hms        = new HMSReactiveStore()
+      const hmsActions = hms.getHMSActions()
+      hmsRef.current   = hmsActions
+
+      await hmsActions.join({
+        authToken: token,
+        userName:  'Music',
+        audioTrack: { enabled: true },
+        settings:  { isAudioMuted: false, isVideoMuted: true },
+      })
+
+      // Replace the default (fake) mic track with our custom audio source
+      try {
+        await hmsActions.addTrack(customAudioTrack, 'audio')
+      } catch (err) {
+        console.warn('[MusicBot] addTrack fallback:', err.message)
+      }
+
+      window.botControl = botControl
+      window.botReady   = true
       console.log('[MusicBot] Ready — joined room, controls exposed')
     }
 
@@ -142,31 +246,16 @@ export default function MusicBotPage() {
     })
 
     return () => {
-      // Cleanup on unmount (shouldn't happen for a bot page, but just in case)
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ''
-      }
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close()
-      }
-      if (hmsRef.current) {
-        hmsRef.current.leave().catch(() => {})
-      }
+      doCleanup()
+      if (hmsRef.current) hmsRef.current.leave().catch(() => {})
     }
   }, [])
 
-  // Invisible page — shows a minimal indicator in case someone visits it directly
   return (
     <div style={{
-      background: '#000',
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: '#333',
-      fontFamily: 'monospace',
-      fontSize: 14,
+      background: '#000', minHeight: '100vh',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#333', fontFamily: 'monospace', fontSize: 14,
     }}>
       NrithyaHolics Music Bot
     </div>
