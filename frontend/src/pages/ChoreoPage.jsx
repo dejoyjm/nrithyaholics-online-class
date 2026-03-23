@@ -49,6 +49,7 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [editSession, setEditSession] = useState(null)
+  const [musicSession, setMusicSession] = useState(null)
 
   useEffect(() => { fetchSessions() }, [])
 
@@ -137,6 +138,14 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                     <span style={{ background: statusColor[s.status] + '22', color: statusColor[s.status], fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase' }}>{s.status}</span>
                   </div>
                   <div style={{ fontSize: 13, color: '#7a6e65' }}>{formatDate(s.scheduled_at)} · {s.duration_minutes} min · {s.bookings_count || 0}/{s.max_seats} seats</div>
+                  {s.music_track_url && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                      {s.music_track_thumb && (
+                        <img src={s.music_track_thumb} alt="" style={{ width: 24, height: 18, objectFit: 'cover', borderRadius: 3, flexShrink: 0 }} />
+                      )}
+                      <span style={{ fontSize: 12, color: '#c8430a', fontWeight: 600 }}>🎵 {s.music_track_title || 'Track ready'}</span>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: '#0f0c0c' }}>
@@ -157,6 +166,17 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                       ✏️ Edit
                     </button>
                   )}
+                  {['open', 'draft', 'confirmed'].includes(s.status) && (
+                    <button onClick={() => setMusicSession(s)}
+                      style={{
+                        background: s.music_track_url ? '#1a7a3c' : '#faf7f2',
+                        color: s.music_track_url ? 'white' : '#0f0c0c',
+                        border: s.music_track_url ? 'none' : '1px solid #e2dbd4',
+                        borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}>
+                      {s.music_track_url ? '🎵 Music set ✓' : '🎵 Set up music'}
+                    </button>
+                  )}
                 </div>
               </div>
             )
@@ -166,6 +186,17 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
 
       {showCreate && <SessionModal user={user} onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); fetchSessions() }} />}
       {editSession && <SessionModal user={user} session={editSession} onClose={() => setEditSession(null)} onSaved={() => { setEditSession(null); fetchSessions() }} />}
+      {musicSession && (
+        <MusicSetupModal
+          session={musicSession}
+          user={user}
+          onClose={() => setMusicSession(null)}
+          onSaved={(updated) => {
+            setSessions(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s))
+            setMusicSession(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -460,6 +491,230 @@ function SessionModal({ user, session, onClose, onSaved }) {
           </button>
 
         </div>
+      </div>
+    </div>
+  )
+}
+
+function MusicSetupModal({ session, user, onClose, onSaved }) {
+  const hasExisting = !!session.music_track_url
+
+  const [ytUrl, setYtUrl]         = useState('')
+  const [fetching, setFetching]   = useState(false)
+  const [fetchError, setFetchError] = useState(null)
+  const [track, setTrack]         = useState(
+    hasExisting
+      ? { url: session.music_track_url, type: session.music_track_type, title: session.music_track_title, thumb: session.music_track_thumb }
+      : null
+  )
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving]       = useState(false)
+
+  const inputStyle = {
+    flex: 1, background: '#faf7f2', border: '1px solid #e2dbd4',
+    borderRadius: 8, padding: '10px 14px', fontSize: 14,
+    outline: 'none', color: '#0f0c0c', boxSizing: 'border-box',
+  }
+
+  async function fetchYouTubeInfo() {
+    if (!ytUrl.trim()) return
+    setFetching(true)
+    setFetchError(null)
+    try {
+      const res = await fetch(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(ytUrl.trim())}&format=json`
+      )
+      if (!res.ok) throw new Error('Could not fetch track info — check the URL and try again')
+      const data = await res.json()
+      setTrack({ url: ytUrl.trim(), type: 'youtube', title: data.title, thumb: data.thumbnail_url })
+    } catch (err) {
+      setFetchError(err.message || 'Failed to fetch YouTube info')
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  async function handleMp3Select(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setFetchError(null)
+    try {
+      const path = `${user.id}/${session.id}/track.mp3`
+      const { error: uploadError } = await supabase.storage
+        .from('music-tracks')
+        .upload(path, file, { upsert: true, contentType: 'audio/mpeg' })
+      if (uploadError) throw uploadError
+      const { data: urlData } = supabase.storage.from('music-tracks').getPublicUrl(path)
+      const title = file.name.replace(/\.mp3$/i, '')
+      setTrack({ url: urlData.publicUrl, type: 'mp3', title, thumb: null })
+    } catch (err) {
+      setFetchError('Upload failed: ' + (err.message || 'Unknown error'))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!track) return
+    setSaving(true)
+    const { error } = await supabase.from('sessions').update({
+      music_track_url:   track.url,
+      music_track_type:  track.type,
+      music_track_title: track.title,
+      music_track_thumb: track.thumb || null,
+    }).eq('id', session.id)
+    if (error) {
+      setFetchError('Save failed: ' + error.message)
+      setSaving(false)
+      return
+    }
+    onSaved({
+      id:                session.id,
+      music_track_url:   track.url,
+      music_track_type:  track.type,
+      music_track_title: track.title,
+      music_track_thumb: track.thumb || null,
+    })
+  }
+
+  async function handleRemove() {
+    setSaving(true)
+    const { error } = await supabase.from('sessions').update({
+      music_track_url:   null,
+      music_track_type:  null,
+      music_track_title: null,
+      music_track_thumb: null,
+    }).eq('id', session.id)
+    if (error) {
+      setFetchError('Remove failed: ' + error.message)
+      setSaving(false)
+      return
+    }
+    onSaved({
+      id:                session.id,
+      music_track_url:   null,
+      music_track_type:  null,
+      music_track_title: null,
+      music_track_thumb: null,
+    })
+  }
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 24 }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{ background: 'white', borderRadius: 20, padding: 32, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif' }}>🎵 Music for this session</div>
+            <div style={{ fontSize: 13, color: '#7a6e65', marginTop: 4 }}>{session.title}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65', lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+
+        {/* Error box */}
+        {fetchError && (
+          <div style={{ background: '#fff3cd', border: '1px solid #f0a500', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#7a4f00' }}>
+            {fetchError}
+          </div>
+        )}
+
+        {/* Track preview */}
+        {track && (
+          <div style={{ background: '#f0faf4', border: '1px solid #a8e0b8', borderRadius: 10, padding: '12px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+            {track.thumb && (
+              <img src={track.thumb} alt="" style={{ width: 60, height: 45, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{track.title}</div>
+              <div style={{ fontSize: 11, color: '#1a7a3c', fontWeight: 600, marginTop: 2, textTransform: 'uppercase' }}>{track.type}</div>
+            </div>
+            <button
+              onClick={() => { setTrack(null); setYtUrl('') }}
+              style={{ background: 'none', border: 'none', color: '#7a6e65', fontSize: 18, cursor: 'pointer', flexShrink: 0, lineHeight: 1, padding: 0 }}
+              title="Clear track"
+            >✕</button>
+          </div>
+        )}
+
+        {/* YouTube section */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>Add a YouTube link</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={inputStyle}
+              placeholder="https://youtube.com/watch?v=..."
+              value={ytUrl}
+              onChange={e => { setYtUrl(e.target.value); setFetchError(null) }}
+              onKeyDown={e => { if (e.key === 'Enter') fetchYouTubeInfo() }}
+            />
+            <button
+              onClick={fetchYouTubeInfo}
+              disabled={fetching || !ytUrl.trim()}
+              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: fetching || !ytUrl.trim() ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: fetching || !ytUrl.trim() ? 0.5 : 1 }}>
+              {fetching ? '…' : 'Fetch Info'}
+            </button>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
+          <div style={{ flex: 1, height: 1, background: '#e2dbd4' }} />
+          <span style={{ fontSize: 12, color: '#a09890', flexShrink: 0 }}>or</span>
+          <div style={{ flex: 1, height: 1, background: '#e2dbd4' }} />
+        </div>
+
+        {/* MP3 upload */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>Upload MP3</div>
+          <input
+            id="mp3-upload-input"
+            type="file"
+            accept=".mp3,audio/mpeg"
+            onChange={handleMp3Select}
+            style={{ display: 'none' }}
+          />
+          <label htmlFor="mp3-upload-input" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8,
+            padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: uploading ? 'not-allowed' : 'pointer', color: '#0f0c0c',
+            opacity: uploading ? 0.6 : 1,
+          }}>
+            {uploading ? '⏳ Uploading...' : '📁 Choose file'}
+          </label>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={handleSave}
+            disabled={!track || saving}
+            style={{ flex: 1, background: !track || saving ? '#a09890' : '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '13px', fontSize: 14, fontWeight: 700, cursor: !track || saving ? 'not-allowed' : 'pointer' }}>
+            {saving ? 'Saving...' : '💾 Save for this session'}
+          </button>
+          <button
+            onClick={onClose}
+            style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 10, padding: '13px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>
+            Cancel
+          </button>
+        </div>
+
+        {/* Remove existing track */}
+        {hasExisting && (
+          <div style={{ textAlign: 'center', marginTop: 16 }}>
+            <button
+              onClick={handleRemove}
+              disabled={saving}
+              style={{ background: 'none', border: 'none', color: '#cc0000', fontSize: 12, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>
+              Remove saved music track
+            </button>
+          </div>
+        )}
+
       </div>
     </div>
   )
