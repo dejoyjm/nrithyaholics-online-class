@@ -210,6 +210,12 @@ export default function MusicBotPage() {
     let doCleanup = () => {}
 
     async function init() {
+      // Signal readiness immediately — params are validated and init is underway.
+      // The bot server only needs to know the page is alive, not that 100ms has
+      // fully connected. window.botControl is wired up once the player is ready.
+      window.botReady = true
+      console.log('[MusicBot] botReady set — page alive, async init continuing')
+
       const { customAudioTrack, botControl, cleanup } = trackType === 'youtube'
         ? await initYouTube()
         : await initMp3()
@@ -217,6 +223,7 @@ export default function MusicBotPage() {
       doCleanup = cleanup
 
       // Join 100ms room
+      console.log('[MusicBot] joining 100ms room...')
       const hms        = new HMSReactiveStore()
       const hmsActions = hms.getHMSActions()
       hmsRef.current   = hmsActions
@@ -228,6 +235,8 @@ export default function MusicBotPage() {
         settings:  { isAudioMuted: false, isVideoMuted: true },
       })
 
+      console.log('[MusicBot] joined 100ms room, adding audio track...')
+
       // Replace the default (fake) mic track with our custom audio source
       try {
         await hmsActions.addTrack(customAudioTrack, 'audio')
@@ -236,8 +245,7 @@ export default function MusicBotPage() {
       }
 
       window.botControl = botControl
-      window.botReady   = true
-      console.log('[MusicBot] Ready — joined room, controls exposed')
+      console.log('[MusicBot] controls ready — audio publishing to room')
     }
 
     init().catch((err) => {
