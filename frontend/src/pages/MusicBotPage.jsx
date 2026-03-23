@@ -144,22 +144,30 @@ export default function MusicBotPage() {
         })
       })
 
-      console.log('[MusicBot] YouTube player ready, capturing tab audio...')
+      console.log('[MusicBot] YouTube player ready, capturing audio via AudioContext...')
 
-      // Capture tab audio via getDisplayMedia.
-      // --auto-select-tab-capture-source=NrithyaHolics auto-selects this tab in headless Chrome.
-      // video: true is required; Chrome won't capture audio-only without it in some versions.
-      const tabStream = await navigator.mediaDevices.getDisplayMedia({
-        audio: true,
-        video: { width: 1, height: 1 },
-      })
-      // Stop the video track immediately — we only need audio
-      tabStream.getVideoTracks().forEach(t => t.stop())
+      // Puppeteer launches with --disable-web-security, so we can reach into the
+      // cross-origin YouTube iframe and grab its <video> element directly.
+      // Web Audio API: createMediaElementSource(<video>) → MediaStreamDestination → track.
+      const audioCtx = new AudioContext()
+      const destination = audioCtx.createMediaStreamDestination()
 
-      const customAudioTrack = tabStream.getAudioTracks()[0]
-      if (!customAudioTrack) throw new Error('[MusicBot] No audio track from tab capture')
+      // YT.Player wraps a div; the actual iframe is a child of that div.
+      const ytContainer = document.getElementById('yt-player')
+      const ytIframe = ytContainer ? ytContainer.querySelector('iframe') : null
+      if (!ytIframe) throw new Error('[MusicBot] YouTube iframe element not found in DOM')
 
-      console.log('[MusicBot] Tab audio captured successfully')
+      const videoEl = ytIframe.contentDocument && ytIframe.contentDocument.querySelector('video')
+      if (!videoEl) throw new Error('[MusicBot] YouTube <video> not found inside iframe (--disable-web-security required)')
+
+      const source = audioCtx.createMediaElementSource(videoEl)
+      source.connect(destination)
+      if (audioCtx.state === 'suspended') await audioCtx.resume()
+
+      const customAudioTrack = destination.stream.getAudioTracks()[0]
+      if (!customAudioTrack) throw new Error('[MusicBot] No audio track from AudioContext destination')
+
+      console.log('[MusicBot] AudioContext pipeline connected to YouTube video element')
 
       const botControl = async (action, value) => {
         try {
@@ -200,7 +208,7 @@ export default function MusicBotPage() {
         customAudioTrack,
         botControl,
         cleanup: () => {
-          tabStream.getAudioTracks().forEach(t => t.stop())
+          try { audioCtx.close() } catch (_) {}
           try { player.destroy() } catch (_) {}
         },
       }
@@ -249,8 +257,8 @@ export default function MusicBotPage() {
     }
 
     init().catch((err) => {
-      console.error('[MusicBot] Init failed:', err)
-      window.botError = err.message
+      console.error('[MusicBot] Init failed:', err?.message || String(err))
+      window.botError = err?.message || String(err)
     })
 
     return () => {

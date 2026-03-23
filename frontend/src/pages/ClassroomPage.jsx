@@ -272,7 +272,10 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
         body: JSON.stringify({ session_id: sessionId }),
       })
       const data = await res.json()
-      if (data.bot_id) setMusicBotId(data.bot_id)
+      if (data.bot_id) {
+        setMusicBotId(data.bot_id)
+        setMusicBotStatus('playing')
+      }
     } catch (err) {
       console.error('Failed to start music bot:', err)
       setMusicBotStatus(null)
