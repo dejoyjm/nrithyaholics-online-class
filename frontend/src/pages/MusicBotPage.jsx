@@ -150,10 +150,11 @@ export default function MusicBotPage() {
       // getDisplayMedia without a user gesture or picker dialog.
       // --auto-select-tab-capture-source=NrithyaHolics (also in launch args) auto-selects
       // this tab (document.title must be 'NrithyaHolics', set at top of initYouTube).
-      // video: true required — Chrome ignores audio-only getDisplayMedia requests.
+      // video: false — headless Chrome has no display, video capture would throw
+      // "Could not start video source". Audio-only getDisplayMedia works fine.
       const tabStream = await navigator.mediaDevices.getDisplayMedia({
         audio: true,
-        video: { width: 1, height: 1 },
+        video: false,
       })
       // Stop video track immediately — we only need audio
       tabStream.getVideoTracks().forEach(t => t.stop())
