@@ -1,4 +1,6 @@
-const puppeteer = require('puppeteer')
+const puppeteer = require('puppeteer-extra')
+const StealthPlugin = require('puppeteer-extra-plugin-stealth')
+puppeteer.use(StealthPlugin())
 const { v4: uuid } = require('uuid')
 
 // Map of bot_id → { browser, page }
@@ -16,14 +18,18 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
       // Disable features that can interfere with audio capture and autoplay
       '--disable-features=IsolateOrigins,site-per-process,PreloadMediaEngagementData,MediaEngagementBypassAutoplayPolicies',
       '--allow-running-insecure-content',
-      // Auto-select this tab when getDisplayMedia is called (no picker dialog)
-      '--auto-select-tab-capture-source=NrithyaHolics',
+      '--window-size=1280,720',
+      // Realistic user agent — reduces YouTube bot detection likelihood
+      '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      // Removed: --auto-select-tab-capture-source (stealth plugin handles detection vectors)
     ],
   })
 
   const page = await browser.newPage()
 
   // Grant microphone + display-capture permissions to the app origin
+  // APP_URL must be updated to https://online.nrithyaholics.in
+  // before or immediately after merging music-bot → master
   const appUrl = process.env.APP_URL || 'https://online.nrithyaholics.in'
   await browser.defaultBrowserContext().overridePermissions(appUrl, ['microphone'])
 
