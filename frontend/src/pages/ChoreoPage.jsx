@@ -641,23 +641,22 @@ function MusicSetupModal({ session, user, onClose, onSaved }) {
           </div>
         )}
 
-        {/* YouTube section — coming soon (getDisplayMedia unavailable on Railway) */}
-        <div style={{ marginBottom: 8, opacity: 0.5 }}>
+        {/* YouTube section */}
+        <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>Add a YouTube link</div>
-          <div style={{ fontSize: 12, color: '#c8430a', marginBottom: 8, fontWeight: 600 }}>
-            ⚠️ YouTube coming soon — use MP3 upload for now
-          </div>
+          {fetchError && <div style={{ fontSize: 12, color: '#c8430a', marginBottom: 8 }}>{fetchError}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
             <input
-              style={{ ...inputStyle, cursor: 'not-allowed' }}
+              style={inputStyle}
               placeholder="https://youtube.com/watch?v=..."
-              value=""
-              disabled
+              value={ytUrl}
+              onChange={e => { setYtUrl(e.target.value); setFetchError(null) }}
             />
             <button
-              disabled
-              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'not-allowed', whiteSpace: 'nowrap', opacity: 0.5 }}>
-              Fetch Info
+              onClick={fetchYouTubeInfo}
+              disabled={fetching || !ytUrl.trim()}
+              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: fetching || !ytUrl.trim() ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: fetching || !ytUrl.trim() ? 0.5 : 1 }}>
+              {fetching ? '...' : 'Fetch Info'}
             </button>
           </div>
         </div>
