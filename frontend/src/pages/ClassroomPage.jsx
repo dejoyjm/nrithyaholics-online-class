@@ -31,7 +31,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   const [musicPosition, setMusicPosition] = useState(0)
   const [musicDuration, setMusicDuration] = useState(0)
   const [musicVolume, setMusicVolume] = useState(70)
-  const [showMusicPanel, setShowMusicPanel] = useState(true)
+  const [overlayPos, setOverlayPos] = useState({ x: null, y: null })
 
   const iframeRef = useRef(null)
   const countdownRef = useRef(null)
@@ -529,39 +529,21 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
 
       {/* ── Music control overlay — host only ── */}
       {userRole === 'host' && session?.music_track_url && (
-        showMusicPanel ? (
-          <MusicControls
-            session={session}
-            botStatus={musicBotStatus}
-            botId={musicBotId}
-            position={musicPosition}
-            duration={musicDuration}
-            volume={musicVolume}
-            onStart={handleStartMusic}
-            onPause={handlePauseMusic}
-            onResume={handleResumeMusic}
-            onSeek={handleSeekMusic}
-            onVolume={handleVolumeMusic}
-            onStop={handleStopMusic}
-            onCollapse={() => setShowMusicPanel(false)}
-          />
-        ) : (
-          <div
-            onClick={() => setShowMusicPanel(true)}
-            style={{
-              position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)',
-              zIndex: 50, background: 'rgba(15,12,12,0.92)', border: '1px solid rgba(200,67,10,0.4)',
-              borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6,
-              color: '#faf7f2', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
-            }}
-          >
-            🎵 Music
-            {musicBotStatus === 'playing' && (
-              <span style={{ color: '#22c55e', fontSize: 10, fontWeight: 700 }}>● LIVE</span>
-            )}
-          </div>
-        )
+        <MusicControls
+          session={session}
+          botStatus={musicBotStatus}
+          position={musicPosition}
+          duration={musicDuration}
+          volume={musicVolume}
+          onStart={handleStartMusic}
+          onPause={handlePauseMusic}
+          onResume={handleResumeMusic}
+          onSeek={handleSeekMusic}
+          onVolume={handleVolumeMusic}
+          onStop={handleStopMusic}
+          pos={overlayPos}
+          onDrag={setOverlayPos}
+        />
       )}
 
       <iframe
@@ -582,7 +564,10 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   )
 }
 
-function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, onCollapse }) {
+function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, pos, onDrag }) {
+  const [expanded, setExpanded] = useState(true)
+  const overlayRef = useRef(null)
+
   function fmtTime(secs) {
     if (!secs || isNaN(secs)) return '0:00'
     const m = Math.floor(secs / 60)
@@ -591,6 +576,68 @@ function MusicControls({ session, botStatus, position, duration, volume, onStart
   }
 
   const progressPct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0
+  const title = session.music_track_title || 'Music'
+  const truncTitle = title.length > 26 ? title.slice(0, 26) + '…' : title
+
+  const posStyle = pos.x !== null
+    ? { position: 'absolute', left: pos.x, top: pos.y, transform: 'none' }
+    : { position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)' }
+
+  // Drag from the handle strip (expanded) — always drags
+  function handleDragHandleDown(e) {
+    e.preventDefault()
+    const el = overlayRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const startX = e.touches ? e.touches[0].clientX : e.clientX
+    const startY = e.touches ? e.touches[0].clientY : e.clientY
+    const originX = rect.left
+    const originY = rect.top
+    function onMove(ev) {
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX
+      const cy = ev.touches ? ev.touches[0].clientY : ev.clientY
+      onDrag({ x: originX + (cx - startX), y: originY + (cy - startY) })
+    }
+    function onEnd() {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onEnd)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onEnd)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onEnd)
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onEnd)
+  }
+
+  // Drag from collapsed pill — tap (<5px move) expands, drag moves
+  function handlePillDown(e) {
+    const el = overlayRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const startX = e.touches ? e.touches[0].clientX : e.clientX
+    const startY = e.touches ? e.touches[0].clientY : e.clientY
+    const originX = rect.left
+    const originY = rect.top
+    let moved = false
+    function onMove(ev) {
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX
+      const cy = ev.touches ? ev.touches[0].clientY : ev.clientY
+      if (!moved && (Math.abs(cx - startX) > 5 || Math.abs(cy - startY) > 5)) moved = true
+      if (moved) onDrag({ x: originX + (cx - startX), y: originY + (cy - startY) })
+    }
+    function onEnd() {
+      if (!moved) setExpanded(true)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onEnd)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onEnd)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onEnd)
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onEnd)
+  }
 
   function handleProgressClick(e) {
     if (!duration) return
@@ -599,87 +646,157 @@ function MusicControls({ session, botStatus, position, duration, volume, onStart
     onSeek(Math.floor(pct * duration))
   }
 
+  // ── Collapsed pill ─────────────────────────────────────────────
+  if (!expanded) {
+    return (
+      <div
+        ref={overlayRef}
+        onMouseDown={handlePillDown}
+        onTouchStart={handlePillDown}
+        style={{
+          ...posStyle,
+          zIndex: 50, background: 'rgba(15,12,12,0.92)', border: '1px solid rgba(200,67,10,0.4)',
+          borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 6,
+          color: '#faf7f2', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+          userSelect: 'none',
+        }}
+      >
+        🎵 {truncTitle} · {fmtTime(position)}
+        {botStatus === 'playing' && (
+          <span style={{ color: '#22c55e', fontSize: 10, fontWeight: 700 }}>● LIVE</span>
+        )}
+      </div>
+    )
+  }
+
+  // ── Expanded full controls ──────────────────────────────────────
   return (
-    <div style={{
-      position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)',
-      zIndex: 50, background: 'rgba(15,12,12,0.92)',
-      borderRadius: 12, padding: '10px 16px',
-      border: '1px solid rgba(200,67,10,0.4)',
-      minWidth: 300, maxWidth: 360,
-    }}>
-      {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: '#faf7f2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>
-          🎵 {session.music_track_title || 'Music'}
-        </div>
-        <button
-          onClick={onCollapse}
-          style={{ background: 'none', border: 'none', color: '#a09890', fontSize: 16, cursor: 'pointer', padding: '0 0 0 8px', lineHeight: 1 }}
-          title="Collapse"
-        >✕</button>
+    <div
+      ref={overlayRef}
+      style={{
+        ...posStyle,
+        zIndex: 50, background: 'rgba(15,12,12,0.92)',
+        borderRadius: 12, border: '1px solid rgba(200,67,10,0.4)',
+        minWidth: 300, maxWidth: 360, userSelect: 'none',
+      }}
+    >
+      {/* Drag handle strip */}
+      <div
+        onMouseDown={handleDragHandleDown}
+        onTouchStart={handleDragHandleDown}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 0 2px', cursor: 'grab', color: '#4a3e3e', fontSize: 14, letterSpacing: 3 }}
+      >
+        ⠿⠿⠿
       </div>
 
-      {/* State: not started / stopped */}
-      {(!botStatus || botStatus === 'stopped') && (
-        <button
-          onClick={onStart}
-          style={{ width: '100%', background: '#c8430a', border: 'none', borderRadius: 8, padding: '10px', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-        >
-          ▶ Start Music
-        </button>
-      )}
+      {/* Content area */}
+      <div style={{ padding: '4px 16px 14px' }}>
 
-      {/* State: starting */}
-      {botStatus === 'starting' && (
-        <div style={{ textAlign: 'center', color: '#a09890', fontSize: 13, padding: '8px 0' }}>
-          ⏳ Starting music...
+        {/* Header: title + collapse */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#faf7f2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>
+            🎵 {truncTitle}
+          </div>
+          <button
+            onClick={() => setExpanded(false)}
+            style={{ background: 'none', border: 'none', color: '#a09890', fontSize: 14, cursor: 'pointer', padding: '0 0 0 8px', lineHeight: 1 }}
+            title="Collapse to pill"
+          >✕</button>
         </div>
-      )}
 
-      {/* State: playing or paused */}
-      {(botStatus === 'playing' || botStatus === 'paused') && (
-        <>
-          {/* Progress bar */}
-          <div
-            onClick={handleProgressClick}
-            style={{ height: 6, background: '#3a2e2e', borderRadius: 3, marginBottom: 4, cursor: 'pointer', position: 'relative' }}
+        {/* Not started / stopped */}
+        {(!botStatus || botStatus === 'stopped') && (
+          <button
+            onClick={onStart}
+            style={{ width: '100%', background: '#c8430a', border: 'none', borderRadius: 8, padding: '10px', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
           >
-            <div style={{ height: '100%', width: `${progressPct}%`, background: '#c8430a', borderRadius: 3, transition: 'width 0.5s linear' }} />
-          </div>
-          {/* Time labels */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#7a6e65', marginBottom: 10 }}>
-            <span>{fmtTime(position)}</span>
-            <span>{fmtTime(duration)}</span>
-          </div>
+            ▶ Start Music
+          </button>
+        )}
 
-          {/* Transport controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            {botStatus === 'playing' ? (
-              <>
-                <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, letterSpacing: 0.5, background: 'rgba(34,197,94,0.1)', padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap' }}>🔴 LIVE</span>
-                <button onClick={onPause} style={{ flex: 1, background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 8, padding: '8px', color: '#faf7f2', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>⏸ Pause</button>
-              </>
-            ) : (
-              <>
-                <span style={{ fontSize: 10, color: '#a09890', fontWeight: 600, whiteSpace: 'nowrap' }}>⏸ Paused</span>
-                <button onClick={onResume} style={{ flex: 1, background: '#c8430a', border: 'none', borderRadius: 8, padding: '8px', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>▶ Resume</button>
-              </>
-            )}
-            <button onClick={onStop} style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 8, padding: '8px 10px', color: '#a09890', fontSize: 12, cursor: 'pointer' }} title="Stop music">■</button>
+        {/* Starting */}
+        {botStatus === 'starting' && (
+          <div style={{ textAlign: 'center', color: '#a09890', fontSize: 13, padding: '8px 0' }}>
+            ⏳ Starting music...
           </div>
+        )}
 
-          {/* Volume */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>🔊</span>
-            <input
-              type="range" min="0" max="100" value={volume}
-              onChange={e => onVolume(Number(e.target.value))}
-              style={{ flex: 1, accentColor: '#c8430a', cursor: 'pointer' }}
-            />
-            <span style={{ fontSize: 11, color: '#7a6e65', width: 30, textAlign: 'right', flexShrink: 0 }}>{volume}%</span>
-          </div>
-        </>
-      )}
+        {/* Playing / paused */}
+        {(botStatus === 'playing' || botStatus === 'paused') && (
+          <>
+            {/* Progress bar */}
+            <div
+              onClick={handleProgressClick}
+              style={{ height: 6, background: '#3a2e2e', borderRadius: 3, marginBottom: 4, cursor: 'pointer' }}
+            >
+              <div style={{ height: '100%', width: `${progressPct}%`, background: '#c8430a', borderRadius: 3, transition: 'width 0.5s linear' }} />
+            </div>
+            {/* Time labels */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#7a6e65', marginBottom: 10 }}>
+              <span>{fmtTime(position)}</span>
+              <span>{fmtTime(duration)}</span>
+            </div>
+
+            {/* Skip + transport controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10, justifyContent: 'center' }}>
+              <button
+                onClick={() => onSeek(Math.max(0, position - 30))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Back 30s"
+              >⏮ 30</button>
+              <button
+                onClick={() => onSeek(Math.max(0, position - 15))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Back 15s"
+              >⏪ 15</button>
+              {botStatus === 'playing' ? (
+                <button
+                  onClick={onPause}
+                  style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 8, padding: '8px 16px', color: '#faf7f2', fontSize: 16, cursor: 'pointer' }}
+                >⏸</button>
+              ) : (
+                <button
+                  onClick={onResume}
+                  style={{ background: '#c8430a', border: 'none', borderRadius: 8, padding: '8px 16px', color: 'white', fontSize: 16, cursor: 'pointer' }}
+                >▶</button>
+              )}
+              <button
+                onClick={() => onSeek(Math.min(duration || 0, position + 15))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Forward 15s"
+              >15 ⏩</button>
+              <button
+                onClick={() => onSeek(Math.min(duration || 0, position + 30))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Forward 30s"
+              >30 ⏭</button>
+            </div>
+
+            {/* Volume + status + stop */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {botStatus === 'playing' ? (
+                <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, background: 'rgba(34,197,94,0.1)', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>🔴 LIVE</span>
+              ) : (
+                <span style={{ fontSize: 10, color: '#a09890', flexShrink: 0 }}>⏸</span>
+              )}
+              <span style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>🔊</span>
+              <input
+                type="range" min="0" max="100" value={volume}
+                onChange={e => onVolume(Number(e.target.value))}
+                onMouseDown={e => e.stopPropagation()}
+                style={{ flex: 1, accentColor: '#c8430a', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 11, color: '#7a6e65', width: 28, textAlign: 'right', flexShrink: 0 }}>{volume}%</span>
+              <button
+                onClick={onStop}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '5px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+                title="Stop music"
+              >■</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
