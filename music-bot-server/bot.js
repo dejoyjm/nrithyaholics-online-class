@@ -33,6 +33,8 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
       // MusicBotPage sets document.title = 'NrithyaHolics' before calling getDisplayMedia.
       // Compatible with stealth plugin — both can be active simultaneously.
       '--auto-select-tab-capture-source=NrithyaHolics',
+      // Route Chrome audio through pulseaudio (VirtualSink created by start.sh)
+      '--alsa-output-device=pulse',
     ],
   })
 
