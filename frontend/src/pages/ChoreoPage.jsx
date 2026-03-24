@@ -641,11 +641,9 @@ function MusicSetupModal({ session, user, onClose, onSaved }) {
           </div>
         )}
 
-        {/* YouTube section — [TEST MODE] re-enabled for stealth plugin testing */}
+        {/* YouTube section */}
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>
-            Add a YouTube link <span style={{ color: '#c8430a', fontWeight: 700 }}>[TEST]</span>
-          </div>
+          <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>Add a YouTube link</div>
           {fetchError && <div style={{ fontSize: 12, color: '#c8430a', marginBottom: 8 }}>{fetchError}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
             <input

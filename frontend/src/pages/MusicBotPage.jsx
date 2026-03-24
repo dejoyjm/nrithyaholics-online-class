@@ -257,12 +257,23 @@ export default function MusicBotPage() {
       console.log('[MusicBot] controls ready — audio publishing to room')
     }
 
+    // Suppress HMS DeviceNotAvailable (code 3002, isTerminal: false) from Railway logs.
+    // Fires on every bot join because the bot has no physical mic device — non-terminal,
+    // audio still publishes correctly via addTrack. Filter before Puppeteer forwards.
+    const _origConsoleError = console.error
+    console.error = (...args) => {
+      const s = args.map(a => { try { return typeof a === 'object' ? JSON.stringify(a) : String(a) } catch (_) { return '' } }).join(' ')
+      if (s.includes('DeviceNotAvailable') || (s.includes('3002') && s.includes('isTerminal'))) return
+      _origConsoleError.apply(console, args)
+    }
+
     init().catch((err) => {
-      console.error('[MusicBot] Init failed:', err?.message || String(err))
+      _origConsoleError.call(console, '[MusicBot] Init failed:', err?.message || String(err))
       window.botError = err?.message || String(err)
     })
 
     return () => {
+      console.error = _origConsoleError
       doCleanup()
       if (hmsRef.current) hmsRef.current.leave().catch(() => {})
     }
