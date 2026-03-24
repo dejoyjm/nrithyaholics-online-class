@@ -317,6 +317,26 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
     setMusicBotId(null)
   }
 
+  async function handleForceReset() {
+    if (!window.confirm('Reset the music bot? This will stop it and clear all state.')) return
+    try {
+      const token = await getMusicAuthToken()
+      await fetch(`${SUPABASE_URL}/functions/v1/stop-music-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+    } catch (err) {
+      console.error('Force reset error:', err)
+    }
+    await new Promise(r => setTimeout(r, 2000))
+    setMusicBotStatus(null)
+    setMusicBotId(null)
+    setMusicPosition(0)
+    setMusicDuration(0)
+    setMusicVolume(70)
+  }
+
   // ── FETCHING ──────────────────────────────────────────────────
   if (status === 'fetching') {
     return (
@@ -541,6 +561,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
           onSeek={handleSeekMusic}
           onVolume={handleVolumeMusic}
           onStop={handleStopMusic}
+          onReset={handleForceReset}
           pos={overlayPos}
           onDrag={setOverlayPos}
         />
@@ -564,7 +585,7 @@ export default function ClassroomPage({ sessionId, sessionData, user, profile, o
   )
 }
 
-function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, pos, onDrag }) {
+function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, onReset, pos, onDrag }) {
   const [expanded, setExpanded] = useState(true)
   const overlayRef = useRef(null)
 
@@ -721,6 +742,15 @@ function MusicControls({ session, botStatus, position, duration, volume, onStart
             ⏳ Starting music...
           </div>
         )}
+
+        {/* Force reset — always visible in expanded view */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button
+            onClick={onReset}
+            style={{ background: 'none', border: 'none', color: '#6b5050', fontSize: 10, cursor: 'pointer', padding: '2px 0' }}
+            title="Force stop bot and reset UI"
+          >⚠️ Reset bot</button>
+        </div>
 
         {/* Playing / paused */}
         {(botStatus === 'playing' || botStatus === 'paused') && (

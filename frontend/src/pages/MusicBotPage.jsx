@@ -43,8 +43,11 @@ export default function MusicBotPage() {
 
       const audioCtx   = new AudioContext()
       const source     = audioCtx.createMediaElementSource(audio)
+      const gainNode   = audioCtx.createGain()
+      gainNode.gain.value = 3.0
       const destination = audioCtx.createMediaStreamDestination()
-      source.connect(destination)
+      source.connect(gainNode)
+      gainNode.connect(destination)
 
       const customAudioTrack = destination.stream.getAudioTracks()[0]
       if (!customAudioTrack) throw new Error('[MusicBot] No audio track from MediaStreamDestination')
@@ -73,15 +76,15 @@ export default function MusicBotPage() {
               audio.currentTime = Number(value)
               return { ok: true, action: 'seek', currentTime: audio.currentTime }
             case 'volume':
-              audio.volume = Math.max(0, Math.min(100, Number(value))) / 100
-              return { ok: true, action: 'volume', volume: audio.volume * 100 }
+              gainNode.gain.value = (Math.max(0, Math.min(100, Number(value))) / 100) * 3.0
+              return { ok: true, action: 'volume', volume: Math.round((gainNode.gain.value / 3.0) * 100) }
             case 'status':
               return {
                 ok: true,
                 currentTime: audio.currentTime,
                 duration:    audio.duration || 0,
                 paused:      audio.paused,
-                volume:      Math.round(audio.volume * 100),
+                volume:      Math.round((gainNode.gain.value / 3.0) * 100),
                 ended:       audio.ended,
               }
             default:
