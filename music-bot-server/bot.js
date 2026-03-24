@@ -21,7 +21,10 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
       '--window-size=1280,720',
       // Realistic user agent — reduces YouTube bot detection likelihood
       '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      // Removed: --auto-select-tab-capture-source (stealth plugin handles detection vectors)
+      // Required for YouTube getDisplayMedia: auto-selects the tab by document.title.
+      // MusicBotPage sets document.title = 'NrithyaHolics' before calling getDisplayMedia.
+      // Compatible with stealth plugin — both can be active simultaneously.
+      '--auto-select-tab-capture-source=NrithyaHolics',
     ],
   })
 
