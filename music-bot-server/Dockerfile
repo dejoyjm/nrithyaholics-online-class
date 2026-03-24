@@ -7,19 +7,15 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
     wget gnupg ca-certificates curl \
-    pulseaudio pulseaudio-utils \
     && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update && apt-get install -y google-chrome-stable \
-    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
-    && chmod +x /usr/local/bin/yt-dlp \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY . .
-RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
 
 EXPOSE 3000
-CMD ["./start.sh"]
+CMD ["node", "index.js"]
