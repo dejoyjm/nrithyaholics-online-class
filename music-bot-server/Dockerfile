@@ -19,7 +19,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY . .
-RUN chmod +x start.sh
+RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
 
 EXPOSE 3000
 CMD ["./start.sh"]
