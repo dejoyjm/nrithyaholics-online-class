@@ -1,52 +1,69 @@
-# HANDOFF — Session 21 (Final)
-**Date:** 24-Mar-2026 | **Branch:** `master` | **Status:** MP3 music bot production-ready ✅ — YouTube deferred
+# HANDOFF — Session 21
+**Date:** 24-Mar-2026 | **Branch:** `master` | **Status:** MP3 music bot complete ✅ — YouTube deferred indefinitely
 
 ---
 
 ## Summary
 
-The music bot sprint is complete for the MP3 path. `master` is production-ready. YouTube audio capture is blocked by two separate infrastructure limitations and is deferred to a future sprint.
+The music bot sprint is complete for the MP3 path. `master` is production-ready. YouTube audio capture is blocked by infrastructure limitations confirmed as of March 2026 and is deferred to a future sprint. Two final polish items shipped in Session 21: volume boost (GainNode 3x) and a force-reset button.
 
 ---
 
 ## What works in production (MP3 path)
 
-- Choreographer sets up music in ChoreoPage → uploads MP3 to Supabase Storage
-- Host joins classroom → starts music bot from floating overlay
+- Choreographer uploads MP3 in ChoreoPage music setup modal → saved to Supabase Storage
+- Host joins classroom → starts music from floating overlay
 - Railway bot server launches headless Chrome, navigates to `MusicBotPage.jsx`
-- Bot joins 100ms room as `Music` peer, publishes MP3 audio via AudioContext pipeline
+- Bot joins 100ms room as `Music` peer, publishes MP3 audio via AudioContext + GainNode pipeline
 - Students hear music live in the classroom
-- Host controls: play / pause / resume / seek (±15s, ±30s) / volume / stop
+- Host controls: play / pause / resume / seek (±15s, ±30s) / volume / stop / force reset
 - Overlay is draggable; collapses to pill; auto-stops on session end
 
 ---
 
-## What is deferred (YouTube path)
+## Session 21 — What was added
 
-Two separate blockers were confirmed through testing:
+### 1. Volume boost — GainNode 3.0x (commit `a9710e1`)
 
-### Blocker 1 — Railway IPs flagged by YouTube
-`yt-dlp` and `ytdl-core` both return "Sign in to confirm you're not a bot" from Railway's data-centre IPs. Confirmed via `railway run node -e "require('ytdl-core')..."` → `FAILED: Could not extract functions`.
+**Problem:** MP3 audio was audible but too quiet relative to the instructor's mic in the 100ms room.
 
-The YouTube IFrame Player loads fine (stealth plugin helps), but server-side YouTube audio download is impossible from Railway IPs.
+**Fix:** Inserted a `GainNode` with `gain.value = 3.0` into the `initMp3()` pipeline:
 
-### Blocker 2 — `getDisplayMedia` has no audio device on Railway
-Railway containers have no virtual audio hardware. `getDisplayMedia({ audio: true, video: false })` throws "Requested device not found" regardless of Chrome flags.
+```
+Audio() → AudioContext.createMediaElementSource
+→ GainNode (gain=3.0) → MediaStreamDestination → getAudioTracks()[0]
+```
 
-Pulseaudio was attempted:
-- System mode (`--system`) — socket restricted to `pulse-access` group; root not in it
-- User mode with `PULSE_DAEMON_NO_ROOT_CHECK=1` — pulseaudio started, VirtualSink loaded (confirmed via module index `17` in logs), but `getDisplayMedia` still fails because Chrome requires a real capture device, not just a sink
+Volume slider in ClassroomPage overlay maps `(slider_value / 100) * 3.0` to `gainNode.gain.value`, so 100% slider = 3.0 gain and the reported percentage stays human-readable.
 
-### Research directions for YouTube (future sprint)
+**Status:** Shipped. Gain value 3.0 is a first estimate — may need tuning after a real class test.
 
-| Approach | Notes |
+### 2. Force reset button — ⚠️ Reset bot (commit `a9710e1`)
+
+**Problem:** If the bot crashes or Railway restarts mid-session, the overlay stays stuck in "playing" state with no way to recover without a page refresh.
+
+**Fix:** Small `⚠️ Reset bot` button always visible in the expanded overlay (top-right of content area, above main controls). On click:
+1. `window.confirm()` — "Reset the music bot? This will stop it and clear all state."
+2. Calls `stop-music-bot` edge fn (best-effort; errors swallowed)
+3. Waits 2 seconds
+4. Clears all music state: `musicBotStatus → null`, `musicBotId → null`, `position → 0`, `duration → 0`, `volume → 70`
+5. UI returns to "▶ Start Music"
+
+---
+
+## YouTube path — definitively blocked as of March 2026
+
+Three approaches were confirmed blocked:
+
+| Approach | Result |
 |---|---|
-| **(a) Residential IP proxy** | Route bot through a proxy with non-datacenter IP. yt-dlp/ytdl-core would work from residential IPs. Adds latency and cost. |
-| **(b) Different cloud provider** | Fly.io, Render, or a VPS with ALSA/PulseAudio properly wired. Some providers support audio hardware passthrough. |
-| **(c) Client-side extraction** | cobalt.tools (open source) extracts YouTube audio in-browser without server-side download. Could use a self-hosted instance. |
-| **(d) Virtual audio loopback via ALSA** | `snd_aloop` kernel module creates a real loopback device that Chrome's `getDisplayMedia` can capture. Requires privileged container or custom base image. |
+| `yt-dlp` from Railway | "Sign in to confirm you're not a bot" — Railway datacenter IPs flagged |
+| `ytdl-core` from Railway | `FAILED: Could not extract functions` — same IP block |
+| `cobalt.tools` API (`POST /api/json`) | `railway run node -e "fetch('https://cobalt.tools/api/json', ...)"` returned no output — blocked or rate-limited |
 
-For now: YouTube input in MusicSetupModal is disabled with a helper link to [cobalt.tools](https://cobalt.tools) for manual MP3 download.
+Additionally, `getDisplayMedia({ audio: true, video: false })` fails on Railway because there is no virtual audio hardware in the container.
+
+**Decision:** YouTube deferred indefinitely. Choreographers use MP3 upload. The YouTube input in MusicSetupModal is disabled; a cobalt.tools helper link lets choreographers download MP3s manually.
 
 ---
 
@@ -60,13 +77,15 @@ For now: YouTube input in MusicSetupModal is disabled with a helper link to [cob
 | 4 | `Init failed: Could not start video source` | `getDisplayMedia({ video: false })` | `de053a0` |
 | 5 | HMS SDK errors logged as `JSHandle@object` | `await arg.jsonValue().catch(...)` per arg | `52a6b94` |
 | 6 | MP3 bot publishes silence | `audioCtx.resume()` + `audio.play()` before `addTrack` | `52a6b94` |
-| 7 | Vercel branch preview serving stale build | Pin Railway `APP_URL` to specific deployment URL | (env var) |
+| 7 | Vercel branch preview serving stale build | Pin Railway `APP_URL` to production URL | (env var) |
 | 8 | `invalid permission: display-capture` | Remove from `overridePermissions` | `2504016` |
 | 9 | `yt-dlp` blocked on Railway | Switched to YouTube IFrame Player | `5b137bc` |
 | 10 | `botReady` 45s timeout | Moved `window.botReady = true` to top of `init()` | `5b137bc` |
 | 11 | `waitUntil: networkidle0` hanging | Changed to `'load'` | `5b137bc` |
 | 12 | HMS DeviceNotAvailable (3002) log noise | `console.error` intercept in MusicBotPage | `58fd6c8` |
 | 13 | `getDisplayMedia` "Requested device not found" | Root cause confirmed (no audio HW on Railway); YouTube deferred | — |
+| 14 | Volume too quiet in room | GainNode 3.0x boost in MP3 pipeline | `a9710e1` |
+| 15 | No recovery path if bot crashes mid-session | ⚠️ Reset bot button clears all state + calls stop-music-bot | `a9710e1` |
 
 ---
 
@@ -81,7 +100,8 @@ ClassroomPage (host only)
                       └─ navigates to https://online.nrithyaholics.in/?...#/music-bot
                            └─ MusicBotPage.jsx init():
                                 └─ initMp3():
-                                     Audio() → AudioContext.createMediaElementSource
+                                     Audio() → createMediaElementSource
+                                     → GainNode (gain=3.0)
                                      → MediaStreamDestination → getAudioTracks()[0]
                                      → audioCtx.resume() + audio.play()  ← before addTrack
                                      → hmsActions.addTrack('audio')
@@ -89,6 +109,7 @@ ClassroomPage (host only)
 
 Controls: ClassroomPage → music-bot-control edge fn → Railway /control → window.botControl(cmd)
 Stop:     ClassroomPage → stop-music-bot edge fn    → Railway /stop   → browser.close()
+Reset:    handleForceReset() → stop-music-bot (best-effort) → 2s wait → clear all state
 ```
 
 **Key invariants:**
@@ -96,6 +117,7 @@ Stop:     ClassroomPage → stop-music-bot edge fn    → Railway /stop   → br
 - `audioCtx.resume()` + `audio.play()` MUST precede `addTrack` — else silence
 - HMS DeviceNotAvailable (3002, isTerminal: false) suppressed via `console.error` intercept
 - `['microphone']` is the only valid permission string for `overridePermissions`
+- Volume slider maps `(value/100) * 3.0` to `gainNode.gain.value` — never `audio.volume`
 
 ---
 
@@ -113,14 +135,33 @@ Stop:     ClassroomPage → stop-music-bot edge fn    → Railway /stop   → br
 
 ---
 
-## Known limitations
+## Known issues — needs testing
 
-| Issue | Impact | Workaround |
+| Issue | Context | How to test |
 |---|---|---|
-| YouTube blocked | Choreographers must use MP3 | cobalt.tools link in UI |
-| No bot liveness check | If Railway restarts mid-session, host sees stale "playing" state | Host clicks Stop → Play |
-| No error state in overlay | If start fails, overlay stays hidden with no message | — |
-| MP3 must be re-uploaded per session | No reuse across sessions | Future: track library |
+| Progress bar stays 0:00 | Observed on office laptop — likely corporate WebRTC blocking preventing bot control responses | Test on home network or phone hotspot |
+| Volume 3.0x gain — may need tuning | 3.0 is a first estimate; could be too loud or still too quiet depending on track | Test in a real class; adjust `gainNode.gain.value = 3.0` in `MusicBotPage.jsx` and re-deploy |
+
+---
+
+## Next priorities (platform)
+
+1. **Booking confirmation email self-healing fallback** — webhook path sometimes misses; need a fallback that checks for unconfirmed bookings and sends email
+2. **Session cancellation + refund workflow** — choreographer cancels → trigger Razorpay refund API → notify booked students
+3. **Auto-cancel 24hrs before if min_seats not met** — scheduled job compares `bookings` count vs `min_seats`; cancels + refunds if threshold not reached
+4. **Revenue share visibility for choreographers** — dashboard showing earnings per session, payout status
+
+---
+
+## Music bot future research
+
+| Approach | Notes |
+|---|---|
+| **SoundCloud API** | Has embeddable streams and a proper API; worth exploring as an alternative to YouTube for music-only use cases |
+| **Wait for cobalt.tools / yt-dlp** | YouTube vs scraper arms race — may stabilise; worth retesting in a future sprint |
+| **Residential proxy** | Route bot through a non-datacenter IP; yt-dlp/ytdl-core would likely work; adds latency and cost |
+| **ALSA snd_aloop loopback** | `snd_aloop` kernel module creates a real loopback device Chrome can capture; requires privileged container or custom base image on Railway |
+| **Different cloud provider** | Fly.io, Render, or a VPS with ALSA/PulseAudio; some support audio hardware passthrough |
 
 ---
 
@@ -128,8 +169,8 @@ Stop:     ClassroomPage → stop-music-bot edge fn    → Railway /stop   → br
 
 | File | What changed |
 |---|---|
-| `frontend/src/pages/MusicBotPage.jsx` | New — headless bot page; MP3 AudioContext pipeline; DeviceNotAvailable suppression |
-| `frontend/src/pages/ClassroomPage.jsx` | Floating music overlay (host-only); drag; skip buttons; position polling |
+| `frontend/src/pages/MusicBotPage.jsx` | New — headless bot page; MP3 AudioContext + GainNode pipeline; DeviceNotAvailable suppression |
+| `frontend/src/pages/ClassroomPage.jsx` | Floating music overlay (host-only); drag; skip buttons; position polling; force reset |
 | `frontend/src/pages/ChoreoPage.jsx` | Music setup modal; YouTube disabled with cobalt.tools helper link |
 | `frontend/src/App.jsx` | Early-exit for `#/music-bot` hash |
 | `music-bot-server/index.js` | Express: `/start`, `/stop`, `/control`, `/health` |
