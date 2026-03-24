@@ -2,11 +2,19 @@ const puppeteer = require('puppeteer-extra')
 const StealthPlugin = require('puppeteer-extra-plugin-stealth')
 puppeteer.use(StealthPlugin())
 const { v4: uuid } = require('uuid')
+const { execSync } = require('child_process')
 
 // Map of bot_id → { browser, page }
 const activeBots = new Map()
 
 async function startBot({ room_id, token, track_url, track_type, session_id }) {
+  // Ensure pulseaudio is running — start it if not (fallback in case start.sh didn't run)
+  try {
+    execSync('pulseaudio --check')
+  } catch {
+    execSync('pulseaudio --start --exit-idle-time=-1')
+  }
+
   const browser = await puppeteer.launch({
     headless: 'new',
     args: [
