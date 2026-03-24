@@ -641,24 +641,26 @@ function MusicSetupModal({ session, user, onClose, onSaved }) {
           </div>
         )}
 
-        {/* YouTube section */}
-        <div style={{ marginBottom: 8 }}>
+        {/* YouTube section — disabled, MP3 is the supported path */}
+        <div style={{ marginBottom: 4, opacity: 0.5 }}>
           <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontWeight: 600 }}>Add a YouTube link</div>
-          {fetchError && <div style={{ fontSize: 12, color: '#c8430a', marginBottom: 8 }}>{fetchError}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
             <input
-              style={inputStyle}
+              style={{ ...inputStyle, cursor: 'not-allowed' }}
               placeholder="https://youtube.com/watch?v=..."
-              value={ytUrl}
-              onChange={e => { setYtUrl(e.target.value); setFetchError(null) }}
+              value=""
+              disabled
             />
-            <button
-              onClick={fetchYouTubeInfo}
-              disabled={fetching || !ytUrl.trim()}
-              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: fetching || !ytUrl.trim() ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: fetching || !ytUrl.trim() ? 0.5 : 1 }}>
-              {fetching ? '...' : 'Fetch Info'}
+            <button disabled style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'not-allowed', whiteSpace: 'nowrap', opacity: 0.5 }}>
+              Fetch Info
             </button>
           </div>
+        </div>
+        <div style={{ marginBottom: 8, fontSize: 12, color: '#7a6e65', lineHeight: 1.5 }}>
+          💡 YouTube coming soon. For best audio quality, record or download your track as MP3 and upload below.{' '}
+          <a href="https://cobalt.tools" target="_blank" rel="noreferrer" style={{ color: '#c8430a', textDecoration: 'none', fontWeight: 600 }}>
+            Download MP3 from YouTube →
+          </a>
         </div>
 
         {/* Divider */}
