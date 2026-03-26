@@ -2026,25 +2026,50 @@ function RevenueTab({ choreographers, sessions }) {
 
   async function fetchAuditBookings(fromDate = '', toDate = '') {
     setLoadingBookings(true)
+    // Step 1: fetch bookings + sessions (no nested profile joins to avoid 400)
     let query = supabase
       .from('bookings')
       .select(`
-        id, created_at, status, credits_paid, ticket_price, gateway_fee, nrh_share, choreo_share, razorpay_payment_id, seats,
-        sessions(id, title, scheduled_at, choreographer_id, profiles(full_name)),
-        profiles!booked_by(email, full_name)
+        id, created_at, status, credits_paid, ticket_price, gateway_fee,
+        nrh_share, choreo_share, razorpay_payment_id, seats, booked_by, session_id,
+        sessions(id, title, scheduled_at, choreographer_id)
       `)
       .eq('status', 'confirmed')
       .order('created_at', { ascending: false })
-    if (fromDate) {
-      query = query.gte('created_at', new Date(fromDate).toISOString())
+    if (fromDate) query = query.gte('created_at', new Date(fromDate).toISOString())
+    if (toDate) query = query.lte('created_at', new Date(toDate + 'T23:59:59').toISOString())
+
+    const { data: bookingsData, error } = await query
+    if (error) { console.error('[audit fetch error]', error); setLoadingBookings(false); return }
+
+    if (!bookingsData || bookingsData.length === 0) {
+      setAllBookings([])
+      setLoadingBookings(false)
+      return
     }
-    if (toDate) {
-      query = query.lte('created_at', new Date(toDate + 'T23:59:59').toISOString())
-    }
-    const { data, error } = await query
-    if (error) console.error('[audit fetch error]', error)
-    console.log('[audit fetch]', { fromDate, toDate, count: data?.length ?? 0, error })
-    setAllBookings(data || [])
+
+    // Step 2: collect all unique user IDs (learners + choreographers)
+    const userIds = [...new Set([
+      ...bookingsData.map(b => b.booked_by),
+      ...bookingsData.map(b => b.sessions?.choreographer_id),
+    ].filter(Boolean))]
+
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', userIds)
+
+    const profileMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]))
+
+    // Step 3: merge client-side
+    const enriched = bookingsData.map(b => ({
+      ...b,
+      learnerProfile: profileMap[b.booked_by] || null,
+      choreoProfile: profileMap[b.sessions?.choreographer_id] || null,
+    }))
+
+    console.log('[audit fetch]', { fromDate, toDate, count: enriched.length })
+    setAllBookings(enriched)
     setLoadingBookings(false)
   }
 
@@ -2344,7 +2369,7 @@ function RevenueTab({ choreographers, sessions }) {
         const choreoMap = {}
         allBookings.forEach(b => {
           const cid = b.sessions?.choreographer_id
-          const cname = b.sessions?.profiles?.full_name
+          const cname = b.choreoProfile?.full_name
           if (cid && cname) choreoMap[cid] = cname
         })
         const choreoList = Object.entries(choreoMap).map(([id, name]) => ({ id, name }))
@@ -2383,8 +2408,8 @@ function RevenueTab({ choreographers, sessions }) {
           const rows = filtered.map(b => ({
             Date: new Date(b.created_at).toLocaleDateString('en-IN'),
             Session: b.sessions?.title || '',
-            Choreographer: b.sessions?.profiles?.full_name || '',
-            Learner: b.profiles?.email || '',
+            Choreographer: b.choreoProfile?.full_name || '',
+            Learner: b.learnerProfile?.email || b.learnerProfile?.full_name || '',
             Tickets: b.seats || 1,
             'Ticket Price': b.ticket_price ?? b.credits_paid ?? 0,
             'Gateway Fee': b.gateway_fee || 0,
@@ -2504,9 +2529,9 @@ function RevenueTab({ choreographers, sessions }) {
                           <td style={tdStyle(isLegacy)}>{new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                           <td style={tdStyle(isLegacy)}>
                             <div style={{ fontWeight: 600 }}>{b.sessions?.title || '—'}</div>
-                            <div style={{ fontSize: 11, color: '#a09890' }}>{b.sessions?.profiles?.full_name || ''}</div>
+                            <div style={{ fontSize: 11, color: '#a09890' }}>{b.choreoProfile?.full_name || ''}</div>
                           </td>
-                          <td style={tdStyle(isLegacy)}>{b.profiles?.email || '—'}</td>
+                          <td style={tdStyle(isLegacy)}>{b.learnerProfile?.email || b.learnerProfile?.full_name || '—'}</td>
                           <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>{b.seats || 1}</td>
                           <td style={{ ...tdStyle(isLegacy), textAlign: 'right', fontWeight: 600 }}>₹{tp.toLocaleString('en-IN')}{isLegacy && <span title="Pre-revenue system booking" style={{ marginLeft: 3, fontSize: 10 }}>*</span>}</td>
                           <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>₹{(b.gateway_fee || 0).toLocaleString('en-IN')}</td>

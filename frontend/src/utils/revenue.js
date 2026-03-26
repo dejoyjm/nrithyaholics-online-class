@@ -1,3 +1,17 @@
+// Resolve active pricing rule for a session
+// Returns { price, label } — first non-expired, non-sold-out rule wins
+// Falls back to session's first price tier if no rule applies
+export function resolveActivePrice(session, pricingRules) {
+  const now = new Date()
+  const confirmedBookings = session?.bookings_count || 0
+  for (const rule of (pricingRules || [])) {
+    if (rule.valid_until && new Date(rule.valid_until) < now) continue
+    if (rule.max_tickets != null && confirmedBookings >= rule.max_tickets) continue
+    return { price: rule.price, label: rule.label }
+  }
+  return { price: session?.price_tiers?.[0]?.price || 0, label: null }
+}
+
 // Resolve which policy applies to a session
 // Priority: session policy > choreographer policy > default
 export function resolvePolicy(session, choreographerProfile, policies) {

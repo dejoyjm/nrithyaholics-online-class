@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import { isIST, getTimezoneCode, formatClassTime } from './utils/timezone'
+import { resolveActivePrice } from './utils/revenue'
 
 // ── Helpers ────────────────────────────────────────────────────
 const STYLES = ['Bollywood', 'Bharatanatyam', 'Hip Hop', 'Contemporary', 'Kathak', 'Folk', 'Jazz', 'Fusion']
@@ -267,9 +268,27 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forc
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: '#0f0c0c' }}>
-            {lowestPrice > 0 ? `₹${lowestPrice}` : 'Free'}
-            {tiers.length > 1 && <span style={{ fontSize: 12, fontWeight: 400, color: '#7a6e65' }}> onwards</span>}
+          <div>
+            {(() => {
+              const activePrice = resolveActivePrice(session, session.pricing_rules || [])
+              const basePrice = lowestPrice
+              const isOnSale = activePrice.label && activePrice.price < basePrice
+              if (basePrice === 0) return <span style={{ fontSize: 20, fontWeight: 800, color: '#0f0c0c' }}>Free</span>
+              return isOnSale ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, color: '#a09890', textDecoration: 'line-through' }}>₹{basePrice}</span>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: '#0f0c0c' }}>₹{activePrice.price}</span>
+                  <span style={{ background: '#22c55e', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 20, whiteSpace: 'nowrap' }}>
+                    {activePrice.label}
+                  </span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#0f0c0c' }}>
+                  ₹{basePrice}
+                  {tiers.length > 1 && <span style={{ fontSize: 12, fontWeight: 400, color: '#7a6e65' }}> onwards</span>}
+                </div>
+              )
+            })()}
           </div>
           <button
             onClick={isFull ? handleWaitlist : undefined}
@@ -471,7 +490,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
     setLoading(true)
     const { data, error } = await supabase
       .from('sessions')
-      .select('*, profiles(full_name, avatar_url)')
+      .select('*, profiles(full_name, avatar_url), pricing_rules(*)')
       .in('status', ['open', 'confirmed', 'full'])
       .order('scheduled_at', { ascending: true })
 
