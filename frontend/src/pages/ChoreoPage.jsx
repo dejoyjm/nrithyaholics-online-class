@@ -181,6 +181,19 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                   {(() => {
                     const basePrice = s.price_tiers?.length ? s.price_tiers[0].price : 0
                     const activeRule = getActiveRule(s)
+                    const confirmedBookings = s.bookings_count || 0
+                    const ruleDetail = (() => {
+                      const parts = []
+                      if (activeRule?.valid_until) {
+                        const exp = new Date(activeRule.valid_until)
+                        parts.push('expires ' + exp.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }))
+                      }
+                      if (activeRule?.max_tickets != null) {
+                        const remaining = activeRule.max_tickets - confirmedBookings
+                        parts.push(`${remaining} of ${activeRule.max_tickets} left`)
+                      }
+                      return parts.join(' · ')
+                    })()
                     return activeRule ? (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -190,6 +203,9 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                         <div style={{ fontSize: 10, background: '#1a7a3c', color: 'white', fontWeight: 700, padding: '2px 7px', borderRadius: 20 }}>
                           🏷️ {activeRule.label} active
                         </div>
+                        {ruleDetail && (
+                          <div style={{ fontSize: 10, color: '#7a6e65' }}>{ruleDetail}</div>
+                        )}
                       </>
                     ) : (
                       <>

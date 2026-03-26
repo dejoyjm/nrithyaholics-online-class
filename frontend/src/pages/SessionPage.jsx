@@ -201,6 +201,19 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       const _gatewayFeePerSeat = calculateGatewayFee(_ticketPricePerSeat, gatewayFeePct)
       const amount_inr = (_ticketPricePerSeat + _gatewayFeePerSeat) * seats
 
+      console.log('[NRH pricing debug]', {
+        baseTierPrice,
+        activePricePerSeat,
+        currentTierPrice: _ticketPricePerSeat,
+        gatewayFeePct,
+        gatewayFeePerSeat: _gatewayFeePerSeat,
+        totalChargedPerSeat: _ticketPricePerSeat + _gatewayFeePerSeat,
+        seats,
+        amount_inr,
+        razorpayPaise: Math.round(amount_inr * 100),
+        revPolicyId: revPolicy?.id ?? 'null (fallback 3%)',
+      })
+
       const { data: { session: authSession } } = await supabase.auth.getSession()
       const token = authSession?.access_token
 
@@ -652,26 +665,26 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             </div>
           </div>
 
-          <div style={{ background: '#faf7f2', borderRadius: 10, padding: 16, marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-              <span style={{ fontSize: 13, color: '#5a4e47' }}>
-                Ticket price{seats > 1 ? ` (×${seats})` : ''}
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#0f0c0c' }}>₹{currentTierPrice * seats}</span>
-            </div>
-            {gatewayFeePerSeat > 0 && (
+          {gatewayFeePerSeat > 0 && (
+            <div style={{ background: '#faf7f2', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                <span style={{ fontSize: 13, color: '#5a4e47' }}>
+                  Ticket price{seats > 1 ? ` (×${seats})` : ''}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#0f0c0c' }}>₹{currentTierPrice * seats}</span>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                 <span style={{ fontSize: 13, color: '#7a6e65' }}>
                   Payment gateway fee ({gatewayFeePct}%)
                 </span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#7a6e65' }}>₹{gatewayFeePerSeat * seats}</span>
               </div>
-            )}
-            <div style={{ borderTop: '1px solid #e2dbd4', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#5a4e47' }}>Total</span>
-              <span style={{ fontSize: 26, fontWeight: 800, color: '#0f0c0c' }}>₹{totalChargedAmount}</span>
+              <div style={{ borderTop: '1px solid #e2dbd4', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#5a4e47' }}>Total</span>
+                <span style={{ fontSize: 26, fontWeight: 800, color: '#0f0c0c' }}>₹{totalChargedAmount}</span>
+              </div>
             </div>
-          </div>
+          )}
 
           {paymentError && (
             <div style={{ background: '#fff0f0', border: '1px solid #ffcccc', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13, color: '#cc0000', lineHeight: 1.5 }}>

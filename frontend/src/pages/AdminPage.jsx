@@ -1993,12 +1993,18 @@ function RevenueTab({ choreographers, sessions }) {
   const [simStudents, setSimStudents] = useState(25)
   const [simGatewayPct, setSimGatewayPct] = useState(3)
   const [simResult, setSimResult] = useState(null)
+  const [simCompareMode, setSimCompareMode] = useState(false)
+  const [simPolicy2Id, setSimPolicy2Id] = useState('')
+  const [simGatewayPct2, setSimGatewayPct2] = useState(3)
+  const [simResult2, setSimResult2] = useState(null)
 
   // Booking audit
   const [allBookings, setAllBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
   const [filterChoreoId, setFilterChoreoId] = useState('')
   const [filterSessionId, setFilterSessionId] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
 
   useEffect(() => { fetchPolicies(); fetchAuditBookings() }, [])
 
@@ -2104,7 +2110,19 @@ function RevenueTab({ choreographers, sessions }) {
     const slabs = policy.revenue_policy_slabs || []
     const settlement = calculateSessionSettlement(simStudents, simPrice, { ...policy, gateway_fee_pct: simGatewayPct }, slabs)
     const slabBreakdown = calculateSlabBreakdown(simStudents, simPrice, slabs)
-    setSimResult({ ...settlement, slabBreakdown, gatewayPct: simGatewayPct })
+    setSimResult({ ...settlement, slabBreakdown, gatewayPct: simGatewayPct, policyName: policy.name })
+
+    if (simCompareMode && simPolicy2Id) {
+      const policy2 = policies.find(p => p.id === simPolicy2Id)
+      if (policy2) {
+        const slabs2 = policy2.revenue_policy_slabs || []
+        const settlement2 = calculateSessionSettlement(simStudents, simPrice, { ...policy2, gateway_fee_pct: simGatewayPct2 }, slabs2)
+        const slabBreakdown2 = calculateSlabBreakdown(simStudents, simPrice, slabs2)
+        setSimResult2({ ...settlement2, slabBreakdown: slabBreakdown2, gatewayPct: simGatewayPct2, policyName: policy2.name })
+      }
+    } else {
+      setSimResult2(null)
+    }
   }
 
   const inp = { width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f0c0c' }
@@ -2211,11 +2229,23 @@ function RevenueTab({ choreographers, sessions }) {
 
       {/* SECTION B: Simulation Engine */}
       <div style={{ borderTop: '2px solid #f0ebe6', paddingTop: 32 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', marginBottom: 16 }}>💡 Revenue Simulator</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0 }}>💡 Revenue Simulator</h3>
+          <div style={{ display: 'flex', gap: 4, background: '#f0ebe6', borderRadius: 8, padding: 3 }}>
+            <button onClick={() => { setSimCompareMode(false); setSimResult2(null) }}
+              style={{ background: simCompareMode ? 'transparent' : 'white', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: simCompareMode ? '#7a6e65' : '#0f0c0c', boxShadow: simCompareMode ? 'none' : '0 1px 3px rgba(0,0,0,0.1)' }}>
+              Single policy
+            </button>
+            <button onClick={() => setSimCompareMode(true)}
+              style={{ background: simCompareMode ? 'white' : 'transparent', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: simCompareMode ? '#0f0c0c' : '#7a6e65', boxShadow: simCompareMode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+              Compare two
+            </button>
+          </div>
+        </div>
         <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 20, marginBottom: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: simCompareMode ? '1fr 1fr 1fr' : 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
             <div>
-              <label style={lbl}>Policy</label>
+              <label style={lbl}>{simCompareMode ? 'Policy A' : 'Policy'}</label>
               <select style={inp} value={simPolicyId} onChange={e => {
                 setSimPolicyId(e.target.value)
                 const p = policies.find(x => x.id === e.target.value)
@@ -2224,6 +2254,19 @@ function RevenueTab({ choreographers, sessions }) {
                 {policies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
+            {simCompareMode && (
+              <div>
+                <label style={lbl}>Policy B</label>
+                <select style={inp} value={simPolicy2Id} onChange={e => {
+                  setSimPolicy2Id(e.target.value)
+                  const p = policies.find(x => x.id === e.target.value)
+                  if (p) setSimGatewayPct2(p.gateway_fee_pct)
+                }}>
+                  <option value="">Select policy</option>
+                  {policies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label style={lbl}>Ticket Price (₹)</label>
               <input type="number" style={inp} value={simPrice} onChange={e => setSimPrice(Number(e.target.value))} min="1" />
@@ -2232,10 +2275,12 @@ function RevenueTab({ choreographers, sessions }) {
               <label style={lbl}>Number of students</label>
               <input type="number" style={inp} value={simStudents} onChange={e => setSimStudents(Number(e.target.value))} min="1" />
             </div>
-            <div>
-              <label style={lbl}>Gateway fee %</label>
-              <input type="number" style={inp} value={simGatewayPct} onChange={e => setSimGatewayPct(Number(e.target.value))} min="0" step="0.01" />
-            </div>
+            {!simCompareMode && (
+              <div>
+                <label style={lbl}>Gateway fee %</label>
+                <input type="number" style={inp} value={simGatewayPct} onChange={e => setSimGatewayPct(Number(e.target.value))} min="0" step="0.01" />
+              </div>
+            )}
           </div>
           <button onClick={runSimulation}
             style={{ background: '#5b4fcf', color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
@@ -2244,32 +2289,41 @@ function RevenueTab({ choreographers, sessions }) {
         </div>
 
         {simResult && (
-          <div style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 12, padding: 20 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-              {[
-                ['Gross revenue', `₹${simResult.grossRevenue.toLocaleString('en-IN')}`],
-                [`Gateway fees (${simResult.gatewayPct}%)`, `₹${simResult.totalGatewayFees.toLocaleString('en-IN')} (learner)`],
-                ['NRH share', `₹${simResult.nrhShare.toLocaleString('en-IN')}`],
-                ['Choreographer', `₹${simResult.choreoShare.toLocaleString('en-IN')}`],
-              ].map(([label, value]) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0ebe6' }}>
-                  <span style={{ fontSize: 13, color: '#5a4e47' }}>{label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c' }}>{value}</span>
-                </div>
-              ))}
-            </div>
-            {simResult.slabBreakdown.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Slab breakdown</div>
-                {simResult.slabBreakdown.map((slab, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#5a4e47', padding: '3px 0' }}>
-                    {slab.label}: {slab.mode === 'flat'
-                      ? `flat ₹${slab.value}`
-                      : `${slab.value}% × ₹${slab.slabRevenue?.toLocaleString('en-IN')}`} = ₹{slab.nrhAmount.toLocaleString('en-IN')}
+          <div style={{ display: 'grid', gridTemplateColumns: simCompareMode && simResult2 ? '1fr 1fr' : '1fr', gap: 16 }}>
+            {[simResult, simCompareMode ? simResult2 : null].filter(Boolean).map((res, idx) => (
+              <div key={idx} style={{ background: 'white', border: `1px solid ${idx === 0 ? '#e2dbd4' : '#5b4fcf44'}`, borderRadius: 12, padding: 20 }}>
+                {simCompareMode && (
+                  <div style={{ fontSize: 12, fontWeight: 700, color: idx === 0 ? '#5a4e47' : '#5b4fcf', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {idx === 0 ? 'Policy A' : 'Policy B'}: {res.policyName}
                   </div>
-                ))}
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                  {[
+                    ['Gross revenue', `₹${res.grossRevenue.toLocaleString('en-IN')}`],
+                    [`Gateway fees (${res.gatewayPct}%)`, `₹${res.totalGatewayFees.toLocaleString('en-IN')} (learner)`],
+                    ['NRH share', `₹${res.nrhShare.toLocaleString('en-IN')}`],
+                    ['Choreographer', `₹${res.choreoShare.toLocaleString('en-IN')}`],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0ebe6' }}>
+                      <span style={{ fontSize: 13, color: '#5a4e47' }}>{label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c' }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+                {res.slabBreakdown.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Slab breakdown</div>
+                    {res.slabBreakdown.map((slab, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#5a4e47', padding: '3px 0' }}>
+                        {slab.label}: {slab.mode === 'flat'
+                          ? `flat ₹${slab.value}`
+                          : `${slab.value}% × ₹${slab.slabRevenue?.toLocaleString('en-IN')}`} = ₹{slab.nrhAmount.toLocaleString('en-IN')}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -2296,12 +2350,26 @@ function RevenueTab({ choreographers, sessions }) {
         })
         const sessionList = Object.entries(sessionMap).map(([id, title]) => ({ id, title }))
 
-        // Filter
-        const filtered = allBookings.filter(b => {
-          if (filterChoreoId && b.sessions?.choreographer_id !== filterChoreoId) return false
-          if (filterSessionId && b.sessions?.id !== filterSessionId) return false
-          return true
-        })
+        // Filter + sort descending by date
+        const filtered = allBookings
+          .filter(b => {
+            if (filterChoreoId && b.sessions?.choreographer_id !== filterChoreoId) return false
+            if (filterSessionId && b.sessions?.id !== filterSessionId) return false
+            if (filterDateFrom) {
+              const bookingDate = new Date(b.created_at)
+              const fromDate = new Date(filterDateFrom)
+              fromDate.setHours(0, 0, 0, 0)
+              if (bookingDate < fromDate) return false
+            }
+            if (filterDateTo) {
+              const bookingDate = new Date(b.created_at)
+              const toDate = new Date(filterDateTo)
+              toDate.setHours(23, 59, 59, 999)
+              if (bookingDate > toDate) return false
+            }
+            return true
+          })
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
         // Totals
         const totals = filtered.reduce((acc, b) => {
@@ -2356,7 +2424,17 @@ function RevenueTab({ choreographers, sessions }) {
             </div>
 
             {/* Filters */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ fontSize: 12, color: '#7a6e65', whiteSpace: 'nowrap' }}>From</label>
+                <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                  style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '7px 10px', fontSize: 13, outline: 'none', background: 'white' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label style={{ fontSize: 12, color: '#7a6e65', whiteSpace: 'nowrap' }}>To</label>
+                <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                  style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '7px 10px', fontSize: 13, outline: 'none', background: 'white' }} />
+              </div>
               <select
                 value={filterChoreoId}
                 onChange={e => { setFilterChoreoId(e.target.value); setFilterSessionId('') }}
@@ -2371,10 +2449,35 @@ function RevenueTab({ choreographers, sessions }) {
                 <option value="">All sessions</option>
                 {sessionList.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
+              {(filterDateFrom || filterDateTo || filterChoreoId || filterSessionId) && (
+                <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); setFilterChoreoId(''); setFilterSessionId('') }}
+                  style={{ background: 'none', border: 'none', fontSize: 12, color: '#c8430a', cursor: 'pointer', padding: '4px 8px' }}>
+                  Clear filters
+                </button>
+              )}
               <span style={{ fontSize: 13, color: '#7a6e65', alignSelf: 'center' }}>
                 {loadingBookings ? 'Loading...' : `${filtered.length} booking${filtered.length !== 1 ? 's' : ''}`}
               </span>
             </div>
+
+            {/* Summary stat cards */}
+            {!loadingBookings && filtered.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 20 }}>
+                {[
+                  { label: 'Bookings', value: filtered.length, color: '#5b4fcf' },
+                  { label: 'Sessions', value: new Set(filtered.map(b => b.sessions?.id).filter(Boolean)).size, color: '#5b4fcf' },
+                  { label: 'Gross revenue', value: `₹${totals.ticketPrice.toLocaleString('en-IN')}`, color: '#0f0c0c' },
+                  { label: 'Gateway fees', value: `₹${totals.gatewayFee.toLocaleString('en-IN')}`, color: '#7a6e65' },
+                  { label: 'NRH share', value: `₹${totals.nrhShare.toLocaleString('en-IN')}`, color: '#c8430a' },
+                  { label: 'Choreo share', value: `₹${totals.choreoShare.toLocaleString('en-IN')}`, color: '#1a7a3c' },
+                ].map(card => (
+                  <div key={card.label} style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{card.label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: card.color }}>{card.value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {loadingBookings ? (
               <div style={{ padding: 32, textAlign: 'center', color: '#7a6e65' }}>Loading bookings...</div>
