@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ClassroomPage from './ClassroomPage'
-import SDKClassroom from './SDKClassroom'
 import SetupTestModal from './SetupTestModal'
 
 const RAZORPAY_KEY_ID = 'rzp_live_bYmMMbiG8WZC34'
@@ -56,7 +55,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [userName, setUserName] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [showClassroom, setShowClassroom] = useState(false)
-  const [classroomMode, setClassroomMode] = useState('prebuilt')
   const [showSetupTest, setShowSetupTest] = useState(false)
   const [onWaitlist, setOnWaitlist] = useState(false)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
@@ -111,14 +109,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       setSession(data)
       if (user) checkExistingBooking(data.id)
     }
-
-    // Fetch classroom_mode directly so we are never dependent on a stale/null prop
-    const { data: config } = await supabase
-      .from('platform_config')
-      .select('classroom_mode')
-      .eq('id', 1)
-      .single()
-    setClassroomMode(config?.classroom_mode || 'prebuilt')
 
     setLoading(false)
   }
@@ -325,20 +315,8 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   // Who can see the join/start button — only within the time window
   const canEnterClass = canJoinNow && session.status !== 'cancelled' && (isChoreo || alreadyBooked || booked)
 
-  // Show classroom — route to SDKClassroom when classroom_mode === 'sdk', Prebuilt otherwise
+  // Show classroom
   if (showClassroom && session) {
-    const useSDK = session.classroom_mode_override === 'sdk' || classroomMode === 'sdk'
-    if (useSDK) {
-      return (
-        <SDKClassroom
-          sessionId={sessionId}
-          sessionData={session}
-          user={user}
-          profile={profile}
-          onLeave={() => setShowClassroom(false)}
-        />
-      )
-    }
     return (
       <ClassroomPage
         sessionId={sessionId}
