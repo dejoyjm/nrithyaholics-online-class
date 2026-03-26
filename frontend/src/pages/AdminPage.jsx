@@ -2006,7 +2006,8 @@ function RevenueTab({ choreographers, sessions }) {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
 
-  useEffect(() => { fetchPolicies(); fetchAuditBookings() }, [])
+  useEffect(() => { fetchPolicies() }, [])
+  useEffect(() => { fetchAuditBookings(filterDateFrom, filterDateTo) }, [filterDateFrom, filterDateTo])
 
   async function fetchPolicies() {
     const { data } = await supabase
@@ -2023,9 +2024,9 @@ function RevenueTab({ choreographers, sessions }) {
     setLoading(false)
   }
 
-  async function fetchAuditBookings() {
+  async function fetchAuditBookings(fromDate = '', toDate = '') {
     setLoadingBookings(true)
-    const { data } = await supabase
+    let query = supabase
       .from('bookings')
       .select(`
         id, created_at, status, credits_paid, ticket_price, gateway_fee, nrh_share, choreo_share, razorpay_payment_id, seats,
@@ -2034,6 +2035,15 @@ function RevenueTab({ choreographers, sessions }) {
       `)
       .eq('status', 'confirmed')
       .order('created_at', { ascending: false })
+    if (fromDate) {
+      query = query.gte('created_at', new Date(fromDate).toISOString())
+    }
+    if (toDate) {
+      query = query.lte('created_at', new Date(toDate + 'T23:59:59').toISOString())
+    }
+    const { data, error } = await query
+    if (error) console.error('[audit fetch error]', error)
+    console.log('[audit fetch]', { fromDate, toDate, count: data?.length ?? 0, error })
     setAllBookings(data || [])
     setLoadingBookings(false)
   }
@@ -2350,26 +2360,12 @@ function RevenueTab({ choreographers, sessions }) {
         })
         const sessionList = Object.entries(sessionMap).map(([id, title]) => ({ id, title }))
 
-        // Filter + sort descending by date
-        const filtered = allBookings
-          .filter(b => {
-            if (filterChoreoId && b.sessions?.choreographer_id !== filterChoreoId) return false
-            if (filterSessionId && b.sessions?.id !== filterSessionId) return false
-            if (filterDateFrom) {
-              const bookingDate = new Date(b.created_at)
-              const fromDate = new Date(filterDateFrom)
-              fromDate.setHours(0, 0, 0, 0)
-              if (bookingDate < fromDate) return false
-            }
-            if (filterDateTo) {
-              const bookingDate = new Date(b.created_at)
-              const toDate = new Date(filterDateTo)
-              toDate.setHours(23, 59, 59, 999)
-              if (bookingDate > toDate) return false
-            }
-            return true
-          })
-          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        // Filter by choreo/session (client-side); date filtering is server-side via fetchAuditBookings
+        const filtered = allBookings.filter(b => {
+          if (filterChoreoId && b.sessions?.choreographer_id !== filterChoreoId) return false
+          if (filterSessionId && b.sessions?.id !== filterSessionId) return false
+          return true
+        })
 
         // Totals
         const totals = filtered.reduce((acc, b) => {
