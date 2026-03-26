@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
+import { isIST, getTimezoneCode, formatClassTime } from './utils/timezone'
 
 // ── Helpers ────────────────────────────────────────────────────
 const STYLES = ['Bollywood', 'Bharatanatyam', 'Hip Hop', 'Contemporary', 'Kathak', 'Folk', 'Jazz', 'Fusion']
@@ -70,7 +71,7 @@ function isDateInRange(dateStr, range) {
 }
 
 // ── SessionCard ────────────────────────────────────────────────
-function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
+function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forceIST }) {
   const tiers = session.price_tiers || []
   const lowestPrice = getLowestPrice(tiers)
   const totalSeats = tiers.reduce((sum, t) => sum + t.seats, 0)
@@ -250,7 +251,10 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick }) {
         </div>
 
         <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 10 }}>
-          📅 {formatDate(session.scheduled_at)}
+          📅 {isIST()
+            ? formatDate(session.scheduled_at)
+            : `${formatClassTime(session.scheduled_at, forceIST)} ${forceIST ? 'IST' : getTimezoneCode()}`
+          }
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -440,7 +444,7 @@ function FilterPanel({ filters, onChange, onReset, activeCount, ageFilter, onAge
 }
 
 // ── Main HomePage ──────────────────────────────────────────────
-export default function HomePage({ onLoginClick, user, onLogout, onSessionClick, profile, onSwitchToTeaching, onProfileClick }) {
+export default function HomePage({ onLoginClick, user, onLogout, onSessionClick, onChoreoClick, profile, onSwitchToTeaching, onProfileClick, forceIST, onForceISTToggle }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -549,8 +553,19 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         position: 'sticky', top: 0, zIndex: 50,
       }}>
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2' }}>
-          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2' }}>
+            Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+          </div>
+          {!isIST() && (
+            <span style={{
+              fontSize: 11, background: '#fff3cd', color: '#856404',
+              border: '1px solid #ffc107', borderRadius: 12,
+              padding: '2px 8px', marginLeft: 8,
+            }}>
+              🕐 {getTimezoneCode()}
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {user && profile?.role === 'choreographer' && profile?.choreographer_approved && (
@@ -696,6 +711,30 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
       {/* SESSION GRID */}
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '36px 24px' }}>
 
+        {/* Timezone banner — only for non-IST users */}
+        {!isIST() && (
+          <div style={{
+            background: '#fff8e6', border: '1px solid #f0c040',
+            borderRadius: 10, padding: '10px 16px', marginBottom: 16,
+            display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center', fontSize: 13,
+          }}>
+            <span>
+              🌐 Times shown in {getTimezoneCode()} · We've converted all class times to your local time
+            </span>
+            <button
+              onClick={onForceISTToggle}
+              style={{
+                background: 'none', border: '1px solid #c8430a',
+                color: '#c8430a', borderRadius: 6, padding: '4px 10px',
+                fontSize: 12, cursor: 'pointer', marginLeft: 12, flexShrink: 0,
+              }}
+            >
+              {forceIST ? 'Show my local time' : 'Show IST instead'}
+            </button>
+          </div>
+        )}
+
         {/* Results count */}
         {!loading && (
           <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -742,8 +781,10 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
                 key={s.id}
                 session={s}
                 onClick={() => onSessionClick(s.id)}
+                onChoreoClick={onChoreoClick}
                 user={user}
                 onLoginClick={onLoginClick}
+                forceIST={forceIST}
               />
             ))}
           </div>

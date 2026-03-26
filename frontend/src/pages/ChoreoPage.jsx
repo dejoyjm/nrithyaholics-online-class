@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
+import { isIST, getTimezoneCode, toISTPreview } from '../utils/timezone'
 
 // ── Time picker helpers ──────────────────────────────────────
 // Replaced TIME_SLOTS array with hour + minute dropdowns.
@@ -227,6 +228,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
     choreo_reference_url: session?.choreo_reference_url || '',
   })
   const [saving, setSaving] = useState(false)
+  const [schedulingInIST, setSchedulingInIST] = useState(isIST())
   const [coverUrl, setCoverUrl] = useState(session?.cover_photo_url || null)
   const [coverFocalX, setCoverFocalX] = useState(session?.cover_photo_focal_x ?? 50)
   const [coverFocalY, setCoverFocalY] = useState(session?.cover_photo_focal_y ?? 50)
@@ -245,9 +247,12 @@ function SessionModal({ user, session, onClose, onSaved }) {
       return
     }
     setSaving(true)
-    // Construct local datetime — browser interprets YYYY-MM-DDTHH:MM:SS as local time (IST-safe)
     const timeStr = `${String(form.hour).padStart(2,'0')}:${form.minute}:00`
-    const scheduledAt = new Date(`${form.date}T${timeStr}`).toISOString()
+    // If user is not in IST but is scheduling in IST, append the +05:30 offset so
+    // the browser doesn't misinterpret the entered time as local (e.g. SGT) time.
+    const scheduledAt = (schedulingInIST && !isIST())
+      ? new Date(`${form.date}T${timeStr}+05:30`).toISOString()
+      : new Date(`${form.date}T${timeStr}`).toISOString()
     const payload = {
       title:           form.title,
       description:     form.description,
@@ -296,6 +301,23 @@ function SessionModal({ user, session, onClose, onSaved }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* Timezone warning — only for non-IST choreographers */}
+          {!isIST() && (
+            <div style={{ background: '#fff8e6', border: '1px solid #f0c040', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: 13, color: '#7a4f00', marginBottom: 8 }}>
+                ⚠️ Your browser timezone is <strong>{getTimezoneCode()}</strong>. Times below are in your local time.
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#5a3a00', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={schedulingInIST}
+                  onChange={e => setSchedulingInIST(e.target.checked)}
+                />
+                I am scheduling in IST (India time)
+              </label>
+            </div>
+          )}
 
           {/* SESSION COVER PHOTO (Portrait 4:5) */}
           <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
@@ -426,6 +448,14 @@ function SessionModal({ user, session, onClose, onSaved }) {
                 return `Scheduled: ${d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} at ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`
               })() : 'Select a date and time'}
             </div>
+            {!isIST() && (() => {
+              const istPreview = toISTPreview(form.date, form.hour, schedulingInIST)
+              return istPreview ? (
+                <div style={{ fontSize: 12, color: '#c8430a', marginTop: 4 }}>
+                  → {istPreview} IST (India)
+                </div>
+              ) : null
+            })()}
           </div>
 
           {/* Duration + Price */}

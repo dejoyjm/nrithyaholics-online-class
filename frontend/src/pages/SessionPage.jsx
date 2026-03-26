@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ClassroomPage from './ClassroomPage'
 import SetupTestModal from './SetupTestModal'
+import { isIST, getTimezoneCode, formatClassTime } from '../utils/timezone'
 
 const RAZORPAY_KEY_ID = 'rzp_live_bYmMMbiG8WZC34'
 const APP_URL = 'https://online.nrithyaholics.in'
@@ -42,7 +43,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail, onChoreoClick }) {
+export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail, onChoreoClick, forceIST }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -439,8 +440,25 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const sessionDetailsCard = (
     <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #e2dbd4' }}>
       <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 }}>Session Details</div>
+      {/* Date & Time — timezone-aware */}
+      <div style={{ display: 'flex', gap: 16, padding: '12px 0', borderBottom: '1px solid #f0ebe6' }}>
+        <span style={{ fontSize: 18 }}>📅</span>
+        <div>
+          <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 2 }}>Date & Time</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>
+            {isIST() ? formatDate(session.scheduled_at) : formatClassTime(session.scheduled_at, forceIST)}
+          </div>
+          {!isIST() && (
+            <div style={{ fontSize: 12, color: '#7a6e65', marginTop: 2 }}>
+              {forceIST
+                ? `Your local time: ${formatClassTime(session.scheduled_at, false)} ${getTimezoneCode()}`
+                : `India time: ${formatClassTime(session.scheduled_at, true)} IST`
+              }
+            </div>
+          )}
+        </div>
+      </div>
       {[
-        ['📅', 'Date & Time', formatDate(session.scheduled_at)],
         ['⏱️', 'Duration', `${session.duration_minutes} minutes`],
         ['👥', 'Seats available', `${totalSeats - (session.bookings_count || 0)} of ${totalSeats}`],
         ['📊', 'Level', session.skill_level?.replace(/_/g, ' ')],

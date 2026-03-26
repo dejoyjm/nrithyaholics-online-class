@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { isIST } from './utils/timezone'
 import HomePage from './HomePage'
 import AuthPage from './pages/AuthPage'
 import SessionPage from './pages/SessionPage'
@@ -41,6 +42,7 @@ export default function App() {
   const [cameFromEmail, setCameFromEmail] = useState(false)
   const [showQuickSetupModal, setShowQuickSetupModal] = useState(false)
   const [showProfilePrompt, setShowProfilePrompt] = useState(false)
+  const [forceIST, setForceIST] = useState(false)
 
   // Track whether URL search params handled navigation (takes priority over hash)
   const urlParamsHandled = useRef(false)
@@ -399,6 +401,7 @@ export default function App() {
       razorpayReturn={razorpayReturn}
       autoOpenTest={autoOpenTest}
       cameFromEmail={cameFromEmail}
+      forceIST={forceIST}
     />
   )
 
@@ -424,6 +427,8 @@ export default function App() {
         onProfileClick={() => navigateTo('#/profile')}
         onSwitchToTeaching={() => navigateTo('#/teach')}
         onLogout={logOut}
+        forceIST={forceIST}
+        onForceISTToggle={() => setForceIST(f => !f)}
       />
       {showQuickSetupModal && (
         <SetupTestModal
