@@ -1,5 +1,5 @@
 const express = require('express')
-const { startBot, controlBot, stopBot } = require('./bot')
+const { startBot, controlBot, stopBot, activeBots } = require('./bot')
 
 const app = express()
 app.use(express.json())
@@ -54,7 +54,7 @@ app.post('/stop', async (req, res) => {
   }
 })
 
-app.get('/health', (_, res) => res.json({ ok: true, bots: 'see /status' }))
+app.get('/health', (_, res) => res.json({ ok: true, activeBots: activeBots.size }))
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => console.log(`Music bot server on port ${PORT}`))

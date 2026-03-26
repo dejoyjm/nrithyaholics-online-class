@@ -3,8 +3,10 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth')
 puppeteer.use(StealthPlugin())
 const { v4: uuid } = require('uuid')
 
-// Map of bot_id → { browser, page }
+// Map of bot_id → { browser, page, killTimer }
 const activeBots = new Map()
+
+const AUTO_KILL_MS = 3 * 60 * 60 * 1000 // 3 hours max session
 
 async function startBot({ room_id, token, track_url, track_type, session_id }) {
   const browser = await puppeteer.launch({
@@ -60,7 +62,11 @@ async function startBot({ room_id, token, track_url, track_type, session_id }) {
   await page.waitForFunction('window.botReady === true', { timeout: 45000 })
 
   const bot_id = uuid()
-  activeBots.set(bot_id, { browser, page })
+  const killTimer = setTimeout(async () => {
+    console.log(`[autoKill] bot ${bot_id} exceeded max session time`)
+    await stopBot(bot_id)
+  }, AUTO_KILL_MS)
+  activeBots.set(bot_id, { browser, page, killTimer })
   console.log(`[startBot] bot ${bot_id} ready for room ${room_id}`)
 
   return bot_id
@@ -83,6 +89,7 @@ async function stopBot(bot_id) {
     console.warn(`[stopBot] bot ${bot_id} not found — already stopped?`)
     return
   }
+  if (bot.killTimer) clearTimeout(bot.killTimer)
   try {
     await bot.browser.close()
   } catch (err) {
@@ -92,4 +99,15 @@ async function stopBot(bot_id) {
   console.log(`[stopBot] bot ${bot_id} stopped`)
 }
 
-module.exports = { startBot, controlBot, stopBot }
+async function cleanupAll() {
+  console.log('[cleanup] shutting down all bots...')
+  for (const [botId] of activeBots) {
+    await stopBot(botId).catch(() => {})
+  }
+  process.exit(0)
+}
+
+process.on('SIGTERM', cleanupAll)
+process.on('SIGINT', cleanupAll)
+
+module.exports = { startBot, controlBot, stopBot, activeBots }
