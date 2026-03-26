@@ -1,5 +1,13 @@
 export function isIST() {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone === 'Asia/Kolkata'
+  // Check UTC offset — India is always UTC+5:30 = -330 minutes offset
+  // This never changes (no DST in India)
+  const offsetMatch = new Date().getTimezoneOffset() === -330
+
+  // Also check timezone name as fallback (covers edge cases)
+  const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const nameMatch = tzName === 'Asia/Kolkata' || tzName === 'Asia/Calcutta'
+
+  return offsetMatch || nameMatch
 }
 
 export function getUserTimezone() {
@@ -7,6 +15,7 @@ export function getUserTimezone() {
 }
 
 export function getTimezoneCode() {
+  if (isIST()) return 'IST'
   return new Intl.DateTimeFormat('en', { timeZoneName: 'short' })
     .formatToParts(new Date())
     .find(p => p.type === 'timeZoneName')?.value || 'Local'
