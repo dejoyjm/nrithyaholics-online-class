@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
+import { resolvePolicy, calculateSessionSettlement, calculateSlabBreakdown } from '../utils/revenue'
 
 export default function AdminPage({ user, onLogout, onConfigChange }) {
   const [tab, setTab] = useState('applications')
@@ -236,6 +237,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
           <button style={tabStyle('users')} onClick={() => setTab('users')}>Users</button>
           <button style={tabStyle('sessions')} onClick={() => setTab('sessions')}>Sessions</button>
           <button style={tabStyle('bookings')} onClick={() => setTab('bookings')}>📊 Bookings</button>
+          <button style={tabStyle('revenue')} onClick={() => setTab('revenue')}>💰 Revenue</button>
           <button style={tabStyle('settings')} onClick={() => setTab('settings')}>⚙️ Settings</button>
         </div>
 
@@ -532,6 +534,16 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
             users={users}
             onRefresh={fetchAll}
           />
+        )}
+
+        {/* REVENUE TAB */}
+        {tab === 'revenue' && (
+          <div style={{ padding: 32 }}>
+            <RevenueTab
+              choreographers={users.filter(u => u.role === 'choreographer' && u.choreographer_approved)}
+              sessions={sessions}
+            />
+          </div>
         )}
 
         {/* PLATFORM SETTINGS TAB */}
@@ -1959,6 +1971,410 @@ function BookingsTab({ allBookings, users, onRefresh }) {
         onClose={() => setAnnouncementData(null)}
         onRefresh={onRefresh}
       />
+    </div>
+  )
+}
+
+// ── RevenueTab ─────────────────────────────────────────────────
+function RevenueTab({ choreographers, sessions }) {
+  const [policies, setPolicies] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [editPolicy, setEditPolicy] = useState(null)  // null=closed, 'new', or policy object
+  const [saving, setSaving] = useState(false)
+  const [assignChoreoId, setAssignChoreoId] = useState('')
+  const [assignChoreoPolicyId, setAssignChoreoPolicyId] = useState('')
+  const [assignSessionId, setAssignSessionId] = useState('')
+  const [assignSessionPolicyId, setAssignSessionPolicyId] = useState('')
+  const [assignMsg, setAssignMsg] = useState('')
+
+  // Simulator
+  const [simPolicyId, setSimPolicyId] = useState('')
+  const [simPrice, setSimPrice] = useState(500)
+  const [simStudents, setSimStudents] = useState(25)
+  const [simGatewayPct, setSimGatewayPct] = useState(3)
+  const [simResult, setSimResult] = useState(null)
+
+  useEffect(() => { fetchPolicies() }, [])
+
+  async function fetchPolicies() {
+    const { data } = await supabase
+      .from('revenue_policies')
+      .select('*, revenue_policy_slabs(*)')
+      .order('created_at')
+    const loaded = data || []
+    setPolicies(loaded)
+    if (!simPolicyId && loaded.length > 0) {
+      const def = loaded.find(p => p.is_default) || loaded[0]
+      setSimPolicyId(def.id)
+      setSimGatewayPct(def.gateway_fee_pct)
+    }
+    setLoading(false)
+  }
+
+  async function handleSavePolicy(form, slabs) {
+    setSaving(true)
+    try {
+      let policyId = form.id
+      if (form.id) {
+        // Update existing
+        if (form.is_default) {
+          await supabase.from('revenue_policies').update({ is_default: false })
+            .neq('id', form.id)
+        }
+        await supabase.from('revenue_policies').update({
+          name: form.name,
+          gateway_fee_pct: form.gateway_fee_pct,
+          is_default: form.is_default,
+        }).eq('id', form.id)
+        await supabase.from('revenue_policy_slabs').delete().eq('policy_id', form.id)
+      } else {
+        // Create new
+        if (form.is_default) {
+          await supabase.from('revenue_policies').update({ is_default: false }).neq('id', 'never')
+        }
+        const { data } = await supabase.from('revenue_policies').insert({
+          name: form.name,
+          gateway_fee_pct: form.gateway_fee_pct,
+          is_default: form.is_default,
+        }).select('id').single()
+        policyId = data.id
+      }
+      if (slabs.length > 0) {
+        await supabase.from('revenue_policy_slabs').insert(
+          slabs.map((s, i) => ({
+            policy_id: policyId,
+            from_student: s.from_student,
+            to_student: s.to_student || null,
+            mode: s.mode,
+            value: s.value,
+            sort_order: i + 1,
+          }))
+        )
+      }
+      await fetchPolicies()
+      setEditPolicy(null)
+    } catch (err) {
+      alert('Error: ' + err.message)
+    }
+    setSaving(false)
+  }
+
+  async function handleAssignChoreo() {
+    if (!assignChoreoId) return
+    await supabase.from('profiles').update({
+      revenue_policy_id: assignChoreoPolicyId || null,
+    }).eq('id', assignChoreoId)
+    setAssignMsg('Saved!')
+    setTimeout(() => setAssignMsg(''), 2000)
+  }
+
+  async function handleAssignSession() {
+    if (!assignSessionId) return
+    await supabase.from('sessions').update({
+      revenue_policy_id: assignSessionPolicyId || null,
+    }).eq('id', assignSessionId)
+    setAssignMsg('Saved!')
+    setTimeout(() => setAssignMsg(''), 2000)
+  }
+
+  function runSimulation() {
+    const policy = policies.find(p => p.id === simPolicyId)
+    if (!policy) return
+    const slabs = policy.revenue_policy_slabs || []
+    const settlement = calculateSessionSettlement(simStudents, simPrice, { ...policy, gateway_fee_pct: simGatewayPct }, slabs)
+    const slabBreakdown = calculateSlabBreakdown(simStudents, simPrice, slabs)
+    setSimResult({ ...settlement, slabBreakdown, gatewayPct: simGatewayPct })
+  }
+
+  const inp = { width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', color: '#0f0c0c' }
+  const lbl = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, display: 'block' }
+
+  if (loading) return <div style={{ padding: 40, color: '#7a6e65' }}>Loading...</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      {/* SECTION A: Policy Management */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0 }}>Revenue Policies</h3>
+          <button onClick={() => setEditPolicy({ name: '', gateway_fee_pct: 3, is_default: false })}
+            style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            + New Policy
+          </button>
+        </div>
+
+        {/* Policy list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+          {policies.map(policy => (
+            <div key={policy.id} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: '#0f0c0c' }}>{policy.name}</span>
+                  {policy.is_default && (
+                    <span style={{ marginLeft: 8, background: '#1a7a3c', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>DEFAULT</span>
+                  )}
+                  <div style={{ fontSize: 12, color: '#7a6e65', marginTop: 2 }}>Gateway fee: {policy.gateway_fee_pct}%</div>
+                </div>
+                <button onClick={() => setEditPolicy({ ...policy, slabs: policy.revenue_policy_slabs || [] })}
+                  style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 8, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: '#5a4e47' }}>
+                  ✏️ Edit
+                </button>
+              </div>
+              {(policy.revenue_policy_slabs || []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {[...policy.revenue_policy_slabs].sort((a, b) => a.sort_order - b.sort_order).map((slab, i) => (
+                    <span key={i} style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#5a4e47' }}>
+                      {slab.from_student}–{slab.to_student ?? '∞'}: {slab.mode === 'flat' ? `₹${slab.value} flat` : `${slab.value}%`}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Assign to choreographer */}
+        <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c', marginBottom: 12 }}>Assign Policy to Choreographer</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+            <div>
+              <label style={lbl}>Choreographer</label>
+              <select style={inp} value={assignChoreoId} onChange={e => setAssignChoreoId(e.target.value)}>
+                <option value="">Select...</option>
+                {choreographers.map(c => <option key={c.id} value={c.id}>{c.full_name || c.email}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Policy</label>
+              <select style={inp} value={assignChoreoPolicyId} onChange={e => setAssignChoreoPolicyId(e.target.value)}>
+                <option value="">Use default</option>
+                {policies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <button onClick={handleAssignChoreo}
+              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Save
+            </button>
+          </div>
+        </div>
+
+        {/* Assign to session */}
+        <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c', marginBottom: 12 }}>Assign Policy to Session</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+            <div>
+              <label style={lbl}>Session</label>
+              <select style={inp} value={assignSessionId} onChange={e => setAssignSessionId(e.target.value)}>
+                <option value="">Select...</option>
+                {sessions.filter(s => ['open','confirmed','draft'].includes(s.status)).map(s => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Policy</label>
+              <select style={inp} value={assignSessionPolicyId} onChange={e => setAssignSessionPolicyId(e.target.value)}>
+                <option value="">Use choreographer/default</option>
+                {policies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <button onClick={handleAssignSession}
+              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Save
+            </button>
+          </div>
+          {assignMsg && <div style={{ fontSize: 12, color: '#1a7a3c', fontWeight: 700, marginTop: 8 }}>✓ {assignMsg}</div>}
+        </div>
+      </div>
+
+      {/* SECTION B: Simulation Engine */}
+      <div style={{ borderTop: '2px solid #f0ebe6', paddingTop: 32 }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', marginBottom: 16 }}>💡 Revenue Simulator</h3>
+        <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
+            <div>
+              <label style={lbl}>Policy</label>
+              <select style={inp} value={simPolicyId} onChange={e => {
+                setSimPolicyId(e.target.value)
+                const p = policies.find(x => x.id === e.target.value)
+                if (p) setSimGatewayPct(p.gateway_fee_pct)
+              }}>
+                {policies.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Ticket Price (₹)</label>
+              <input type="number" style={inp} value={simPrice} onChange={e => setSimPrice(Number(e.target.value))} min="1" />
+            </div>
+            <div>
+              <label style={lbl}>Number of students</label>
+              <input type="number" style={inp} value={simStudents} onChange={e => setSimStudents(Number(e.target.value))} min="1" />
+            </div>
+            <div>
+              <label style={lbl}>Gateway fee %</label>
+              <input type="number" style={inp} value={simGatewayPct} onChange={e => setSimGatewayPct(Number(e.target.value))} min="0" step="0.01" />
+            </div>
+          </div>
+          <button onClick={runSimulation}
+            style={{ background: '#5b4fcf', color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            Calculate
+          </button>
+        </div>
+
+        {simResult && (
+          <div style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+              {[
+                ['Gross revenue', `₹${simResult.grossRevenue.toLocaleString('en-IN')}`],
+                [`Gateway fees (${simResult.gatewayPct}%)`, `₹${simResult.totalGatewayFees.toLocaleString('en-IN')} (learner)`],
+                ['NRH share', `₹${simResult.nrhShare.toLocaleString('en-IN')}`],
+                ['Choreographer', `₹${simResult.choreoShare.toLocaleString('en-IN')}`],
+              ].map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f0ebe6' }}>
+                  <span style={{ fontSize: 13, color: '#5a4e47' }}>{label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c' }}>{value}</span>
+                </div>
+              ))}
+            </div>
+            {simResult.slabBreakdown.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Slab breakdown</div>
+                {simResult.slabBreakdown.map((slab, i) => (
+                  <div key={i} style={{ fontSize: 12, color: '#5a4e47', padding: '3px 0' }}>
+                    {slab.label}: {slab.mode === 'flat'
+                      ? `flat ₹${slab.value}`
+                      : `${slab.value}% × ₹${slab.slabRevenue?.toLocaleString('en-IN')}`} = ₹{slab.nrhAmount.toLocaleString('en-IN')}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Policy Edit Modal */}
+      {editPolicy && (
+        <PolicyEditModal
+          policy={editPolicy}
+          onClose={() => setEditPolicy(null)}
+          onSave={handleSavePolicy}
+          saving={saving}
+        />
+      )}
+    </div>
+  )
+}
+
+function PolicyEditModal({ policy, onClose, onSave, saving }) {
+  const [form, setForm] = useState({
+    id: policy.id || null,
+    name: policy.name || '',
+    gateway_fee_pct: policy.gateway_fee_pct ?? 3,
+    is_default: policy.is_default || false,
+  })
+  const [slabs, setSlabs] = useState(
+    (policy.revenue_policy_slabs || policy.slabs || []).length > 0
+      ? [...(policy.revenue_policy_slabs || policy.slabs)].sort((a, b) => a.sort_order - b.sort_order).map(s => ({
+          from_student: s.from_student,
+          to_student: s.to_student ?? '',
+          mode: s.mode,
+          value: s.value,
+        }))
+      : []
+  )
+
+  const inp = { background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', color: '#0f0c0c', boxSizing: 'border-box' }
+
+  function addSlab() {
+    const last = slabs[slabs.length - 1]
+    const fromStudent = last ? (last.to_student ? Number(last.to_student) + 1 : 99) : 1
+    setSlabs(s => [...s, { from_student: fromStudent, to_student: '', mode: 'percentage', value: 10 }])
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 20, padding: 32, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0 }}>
+            {form.id ? 'Edit Policy' : 'New Revenue Policy'}
+          </h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#7a6e65' }}>×</button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, display: 'block' }}>Policy Name</label>
+            <input style={{ ...inp, width: '100%' }} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Standard" />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, display: 'block' }}>Gateway Fee %</label>
+              <input type="number" style={{ ...inp, width: '100%' }} value={form.gateway_fee_pct} onChange={e => setForm(f => ({ ...f, gateway_fee_pct: Number(e.target.value) }))} min="0" step="0.01" />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#0f0c0c' }}>
+                <input type="checkbox" checked={form.is_default} onChange={e => setForm(f => ({ ...f, is_default: e.target.checked }))} />
+                Set as default policy
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1 }}>NRH Share Slabs</label>
+              <button type="button" onClick={addSlab}
+                style={{ background: '#faf7f2', border: '1px solid #c8430a', borderRadius: 6, padding: '4px 10px', fontSize: 12, color: '#c8430a', fontWeight: 600, cursor: 'pointer' }}>
+                + Add slab
+              </button>
+            </div>
+            {slabs.length === 0 && (
+              <div style={{ fontSize: 12, color: '#a09890', padding: '8px 0' }}>No slabs — NRH share will be ₹0</div>
+            )}
+            {slabs.map((slab, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: 10, color: '#7a6e65', marginBottom: 2 }}>From student</div>
+                  <input type="number" style={{ ...inp, width: '100%' }} value={slab.from_student}
+                    onChange={e => setSlabs(s => s.map((x, j) => j === i ? { ...x, from_student: Number(e.target.value) } : x))} min="1" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#7a6e65', marginBottom: 2 }}>To student (blank=∞)</div>
+                  <input type="number" style={{ ...inp, width: '100%' }} value={slab.to_student ?? ''}
+                    onChange={e => setSlabs(s => s.map((x, j) => j === i ? { ...x, to_student: e.target.value === '' ? '' : Number(e.target.value) } : x))} min="1" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#7a6e65', marginBottom: 2 }}>Mode</div>
+                  <select style={{ ...inp, width: '100%' }} value={slab.mode}
+                    onChange={e => setSlabs(s => s.map((x, j) => j === i ? { ...x, mode: e.target.value } : x))}>
+                    <option value="flat">Flat ₹</option>
+                    <option value="percentage">Percentage %</option>
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#7a6e65', marginBottom: 2 }}>{slab.mode === 'flat' ? 'Amount (₹)' : 'Percentage (%)'}</div>
+                  <input type="number" style={{ ...inp, width: '100%' }} value={slab.value}
+                    onChange={e => setSlabs(s => s.map((x, j) => j === i ? { ...x, value: Number(e.target.value) } : x))} min="0" step="0.01" />
+                </div>
+                <button type="button" onClick={() => setSlabs(s => s.filter((_, j) => j !== i))}
+                  style={{ background: 'transparent', border: 'none', color: '#cc0000', fontSize: 18, cursor: 'pointer', paddingTop: 16 }}>×</button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button onClick={onClose}
+              style={{ flex: 1, background: 'transparent', border: '1px solid #e2dbd4', color: '#7a6e65', padding: '12px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+              Cancel
+            </button>
+            <button onClick={() => onSave(form, slabs)} disabled={!form.name || saving}
+              style={{ flex: 2, background: '#c8430a', color: 'white', border: 'none', padding: '12px', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving || !form.name ? 0.7 : 1 }}>
+              {saving ? 'Saving...' : 'Save Policy →'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

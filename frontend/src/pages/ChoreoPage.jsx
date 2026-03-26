@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
 import { isIST, getTimezoneCode, toISTPreview } from '../utils/timezone'
+import { resolvePolicy, calculateSessionSettlement } from '../utils/revenue'
 
 // ── Time picker helpers ──────────────────────────────────────
 // Replaced TIME_SLOTS array with hour + minute dropdowns.
@@ -51,8 +52,13 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
   const [showCreate, setShowCreate] = useState(false)
   const [editSession, setEditSession] = useState(null)
   const [musicSession, setMusicSession] = useState(null)
+  const [revPolicies, setRevPolicies] = useState([])
 
   useEffect(() => { fetchSessions() }, [])
+  useEffect(() => {
+    supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)')
+      .then(({ data }) => setRevPolicies(data || []))
+  }, [])
 
   async function fetchSessions() {
     const { data, error } = await supabase
@@ -68,10 +74,16 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
     weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
   })
 
-  const totalRevenue = sessions.reduce((sum, s) => {
-    const price = s.price_tiers?.length ? Math.min(...s.price_tiers.map(t => t.price)) : 0
-    return sum + (s.bookings_count || 0) * price
-  }, 0)
+  function getSessionEarnings(s) {
+    const bookings = s.bookings_count || 0
+    const price = s.price_tiers?.length ? s.price_tiers[0].price : 0
+    if (!bookings || !price) return 0
+    const policy = resolvePolicy(s, profile, revPolicies)
+    const slabs = policy?.revenue_policy_slabs || []
+    return calculateSessionSettlement(bookings, price, policy, slabs).choreoShare
+  }
+
+  const totalRevenue = sessions.reduce((sum, s) => sum + getSessionEarnings(s), 0)
 
   return (
     <div style={{ minHeight: '100vh', background: '#faf7f2' }}>
@@ -94,7 +106,7 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
           { label: 'Total Sessions', value: sessions.length },
           { label: 'Active', value: sessions.filter(s => ['open','confirmed'].includes(s.status)).length },
           { label: 'Total Bookings', value: sessions.reduce((s, x) => s + (x.bookings_count || 0), 0) },
-          { label: 'Est. Revenue', value: `₹${totalRevenue.toLocaleString('en-IN')}` },
+          { label: 'Est. Earnings', value: `₹${totalRevenue.toLocaleString('en-IN')}` },
         ].map(stat => (
           <div key={stat.label}>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#faf7f2' }}>{stat.value}</div>
@@ -138,7 +150,13 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                     <span style={{ fontSize: 15, fontWeight: 700, color: '#0f0c0c' }}>{s.title}</span>
                     <span style={{ background: statusColor[s.status] + '22', color: statusColor[s.status], fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase' }}>{s.status}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: '#7a6e65' }}>{formatDate(s.scheduled_at)} · {s.duration_minutes} min · {s.bookings_count || 0}/{s.max_seats} seats</div>
+                  <div style={{ fontSize: 13, color: '#7a6e65' }}>{formatDate(s.scheduled_at)} · {s.duration_minutes} min · {s.bookings_count || 0}/{s.max_seats} seats
+                    {(s.bookings_count > 0) && (
+                      <span style={{ marginLeft: 8, color: '#1a7a3c', fontWeight: 600 }}>
+                        · Est. earnings: ₹{getSessionEarnings(s).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
                   {s.music_track_url && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
                       {s.music_track_thumb && (
@@ -229,6 +247,20 @@ function SessionModal({ user, session, onClose, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
   const [schedulingInIST, setSchedulingInIST] = useState(isIST())
+  const [pricingRules, setPricingRules] = useState([])
+  const [showPricingRules, setShowPricingRules] = useState(false)
+
+  useEffect(() => {
+    if (isEdit && session.id) {
+      supabase.from('pricing_rules').select('*').eq('session_id', session.id)
+        .order('sort_order').then(({ data }) => {
+          if (data && data.length > 0) {
+            setPricingRules(data)
+            setShowPricingRules(true)
+          }
+        })
+    }
+  }, [isEdit, session?.id])
   const [coverUrl, setCoverUrl] = useState(session?.cover_photo_url || null)
   const [coverFocalX, setCoverFocalX] = useState(session?.cover_photo_focal_x ?? 50)
   const [coverFocalY, setCoverFocalY] = useState(session?.cover_photo_focal_y ?? 50)
@@ -272,14 +304,41 @@ function SessionModal({ user, session, onClose, onSaved }) {
       age_groups:           form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
       choreo_reference_url: form.choreo_reference_url.trim() || null,
     }
-    let error
+    let error, savedSessionId
     if (isEdit) {
-      ({ error } = await supabase.from('sessions').update(payload).eq('id', session.id))
+      ;({ error } = await supabase.from('sessions').update(payload).eq('id', session.id))
+      savedSessionId = session.id
     } else {
-      ({ error } = await supabase.from('sessions').insert({ ...payload, choreographer_id: user.id, status: 'open' }))
+      const { data: newSession, error: insertError } = await supabase.from('sessions')
+        .insert({ ...payload, choreographer_id: user.id, status: 'open' })
+        .select('id').single()
+      error = insertError
+      savedSessionId = newSession?.id
     }
-    if (error) alert('Error: ' + error.message)
-    else onSaved()
+    if (error) { alert('Error: ' + error.message); setSaving(false); return }
+
+    // Save pricing rules
+    if (savedSessionId && showPricingRules) {
+      await supabase.from('pricing_rules').delete().eq('session_id', savedSessionId)
+      const validRules = pricingRules.filter(r => r.label && r.price > 0)
+      if (validRules.length > 0) {
+        await supabase.from('pricing_rules').insert(
+          validRules.map((r, i) => ({
+            session_id: savedSessionId,
+            label: r.label,
+            price: r.price,
+            valid_until: r.valid_until || null,
+            max_tickets: r.max_tickets || null,
+            sort_order: i,
+          }))
+        )
+      }
+    } else if (savedSessionId && !showPricingRules) {
+      // Remove any existing rules if user removed them
+      await supabase.from('pricing_rules').delete().eq('session_id', savedSessionId)
+    }
+
+    onSaved()
     setSaving(false)
   }
 
@@ -512,6 +571,78 @@ function SessionModal({ user, session, onClose, onSaved }) {
               placeholder="Instagram reel, YouTube video, or any link showing the dance..."
               value={form.choreo_reference_url}
               onChange={e => set('choreo_reference_url', e.target.value)} />
+          </div>
+
+          {/* Pricing Rules (Early Bird) */}
+          <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showPricingRules ? 16 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c' }}>🎟️ Early Bird / Pricing Rules</div>
+                <div style={{ fontSize: 12, color: '#7a6e65' }}>Optional — override base price for a limited time or seats</div>
+              </div>
+              <button type="button"
+                onClick={() => setShowPricingRules(p => !p)}
+                style={{ background: showPricingRules ? '#fff0f0' : '#0f0c0c', color: showPricingRules ? '#cc0000' : 'white', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                {showPricingRules ? '− Remove' : '+ Add rule'}
+              </button>
+            </div>
+            {showPricingRules && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {pricingRules.map((rule, i) => (
+                  <div key={i} style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 10, padding: 12 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <input
+                        style={{ ...inputStyle, flex: 2 }}
+                        placeholder="Label (e.g. Early Bird)"
+                        value={rule.label}
+                        onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: 4 }}>
+                        <span style={{ fontSize: 14, color: '#7a6e65' }}>₹</span>
+                        <input
+                          type="number"
+                          style={{ ...inputStyle }}
+                          placeholder="Price"
+                          value={rule.price}
+                          onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, price: Number(e.target.value) } : r))}
+                          min="0"
+                        />
+                      </div>
+                      <button type="button"
+                        onClick={() => setPricingRules(rules => rules.filter((_, j) => j !== i))}
+                        style={{ background: 'transparent', border: 'none', color: '#cc0000', fontSize: 18, cursor: 'pointer', padding: '0 4px' }}>×</button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#7a6e65', marginBottom: 4 }}>Valid until (optional)</div>
+                        <input
+                          type="datetime-local"
+                          style={{ ...inputStyle, fontSize: 12 }}
+                          value={rule.valid_until ? rule.valid_until.slice(0, 16) : ''}
+                          onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, valid_until: e.target.value ? new Date(e.target.value).toISOString() : null } : r))}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#7a6e65', marginBottom: 4 }}>Max tickets (optional)</div>
+                        <input
+                          type="number"
+                          style={{ ...inputStyle, fontSize: 12 }}
+                          placeholder="e.g. 50"
+                          value={rule.max_tickets || ''}
+                          onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, max_tickets: e.target.value ? Number(e.target.value) : null } : r))}
+                          min="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button type="button"
+                  onClick={() => setPricingRules(rules => [...rules, { label: 'Early Bird', price: Math.round(form.price * 0.8), valid_until: null, max_tickets: null }])}
+                  style={{ background: 'white', border: '1px dashed #c8430a', borderRadius: 8, padding: '8px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#c8430a' }}>
+                  + Add pricing rule
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Save */}

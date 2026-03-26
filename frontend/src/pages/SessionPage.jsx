@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import ClassroomPage from './ClassroomPage'
 import SetupTestModal from './SetupTestModal'
 import { isIST, getTimezoneCode, formatClassTime } from '../utils/timezone'
+import { resolvePolicy, calculateGatewayFee } from '../utils/revenue'
 
 const RAZORPAY_KEY_ID = 'rzp_live_bYmMMbiG8WZC34'
 const APP_URL = 'https://online.nrithyaholics.in'
@@ -62,6 +63,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [avatarLightbox, setAvatarLightbox] = useState(false)
   const [refreshingBooking, setRefreshingBooking] = useState(false)
   const [refreshBookingMsg, setRefreshBookingMsg] = useState(null)
+  const [revPolicy, setRevPolicy] = useState(null)
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
@@ -100,17 +102,19 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   }, [autoOpenTest, user])
 
   async function fetchSession() {
-    const { data, error } = await supabase
-      .from('sessions')
-      .select('*, profiles(full_name, bio, instagram_handle, avatar_url, style_tags, youtube_url)')
-      .eq('id', sessionId)
-      .single()
-    if (error) console.error(error)
+    const [sessionRes, policiesRes] = await Promise.all([
+      supabase.from('sessions')
+        .select('*, profiles(full_name, bio, instagram_handle, avatar_url, style_tags, youtube_url, revenue_policy_id)')
+        .eq('id', sessionId).single(),
+      supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)'),
+    ])
+    if (sessionRes.error) console.error(sessionRes.error)
     else {
-      setSession(data)
-      if (user) checkExistingBooking(data.id)
+      setSession(sessionRes.data)
+      const policy = resolvePolicy(sessionRes.data, sessionRes.data.profiles, policiesRes.data || [])
+      setRevPolicy(policy)
+      if (user) checkExistingBooking(sessionRes.data.id)
     }
-
     setLoading(false)
   }
 
@@ -180,7 +184,9 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       }
 
       const tier = tiers[selectedTier]
-      const amount_inr = tier.price * seats
+      const _ticketPricePerSeat = tier.price
+      const _gatewayFeePerSeat = calculateGatewayFee(_ticketPricePerSeat, gatewayFeePct)
+      const amount_inr = (_ticketPricePerSeat + _gatewayFeePerSeat) * seats
 
       const { data: { session: authSession } } = await supabase.auth.getSession()
       const token = authSession?.access_token
@@ -247,6 +253,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             session_id: session.id,
             seats,
             amount_inr,
+            ticket_price: _ticketPricePerSeat,
             user_id: user.id,
           }, token)
 
@@ -296,6 +303,10 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const color = styleColors[session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '')] || '#c8430a'
   const currentTierPrice = tiers[selectedTier]?.price || 0
   const totalAmount = currentTierPrice * seats
+  const gatewayFeePct = revPolicy?.gateway_fee_pct ?? 3
+  const gatewayFeePerSeat = currentTierPrice > 0 ? calculateGatewayFee(currentTierPrice, gatewayFeePct) : 0
+  const totalChargedPerSeat = currentTierPrice + gatewayFeePerSeat
+  const totalChargedAmount = totalChargedPerSeat * seats
   const isBookable = (session.status === 'open' || session.status === 'confirmed') && !alreadyBooked
   const sessionStart = new Date(session.scheduled_at).getTime()
   const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
@@ -615,9 +626,25 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             </div>
           </div>
 
-          <div style={{ background: '#faf7f2', borderRadius: 10, padding: 16, marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 14, color: '#5a4e47' }}>Total</span>
-            <span style={{ fontSize: 26, fontWeight: 800, color: '#0f0c0c' }}>₹{totalAmount}</span>
+          <div style={{ background: '#faf7f2', borderRadius: 10, padding: 16, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+              <span style={{ fontSize: 13, color: '#5a4e47' }}>
+                Ticket price{seats > 1 ? ` (×${seats})` : ''}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#0f0c0c' }}>₹{currentTierPrice * seats}</span>
+            </div>
+            {gatewayFeePerSeat > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                <span style={{ fontSize: 13, color: '#7a6e65' }}>
+                  Payment gateway fee ({gatewayFeePct}%)
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#7a6e65' }}>₹{gatewayFeePerSeat * seats}</span>
+              </div>
+            )}
+            <div style={{ borderTop: '1px solid #e2dbd4', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#5a4e47' }}>Total</span>
+              <span style={{ fontSize: 26, fontWeight: 800, color: '#0f0c0c' }}>₹{totalChargedAmount}</span>
+            </div>
           </div>
 
           {paymentError && (
@@ -634,7 +661,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
               cursor: booking ? 'not-allowed' : 'pointer',
               marginBottom: 12, transition: 'background 0.2s',
             }}>
-            {booking ? '⏳ Processing...' : user ? `Pay ₹${totalAmount} & Book` : cameFromEmail ? 'Log In to Join Class →' : 'Login to Book'}
+            {booking ? '⏳ Processing...' : user ? `Pay ₹${totalChargedAmount} & Book` : cameFromEmail ? 'Log In to Join Class →' : 'Login to Book'}
           </button>
 
           {!user && cameFromEmail && (
