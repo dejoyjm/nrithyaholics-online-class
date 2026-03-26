@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ClassroomPage from './ClassroomPage'
+import SDKClassroom from './SDKClassroom'
 import SetupTestModal from './SetupTestModal'
 
 const RAZORPAY_KEY_ID = 'rzp_live_bYmMMbiG8WZC34'
@@ -55,10 +56,13 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [userName, setUserName] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [showClassroom, setShowClassroom] = useState(false)
+  const [classroomMode, setClassroomMode] = useState('prebuilt')
   const [showSetupTest, setShowSetupTest] = useState(false)
   const [onWaitlist, setOnWaitlist] = useState(false)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
   const [avatarLightbox, setAvatarLightbox] = useState(false)
+  const [refreshingBooking, setRefreshingBooking] = useState(false)
+  const [refreshBookingMsg, setRefreshBookingMsg] = useState(null)
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
@@ -107,6 +111,15 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       setSession(data)
       if (user) checkExistingBooking(data.id)
     }
+
+    // Fetch classroom_mode directly so we are never dependent on a stale/null prop
+    const { data: config } = await supabase
+      .from('platform_config')
+      .select('classroom_mode')
+      .eq('id', 1)
+      .single()
+    setClassroomMode(config?.classroom_mode || 'prebuilt')
+
     setLoading(false)
   }
 
@@ -137,6 +150,24 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       .eq('session_id', sid).eq('booked_by', user.id).eq('status', 'confirmed')
       .maybeSingle()
     if (data) setAlreadyBooked(true)
+  }
+
+  async function handleRefreshBooking() {
+    setRefreshingBooking(true)
+    setRefreshBookingMsg(null)
+    const { data } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('booked_by', user.id)
+      .eq('status', 'confirmed')
+      .single()
+    setRefreshingBooking(false)
+    if (data) {
+      setAlreadyBooked(true)
+    } else {
+      setRefreshBookingMsg('No confirmed booking found. If you just paid, wait 30 seconds and try again.')
+    }
   }
 
   async function handleBook() {
@@ -294,8 +325,20 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   // Who can see the join/start button — only within the time window
   const canEnterClass = canJoinNow && session.status !== 'cancelled' && (isChoreo || alreadyBooked || booked)
 
-  // Show classroom
+  // Show classroom — route to SDKClassroom when classroom_mode === 'sdk', Prebuilt otherwise
   if (showClassroom && session) {
+    const useSDK = session.classroom_mode_override === 'sdk' || classroomMode === 'sdk'
+    if (useSDK) {
+      return (
+        <SDKClassroom
+          sessionId={sessionId}
+          sessionData={session}
+          user={user}
+          profile={profile}
+          onLeave={() => setShowClassroom(false)}
+        />
+      )
+    }
     return (
       <ClassroomPage
         sessionId={sessionId}
@@ -602,6 +645,28 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             <p style={{ fontSize: 12, color: '#7a6e65', textAlign: 'center', lineHeight: 1.6, margin: '0 0 8px' }}>
               Already booked? Log in and your spot will be waiting.
             </p>
+          )}
+
+          {user && session.status !== 'cancelled' && Date.now() < sessionStart && (
+            <div style={{ textAlign: 'center', marginBottom: 12 }}>
+              <button
+                onClick={handleRefreshBooking}
+                disabled={refreshingBooking}
+                style={{
+                  background: 'transparent', border: 'none',
+                  color: '#7a6e65', fontSize: 12,
+                  cursor: refreshingBooking ? 'default' : 'pointer',
+                  padding: '4px 8px', textDecoration: 'underline',
+                }}
+              >
+                {refreshingBooking ? 'Checking...' : '🔄 Already paid? Refresh status'}
+              </button>
+              {refreshBookingMsg && (
+                <div style={{ fontSize: 12, color: '#7a6e65', marginTop: 4, lineHeight: 1.5 }}>
+                  {refreshBookingMsg}
+                </div>
+              )}
+            </div>
           )}
 
           <p style={{ fontSize: 12, color: '#7a6e65', textAlign: 'center', lineHeight: 1.6, margin: 0 }}>

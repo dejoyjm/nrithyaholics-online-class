@@ -46,6 +46,8 @@ export default function App() {
   const urlParamsHandled = useRef(false)
   // Hash to restore after login completes
   const pendingHash = useRef(null)
+  // Session ID to restore after login (for unauthenticated email link arrivals)
+  const pendingSessionId = useRef(null)
   // Set when ?test=1 arrives without ?session= — show modal after loading resolves
   const pendingQuickTest = useRef(false)
 
@@ -140,6 +142,10 @@ export default function App() {
     // ── Email deep link: ?session=ID or ?session=ID&test=1 ──
     if (sessionDeepLink) {
       urlParamsHandled.current = true
+      // Store in ref so it survives the auth flow for users who aren't logged in yet.
+      // Also call setCurrentSession immediately — works for already-authed users and
+      // acts as belt-and-suspenders; the restore effect re-applies it after login if needed.
+      pendingSessionId.current = sessionDeepLink
       window.history.replaceState({}, '', window.location.pathname + '#/session/' + sessionDeepLink)
       setCurrentSession(sessionDeepLink)
       setCameFromEmail(true)
@@ -257,10 +263,17 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !profile) return
-    if (!pendingHash.current) return
-    const h = pendingHash.current
-    pendingHash.current = null
-    applyHashState(h, user, profile)
+    if (pendingHash.current) {
+      const h = pendingHash.current
+      pendingHash.current = null
+      applyHashState(h, user, profile)
+    }
+    if (pendingSessionId.current) {
+      const sid = pendingSessionId.current
+      pendingSessionId.current = null
+      setCurrentSession(sid)
+      setCameFromEmail(true)
+    }
   }, [user?.id, profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Admin hash sync ───────────────────────────────────────────────────────
