@@ -5,6 +5,17 @@ import SetupTestModal from './SetupTestModal'
 import { isIST, getTimezoneCode, formatClassTime } from '../utils/timezone'
 import { resolvePolicy, calculateGatewayFee } from '../utils/revenue'
 
+function resolveActivePrice(session, pricingRules) {
+  const now = new Date()
+  const confirmedBookings = session?.bookings_count || 0
+  for (const rule of (pricingRules || [])) {
+    if (rule.valid_until && new Date(rule.valid_until) < now) continue
+    if (rule.max_tickets != null && confirmedBookings >= rule.max_tickets) continue
+    return { price: rule.price, label: rule.label }
+  }
+  return { price: session?.price_tiers?.[0]?.price || 0, label: null }
+}
+
 const RAZORPAY_KEY_ID = 'rzp_live_bYmMMbiG8WZC34'
 const APP_URL = 'https://online.nrithyaholics.in'
 
@@ -64,6 +75,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [refreshingBooking, setRefreshingBooking] = useState(false)
   const [refreshBookingMsg, setRefreshBookingMsg] = useState(null)
   const [revPolicy, setRevPolicy] = useState(null)
+  const [pricingRules, setPricingRules] = useState([])
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
@@ -102,17 +114,19 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   }, [autoOpenTest, user])
 
   async function fetchSession() {
-    const [sessionRes, policiesRes] = await Promise.all([
+    const [sessionRes, policiesRes, rulesRes] = await Promise.all([
       supabase.from('sessions')
         .select('*, profiles(full_name, bio, instagram_handle, avatar_url, style_tags, youtube_url, revenue_policy_id)')
         .eq('id', sessionId).single(),
       supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)'),
+      supabase.from('pricing_rules').select('*').eq('session_id', sessionId).order('sort_order', { ascending: true }),
     ])
     if (sessionRes.error) console.error(sessionRes.error)
     else {
       setSession(sessionRes.data)
       const policy = resolvePolicy(sessionRes.data, sessionRes.data.profiles, policiesRes.data || [])
       setRevPolicy(policy)
+      setPricingRules(rulesRes.data || [])
       if (user) checkExistingBooking(sessionRes.data.id)
     }
     setLoading(false)
@@ -183,8 +197,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         return
       }
 
-      const tier = tiers[selectedTier]
-      const _ticketPricePerSeat = tier.price
+      const _ticketPricePerSeat = currentTierPrice  // already resolved to active pricing rule price
       const _gatewayFeePerSeat = calculateGatewayFee(_ticketPricePerSeat, gatewayFeePct)
       const amount_inr = (_ticketPricePerSeat + _gatewayFeePerSeat) * seats
 
@@ -301,7 +314,10 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
     hiphop: '#b5420e', kathak: '#8b4513', folk: '#c47800', jazz: '#1a5db5', fusion: '#7a1a7a'
   }
   const color = styleColors[session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '')] || '#c8430a'
-  const currentTierPrice = tiers[selectedTier]?.price || 0
+  const baseTierPrice = tiers[selectedTier]?.price || 0
+  const { price: activePricePerSeat, label: activePriceLabel } = resolveActivePrice(session, pricingRules)
+  // Use active pricing rule price if one is in effect, else fall back to selected tier base price
+  const currentTierPrice = activePricePerSeat || baseTierPrice
   const totalAmount = currentTierPrice * seats
   const gatewayFeePct = revPolicy?.gateway_fee_pct ?? 3
   const gatewayFeePerSeat = currentTierPrice > 0 ? calculateGatewayFee(currentTierPrice, gatewayFeePct) : 0
@@ -610,7 +626,17 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
           {tiers.length === 1 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Price per seat</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: '#0f0c0c' }}>₹{tiers[0].price}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {activePriceLabel && baseTierPrice !== currentTierPrice && (
+                  <span style={{ fontSize: 20, color: '#a09890', textDecoration: 'line-through' }}>₹{baseTierPrice}</span>
+                )}
+                <span style={{ fontSize: 28, fontWeight: 800, color: '#0f0c0c' }}>₹{currentTierPrice}</span>
+                {activePriceLabel && (
+                  <span style={{ background: '#1a7a3c', color: 'white', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
+                    🏷️ {activePriceLabel}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 

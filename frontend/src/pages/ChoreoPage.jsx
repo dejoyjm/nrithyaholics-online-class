@@ -62,12 +62,23 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
 
   async function fetchSessions() {
     const { data, error } = await supabase
-      .from('sessions').select('*')
+      .from('sessions').select('*, pricing_rules(*)')
       .eq('choreographer_id', user.id)
       .order('scheduled_at', { ascending: false })
     if (error) console.error(error)
     else setSessions(data || [])
     setLoading(false)
+  }
+
+  function getActiveRule(s) {
+    const now = new Date()
+    const confirmedBookings = s.bookings_count || 0
+    for (const rule of (s.pricing_rules || [])) {
+      if (rule.valid_until && new Date(rule.valid_until) < now) continue
+      if (rule.max_tickets != null && confirmedBookings >= rule.max_tickets) continue
+      return rule
+    }
+    return null
   }
 
   const formatDate = (d) => new Date(d).toLocaleDateString('en-IN', {
@@ -166,11 +177,27 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#0f0c0c' }}>
-                    ₹{s.price_tiers?.length ? Math.min(...s.price_tiers.map(t => t.price)) : 0}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#7a6e65' }}>from</div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  {(() => {
+                    const basePrice = s.price_tiers?.length ? s.price_tiers[0].price : 0
+                    const activeRule = getActiveRule(s)
+                    return activeRule ? (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 13, color: '#a09890', textDecoration: 'line-through' }}>₹{basePrice}</span>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a7a3c' }}>₹{activeRule.price}</span>
+                        </div>
+                        <div style={{ fontSize: 10, background: '#1a7a3c', color: 'white', fontWeight: 700, padding: '2px 7px', borderRadius: 20 }}>
+                          🏷️ {activeRule.label} active
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: '#0f0c0c' }}>₹{basePrice}</div>
+                        <div style={{ fontSize: 11, color: '#7a6e65' }}>regular price</div>
+                      </>
+                    )
+                  })()}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   {canStart && onStartClass && (

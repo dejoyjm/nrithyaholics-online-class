@@ -1994,7 +1994,13 @@ function RevenueTab({ choreographers, sessions }) {
   const [simGatewayPct, setSimGatewayPct] = useState(3)
   const [simResult, setSimResult] = useState(null)
 
-  useEffect(() => { fetchPolicies() }, [])
+  // Booking audit
+  const [allBookings, setAllBookings] = useState([])
+  const [loadingBookings, setLoadingBookings] = useState(true)
+  const [filterChoreoId, setFilterChoreoId] = useState('')
+  const [filterSessionId, setFilterSessionId] = useState('')
+
+  useEffect(() => { fetchPolicies(); fetchAuditBookings() }, [])
 
   async function fetchPolicies() {
     const { data } = await supabase
@@ -2009,6 +2015,21 @@ function RevenueTab({ choreographers, sessions }) {
       setSimGatewayPct(def.gateway_fee_pct)
     }
     setLoading(false)
+  }
+
+  async function fetchAuditBookings() {
+    setLoadingBookings(true)
+    const { data } = await supabase
+      .from('bookings')
+      .select(`
+        id, created_at, status, credits_paid, ticket_price, gateway_fee, nrh_share, choreo_share, razorpay_payment_id, seats,
+        sessions(id, title, scheduled_at, choreographer_id, profiles(full_name)),
+        profiles!booked_by(email, full_name)
+      `)
+      .eq('status', 'confirmed')
+      .order('created_at', { ascending: false })
+    setAllBookings(data || [])
+    setLoadingBookings(false)
   }
 
   async function handleSavePolicy(form, slabs) {
@@ -2252,6 +2273,175 @@ function RevenueTab({ choreographers, sessions }) {
           </div>
         )}
       </div>
+
+      {/* SECTION C: Booking Audit */}
+      {(() => {
+        // Unique choreographers from bookings (for filter dropdown)
+        const choreoMap = {}
+        allBookings.forEach(b => {
+          const cid = b.sessions?.choreographer_id
+          const cname = b.sessions?.profiles?.full_name
+          if (cid && cname) choreoMap[cid] = cname
+        })
+        const choreoList = Object.entries(choreoMap).map(([id, name]) => ({ id, name }))
+
+        // Sessions for selected choreo
+        const sessionMap = {}
+        allBookings.forEach(b => {
+          if (!filterChoreoId || b.sessions?.choreographer_id === filterChoreoId) {
+            const sid = b.sessions?.id
+            const stitle = b.sessions?.title
+            if (sid && stitle) sessionMap[sid] = stitle
+          }
+        })
+        const sessionList = Object.entries(sessionMap).map(([id, title]) => ({ id, title }))
+
+        // Filter
+        const filtered = allBookings.filter(b => {
+          if (filterChoreoId && b.sessions?.choreographer_id !== filterChoreoId) return false
+          if (filterSessionId && b.sessions?.id !== filterSessionId) return false
+          return true
+        })
+
+        // Totals
+        const totals = filtered.reduce((acc, b) => {
+          const tp = b.ticket_price ?? b.credits_paid ?? 0
+          acc.tickets += b.seats || 1
+          acc.ticketPrice += tp
+          acc.gatewayFee += b.gateway_fee || 0
+          acc.nrhShare += b.nrh_share || 0
+          acc.choreoShare += b.choreo_share || 0
+          return acc
+        }, { tickets: 0, ticketPrice: 0, gatewayFee: 0, nrhShare: 0, choreoShare: 0 })
+
+        function exportCSV() {
+          if (filtered.length === 0) return
+          const rows = filtered.map(b => ({
+            Date: new Date(b.created_at).toLocaleDateString('en-IN'),
+            Session: b.sessions?.title || '',
+            Choreographer: b.sessions?.profiles?.full_name || '',
+            Learner: b.profiles?.email || '',
+            Tickets: b.seats || 1,
+            'Ticket Price': b.ticket_price ?? b.credits_paid ?? 0,
+            'Gateway Fee': b.gateway_fee || 0,
+            'NRH Share': b.nrh_share || 0,
+            'Choreo Share': b.choreo_share || 0,
+            'Razorpay ID': b.razorpay_payment_id || 'N/A',
+            Status: b.status,
+          }))
+          const csv = [
+            Object.keys(rows[0]).join(','),
+            ...rows.map(r => Object.values(r).map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')),
+          ].join('\n')
+          const blob = new Blob([csv], { type: 'text/csv' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `nrh-bookings-${new Date().toISOString().split('T')[0]}.csv`
+          a.click()
+          URL.revokeObjectURL(url)
+        }
+
+        const thStyle = { padding: '10px 12px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '2px solid #f0ebe6', whiteSpace: 'nowrap' }
+        const tdStyle = (isLegacy) => ({ padding: '10px 12px', fontSize: 12, color: isLegacy ? '#a09890' : '#0f0c0c', borderBottom: '1px solid #f8f4f0' })
+
+        return (
+          <div style={{ borderTop: '2px solid #f0ebe6', paddingTop: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0 }}>📋 Booking Audit</h3>
+              <button onClick={exportCSV} disabled={filtered.length === 0}
+                style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', color: '#5a4e47', opacity: filtered.length === 0 ? 0.5 : 1 }}>
+                📥 Export CSV
+              </button>
+            </div>
+
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+              <select
+                value={filterChoreoId}
+                onChange={e => { setFilterChoreoId(e.target.value); setFilterSessionId('') }}
+                style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white' }}>
+                <option value="">All choreographers</option>
+                {choreoList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select
+                value={filterSessionId}
+                onChange={e => setFilterSessionId(e.target.value)}
+                style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white' }}>
+                <option value="">All sessions</option>
+                {sessionList.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+              </select>
+              <span style={{ fontSize: 13, color: '#7a6e65', alignSelf: 'center' }}>
+                {loadingBookings ? 'Loading...' : `${filtered.length} booking${filtered.length !== 1 ? 's' : ''}`}
+              </span>
+            </div>
+
+            {loadingBookings ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#7a6e65' }}>Loading bookings...</div>
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#7a6e65' }}>No bookings found</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: 12, overflow: 'hidden', border: '1px solid #e2dbd4' }}>
+                  <thead>
+                    <tr style={{ background: '#faf7f2' }}>
+                      <th style={thStyle}>Date</th>
+                      <th style={thStyle}>Session</th>
+                      <th style={thStyle}>Learner</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Tickets</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Ticket ₹</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Gateway ₹</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>NRH ₹</th>
+                      <th style={{ ...thStyle, textAlign: 'right' }}>Choreo ₹</th>
+                      <th style={thStyle}>Payment ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(b => {
+                      const isLegacy = b.ticket_price == null
+                      const tp = b.ticket_price ?? b.credits_paid ?? 0
+                      return (
+                        <tr key={b.id} style={{ background: isLegacy ? '#fefcf9' : 'white' }}>
+                          <td style={tdStyle(isLegacy)}>{new Date(b.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                          <td style={tdStyle(isLegacy)}>
+                            <div style={{ fontWeight: 600 }}>{b.sessions?.title || '—'}</div>
+                            <div style={{ fontSize: 11, color: '#a09890' }}>{b.sessions?.profiles?.full_name || ''}</div>
+                          </td>
+                          <td style={tdStyle(isLegacy)}>{b.profiles?.email || '—'}</td>
+                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>{b.seats || 1}</td>
+                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right', fontWeight: 600 }}>₹{tp.toLocaleString('en-IN')}{isLegacy && <span title="Pre-revenue system booking" style={{ marginLeft: 3, fontSize: 10 }}>*</span>}</td>
+                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>₹{(b.gateway_fee || 0).toLocaleString('en-IN')}</td>
+                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>₹{(b.nrh_share || 0).toLocaleString('en-IN')}</td>
+                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right', color: isLegacy ? '#a09890' : '#1a7a3c', fontWeight: 600 }}>₹{(b.choreo_share || 0).toLocaleString('en-IN')}</td>
+                          <td style={{ ...tdStyle(isLegacy), fontFamily: 'monospace', fontSize: 11 }}>{b.razorpay_payment_id || 'N/A'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: '#faf7f2', borderTop: '2px solid #e2dbd4' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, fontSize: 13, color: '#0f0c0c' }} colSpan={3}>
+                        Total ({filtered.length} bookings)
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{totals.tickets}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 13 }}>₹{totals.ticketPrice.toLocaleString('en-IN')}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 13 }}>₹{totals.gatewayFee.toLocaleString('en-IN')}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 13 }}>₹{totals.nrhShare.toLocaleString('en-IN')}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#1a7a3c' }}>₹{totals.choreoShare.toLocaleString('en-IN')}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+                {filtered.some(b => b.ticket_price == null) && (
+                  <div style={{ fontSize: 11, color: '#a09890', marginTop: 8 }}>
+                    * Rows marked with * are pre-revenue-system bookings. ticket_price shows credits_paid.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Policy Edit Modal */}
       {editPolicy && (
