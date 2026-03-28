@@ -187,11 +187,24 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
     }
     const { data } = await query.maybeSingle()
     if (data) {
-      // Claim guest booking: set booked_by so user sees it in their profile
-      if (!data.booked_by && data.guest_email) {
-        await supabase.from('bookings').update({ booked_by: user.id }).eq('id', data.id)
-      }
       setAlreadyBooked(true)
+      return
+    }
+    // RLS blocks guest rows (booked_by = null). Fall back to edge function which uses service role.
+    if (email) {
+      try {
+        const { data: { session: authSession } } = await supabase.auth.getSession()
+        const token = authSession?.access_token
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/claim-guest-booking`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ session_id: sid }),
+        })
+        const { booking_id } = await res.json()
+        if (booking_id) setAlreadyBooked(true)
+      } catch (e) {
+        console.error('[checkExistingBooking] claim-guest-booking error:', e)
+      }
     }
   }
 
