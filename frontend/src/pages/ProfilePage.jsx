@@ -59,22 +59,31 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
     const allBookings = data || []
     setBookings(allBookings)
 
-    // Fetch guest sub-bookings for each of this user's bookings
+    // Fetch guest sub-bookings via edge function (service role bypasses RLS)
     const bookingIds = allBookings.map(b => b.id)
     if (bookingIds.length > 0) {
-      const { data: guestData, error: guestFetchError } = await supabase
-        .from('bookings')
-        .select('id, guest_email, booked_by, invited_at, primary_booking_id')
-        .in('primary_booking_id', bookingIds)
-        .eq('is_guest_booking', true)
-      if (guestFetchError) console.error('[ProfilePage] guest fetch error:', guestFetchError)
-      console.log('[ProfilePage] guest rows fetched:', (guestData || []).length, 'for booking IDs:', bookingIds)
-      const map = {}
-      ;(guestData || []).forEach(g => {
-        if (!map[g.primary_booking_id]) map[g.primary_booking_id] = []
-        map[g.primary_booking_id].push(g)
-      })
-      setGuestBookingsMap(map)
+      try {
+        const { data: { session: authSession } } = await supabase.auth.getSession()
+        const token = authSession?.access_token
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-guest-bookings`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ booking_ids: bookingIds }),
+          }
+        )
+        const guestRes = await res.json()
+        const guestData = guestRes.guest_bookings || []
+        const map = {}
+        guestData.forEach(g => {
+          if (!map[g.primary_booking_id]) map[g.primary_booking_id] = []
+          map[g.primary_booking_id].push(g)
+        })
+        setGuestBookingsMap(map)
+      } catch (e) {
+        console.error('[ProfilePage] guest fetch error:', e)
+      }
     }
     setLoadingBookings(false)
   }
