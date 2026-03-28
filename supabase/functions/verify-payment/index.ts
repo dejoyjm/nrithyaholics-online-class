@@ -485,6 +485,7 @@ serve(async (req) => {
     // Fire-and-forget: never blocks the booking success response
     const financialsPromise = (async () => {
       try {
+        console.log('[financials] starting', { session_id, booking_id: booking.id })
         // Fetch session info + all policies
         const [sessionPolicyRes, policiesRes, bookingCountRes] = await Promise.all([
           supabase.from('sessions')
@@ -539,7 +540,11 @@ serve(async (req) => {
           ? { ...resolvedPolicy, revenue_policy_slabs: slabs }
           : null
 
-        await supabase.from('bookings').update({
+        console.log('[financials] computed', {
+          ticketPricePerSeat, gatewayFeePerSeat, marginalNrhShare, choreoShareForBooking,
+          policyName: resolvedPolicy?.name || 'none', currentCount,
+        })
+        const { error: finUpdateError } = await supabase.from('bookings').update({
           ticket_price: ticketPricePerSeat * sessionSeats,
           gateway_fee: gatewayFeePerSeat * sessionSeats,
           nrh_share: marginalNrhShare,
@@ -547,6 +552,11 @@ serve(async (req) => {
           policy_id: resolvedPolicy?.id || null,
           policy_snapshot: policySnapshot,
         }).eq('id', booking.id)
+        if (finUpdateError) {
+          console.error('[financials] update failed', finUpdateError)
+        } else {
+          console.log('[financials] update ok', booking.id)
+        }
       } catch (err) {
         console.error('Financial breakdown update failed silently:', err)
       }

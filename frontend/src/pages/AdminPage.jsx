@@ -2054,10 +2054,12 @@ function RevenueTab({ choreographers, sessions }) {
       ...bookingsData.map(b => b.sessions?.choreographer_id),
     ].filter(Boolean))]
 
-    const { data: profilesData } = await supabase
-      .from('profiles')
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profiles_with_email')
       .select('id, full_name, email')
       .in('id', userIds)
+    if (profilesError) console.error('[profiles fetch]', profilesError)
+    console.log('[profiles fetched]', profilesData?.length, 'for', userIds.length, 'userIds')
 
     const profileMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]))
 
