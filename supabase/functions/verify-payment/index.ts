@@ -488,25 +488,24 @@ serve(async (req) => {
       : []
 
     if (guestEmailList.length > 0) {
-      const guestPromise = (async () => {
-        try {
-          const now = new Date().toISOString()
-          const guestRows = guestEmailList.map((email: string) => ({
-            session_id,
-            booked_by: null,
-            is_guest_booking: true,
-            guest_email: email,
-            primary_booking_id: booking.id,
-            status: 'confirmed',
-            credits_paid: 0,
-            invited_at: now,
-          }))
-          const { error: guestError } = await supabase.from('bookings').insert(guestRows)
-          if (guestError) {
-            console.error('[guest bookings] insert failed', guestError)
-          } else {
-            console.log('[guest bookings] created', guestEmailList.length)
-            // Send invite emails
+      const now = new Date().toISOString()
+      const guestRows = guestEmailList.map((email: string) => ({
+        session_id,
+        booked_by: null,
+        is_guest_booking: true,
+        guest_email: email,
+        primary_booking_id: booking.id,
+        status: 'confirmed',
+        credits_paid: 0,
+        invited_at: now,
+      }))
+      const { error: guestError } = await supabase.from('bookings').insert(guestRows)
+      console.log('[guest bookings] result:', guestError)
+
+      if (!guestError) {
+        // Send invite emails fire-and-forget
+        const invitePromise = (async () => {
+          try {
             const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
             const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
             const APP_URL = 'https://online.nrithyaholics.in'
@@ -544,16 +543,16 @@ serve(async (req) => {
                 }
               }
             }
+          } catch (err) {
+            console.error('[guest invite emails] unexpected error', err)
           }
-        } catch (err) {
-          console.error('[guest bookings] unexpected error', err)
+        })()
+        try {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(invitePromise)
+        } catch {
+          invitePromise.catch(() => {})
         }
-      })()
-      try {
-        // @ts-ignore
-        EdgeRuntime.waitUntil(guestPromise)
-      } catch {
-        guestPromise.catch(() => {})
       }
     }
 
