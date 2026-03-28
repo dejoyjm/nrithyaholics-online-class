@@ -2031,7 +2031,7 @@ function RevenueTab({ choreographers, sessions }) {
       .from('bookings')
       .select(`
         id, created_at, status, credits_paid, ticket_price, gateway_fee,
-        nrh_share, choreo_share, razorpay_payment_id, seats, booked_by, session_id,
+        nrh_share, choreo_share, razorpay_payment_id, booked_by, session_id,
         sessions(id, title, scheduled_at, choreographer_id)
       `)
       .eq('status', 'confirmed')
@@ -2395,7 +2395,7 @@ function RevenueTab({ choreographers, sessions }) {
         // Totals
         const totals = filtered.reduce((acc, b) => {
           const tp = b.ticket_price ?? b.credits_paid ?? 0
-          acc.tickets += b.seats || 1
+          acc.tickets += 1
           acc.ticketPrice += tp
           acc.gatewayFee += b.gateway_fee || 0
           acc.nrhShare += b.nrh_share || 0
@@ -2410,7 +2410,7 @@ function RevenueTab({ choreographers, sessions }) {
             Session: b.sessions?.title || '',
             Choreographer: b.choreoProfile?.full_name || '',
             Learner: b.learnerProfile?.email || b.learnerProfile?.full_name || '',
-            Tickets: b.seats || 1,
+            Tickets: 1,
             'Ticket Price': b.ticket_price ?? b.credits_paid ?? 0,
             'Gateway Fee': b.gateway_fee || 0,
             'NRH Share': b.nrh_share || 0,
@@ -2448,12 +2448,12 @@ function RevenueTab({ choreographers, sessions }) {
             <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <label style={{ fontSize: 12, color: '#7a6e65', whiteSpace: 'nowrap' }}>From</label>
-                <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                <input type="date" value={filterDateFrom} onChange={e => { setFilterDateFrom(e.target.value); fetchAuditBookings(e.target.value, filterDateTo) }}
                   style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '7px 10px', fontSize: 13, outline: 'none', background: 'white' }} />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <label style={{ fontSize: 12, color: '#7a6e65', whiteSpace: 'nowrap' }}>To</label>
-                <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                <input type="date" value={filterDateTo} onChange={e => { setFilterDateTo(e.target.value); fetchAuditBookings(filterDateFrom, e.target.value) }}
                   style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '7px 10px', fontSize: 13, outline: 'none', background: 'white' }} />
               </div>
               <select
@@ -2532,7 +2532,7 @@ function RevenueTab({ choreographers, sessions }) {
                             <div style={{ fontSize: 11, color: '#a09890' }}>{b.choreoProfile?.full_name || ''}</div>
                           </td>
                           <td style={tdStyle(isLegacy)}>{b.learnerProfile?.email || b.learnerProfile?.full_name || '—'}</td>
-                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>{b.seats || 1}</td>
+                          <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>{1}</td>
                           <td style={{ ...tdStyle(isLegacy), textAlign: 'right', fontWeight: 600 }}>₹{tp.toLocaleString('en-IN')}{isLegacy && <span title="Pre-revenue system booking" style={{ marginLeft: 3, fontSize: 10 }}>*</span>}</td>
                           <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>₹{(b.gateway_fee || 0).toLocaleString('en-IN')}</td>
                           <td style={{ ...tdStyle(isLegacy), textAlign: 'right' }}>₹{(b.nrh_share || 0).toLocaleString('en-IN')}</td>
