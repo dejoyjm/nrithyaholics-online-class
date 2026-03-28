@@ -180,6 +180,7 @@ export default function App() {
           session_id:          pending.session_id,
           seats:               pending.seats,
           amount_inr:          pending.amount_inr,
+          guest_emails:        pending.guest_emails || [],
         })
       } else {
         window.history.replaceState({}, '', window.location.pathname)

@@ -317,7 +317,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             amount_inr,
             ticket_price: _ticketPricePerSeat,
             user_id: user.id,
-            guest_emails: validGuestEmails,
+            guest_emails: JSON.parse(sessionStorage.getItem('nrh_pending_payment') || '{}').guest_emails || [],
           }, token)
 
           if (result.success) {
