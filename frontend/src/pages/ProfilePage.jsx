@@ -50,13 +50,27 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   useEffect(() => { fetchBookings() }, [])
 
   async function fetchBookings() {
-    const { data } = await supabase
-      .from('bookings')
-      .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
-      .eq('booked_by', user.id)
-      .eq('status', 'confirmed')
-      .order('created_at', { ascending: false })
-    const allBookings = data || []
+    const [{ data: ownedData }, { data: invitedData }] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
+        .eq('booked_by', user.id)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('bookings')
+        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
+        .eq('guest_email', user.email)
+        .eq('status', 'confirmed')
+        .order('created_at', { ascending: false }),
+    ])
+    // Merge and deduplicate (a claimed guest booking appears in both queries)
+    const seen = new Set()
+    const allBookings = [...(ownedData || []), ...(invitedData || [])].filter(b => {
+      if (seen.has(b.id)) return false
+      seen.add(b.id)
+      return true
+    })
     setBookings(allBookings)
 
     // Fetch guest sub-bookings via edge function (service role bypasses RLS)
