@@ -487,6 +487,9 @@ serve(async (req) => {
       ? guest_emails.map((e: string) => e.trim()).filter(Boolean)
       : []
 
+    console.log('[guest] guest_emails received:', JSON.stringify(guest_emails))
+    console.log('[guest] guestEmailList after filter:', JSON.stringify(guestEmailList))
+
     if (guestEmailList.length > 0) {
       const now = new Date().toISOString()
       const guestRows = guestEmailList.map((email: string) => ({
@@ -499,8 +502,9 @@ serve(async (req) => {
         credits_paid: 0,
         invited_at: now,
       }))
+      console.log('[guest] guestRows to insert:', JSON.stringify(guestRows))
       const { error: guestError } = await supabase.from('bookings').insert(guestRows)
-      console.log('[guest bookings] result:', guestError)
+      console.log('[guest] insert result - error:', JSON.stringify(guestError))
 
       if (!guestError) {
         // Send invite emails fire-and-forget
@@ -544,6 +548,7 @@ serve(async (req) => {
               }
             }
           } catch (err) {
+            console.log('[guest] CAUGHT ERROR:', JSON.stringify(err), err?.message)
             console.error('[guest invite emails] unexpected error', err)
           }
         })()
