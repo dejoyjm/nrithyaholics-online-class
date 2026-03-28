@@ -6,20 +6,9 @@ import { isIST, getTimezoneCode, formatClassTime } from '../utils/timezone'
 import { resolvePolicy, calculateGatewayFee } from '../utils/revenue'
 
 function resolveActivePrice(session, pricingRules) {
-  console.log('[resolveActivePrice] rules:', pricingRules)
-  console.log('[resolveActivePrice] bookings_count:', session?.bookings_count)
   const now = new Date()
   const confirmedBookings = session?.bookings_count || 0
   for (const rule of (pricingRules || [])) {
-    console.log('[rule check]', {
-      label: rule.label,
-      price: rule.price,
-      valid_until: rule.valid_until,
-      max_tickets: rule.max_tickets,
-      bookings_count: confirmedBookings,
-      expired: rule.valid_until && new Date(rule.valid_until) < now,
-      soldOut: rule.max_tickets != null && confirmedBookings >= rule.max_tickets,
-    })
     if (rule.valid_until && new Date(rule.valid_until) < now) continue
     if (rule.max_tickets != null && confirmedBookings >= rule.max_tickets) continue
     return { price: rule.price, label: rule.label }
@@ -135,7 +124,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   }, [autoOpenTest, user])
 
   async function fetchSession() {
-    console.log('[session id for rules fetch]', sessionId)
     const [sessionRes, policiesRes, rulesRes] = await Promise.all([
       supabase.from('sessions')
         .select('*, profiles(full_name, bio, instagram_handle, avatar_url, style_tags, youtube_url, revenue_policy_id)')
@@ -143,7 +131,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)'),
       supabase.from('pricing_rules').select('*').eq('session_id', sessionId).order('sort_order', { ascending: true }),
     ])
-    console.log('[pricing rules fetch]', { data: rulesRes.data, error: rulesRes.error })
     if (sessionRes.error) console.error(sessionRes.error)
     else {
       setSession(sessionRes.data)
@@ -247,19 +234,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
       const _ticketPricePerSeat = currentTierPrice  // already resolved to active pricing rule price
       const _gatewayFeePerSeat = calculateGatewayFee(_ticketPricePerSeat, gatewayFeePct)
       const amount_inr = (_ticketPricePerSeat + _gatewayFeePerSeat) * seats
-
-      console.log('[NRH pricing debug]', {
-        baseTierPrice,
-        activePricePerSeat,
-        currentTierPrice: _ticketPricePerSeat,
-        gatewayFeePct,
-        gatewayFeePerSeat: _gatewayFeePerSeat,
-        totalChargedPerSeat: _ticketPricePerSeat + _gatewayFeePerSeat,
-        seats,
-        amount_inr,
-        razorpayPaise: Math.round(amount_inr * 100),
-        revPolicyId: revPolicy?.id ?? 'null (fallback 3%)',
-      })
 
       const { data: { session: authSession } } = await supabase.auth.getSession()
       const token = authSession?.access_token
@@ -379,7 +353,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const color = styleColors[session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '')] || '#c8430a'
   const baseTierPrice = tiers[selectedTier]?.price || 0
   const { price: activePricePerSeat, label: activePriceLabel } = resolveActivePrice(session, pricingRules)
-  console.log('[active price result]', activePricePerSeat, activePriceLabel)
   // Use active pricing rule price if one is in effect, else fall back to selected tier base price
   const currentTierPrice = activePricePerSeat || baseTierPrice
   const totalAmount = currentTierPrice * seats

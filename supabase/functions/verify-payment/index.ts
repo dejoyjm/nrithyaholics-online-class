@@ -436,7 +436,6 @@ serve(async (req) => {
       .maybeSingle()
 
     if (existing) {
-      console.log('[already_existed] booking:', existing.id)
       const guestEmailList: string[] = Array.isArray(guest_emails)
         ? guest_emails.map((e: string) => e.trim()).filter(Boolean)
         : []
@@ -459,7 +458,6 @@ serve(async (req) => {
             invited_at: now,
           }))
           const { error: guestErr } = await supabase.from('bookings').insert(guestRows)
-          console.log('[already_existed] guest insert:', JSON.stringify(guestErr))
           if (!guestErr) {
             // Send invite emails fire-and-forget
             const invitePromise = (async () => {
@@ -496,13 +494,11 @@ serve(async (req) => {
 </div>`,
                         }),
                       })
-                    } catch (emailErr) {
-                      console.error('[already_existed] invite email failed for', guestEmail, emailErr)
+                    } catch (_emailErr) {
                     }
                   }
                 }
-              } catch (err) {
-                console.error('[already_existed] invite emails unexpected error', err)
+              } catch (_err) {
               }
             })()
             try {
@@ -565,9 +561,6 @@ serve(async (req) => {
       ? guest_emails.map((e: string) => e.trim()).filter(Boolean)
       : []
 
-    console.log('[guest] guest_emails received:', JSON.stringify(guest_emails))
-    console.log('[guest] guestEmailList after filter:', JSON.stringify(guestEmailList))
-
     if (guestEmailList.length > 0) {
       const now = new Date().toISOString()
       const guestRows = guestEmailList.map((email: string) => ({
@@ -580,9 +573,7 @@ serve(async (req) => {
         credits_paid: 0,
         invited_at: now,
       }))
-      console.log('[guest] guestRows to insert:', JSON.stringify(guestRows))
       const { error: guestError } = await supabase.from('bookings').insert(guestRows)
-      console.log('[guest] insert result - error:', JSON.stringify(guestError))
 
       if (!guestError) {
         // Send invite emails fire-and-forget
@@ -620,14 +611,11 @@ serve(async (req) => {
 </div>`,
                     }),
                   })
-                } catch (emailErr) {
-                  console.error('[guest invite email] failed for', guestEmail, emailErr)
+                } catch (_emailErr) {
                 }
               }
             }
-          } catch (err) {
-            console.log('[guest] CAUGHT ERROR:', JSON.stringify(err), err?.message)
-            console.error('[guest invite emails] unexpected error', err)
+          } catch (_err) {
           }
         })()
         try {
@@ -643,7 +631,6 @@ serve(async (req) => {
     // Fire-and-forget: never blocks the booking success response
     const financialsPromise = (async () => {
       try {
-        console.log('[financials] starting', { session_id, booking_id: booking.id })
         // Fetch session info + all policies
         const [sessionPolicyRes, policiesRes, bookingCountRes] = await Promise.all([
           supabase.from('sessions')
@@ -698,10 +685,6 @@ serve(async (req) => {
           ? { ...resolvedPolicy, revenue_policy_slabs: slabs }
           : null
 
-        console.log('[financials] computed', {
-          ticketPricePerSeat, gatewayFeePerSeat, marginalNrhShare, choreoShareForBooking,
-          policyName: resolvedPolicy?.name || 'none', currentCount,
-        })
         const { error: finUpdateError } = await supabase.from('bookings').update({
           ticket_price: ticketPricePerSeat * sessionSeats,
           gateway_fee: gatewayFeePerSeat * sessionSeats,
@@ -711,9 +694,7 @@ serve(async (req) => {
           policy_snapshot: policySnapshot,
         }).eq('id', booking.id)
         if (finUpdateError) {
-          console.error('[financials] update failed', finUpdateError)
-        } else {
-          console.log('[financials] update ok', booking.id)
+          console.error('Financial breakdown update failed:', finUpdateError)
         }
       } catch (err) {
         console.error('Financial breakdown update failed silently:', err)
@@ -728,6 +709,24 @@ serve(async (req) => {
 
     // Increment bookings_count on session
     await supabase.rpc('increment_bookings_count', { session_id_input: session_id, seats_input: seats })
+
+    // ── Auto-confirm session when min_seats reached ───────────────
+    {
+      const { data: sessionStatus } = await supabase
+        .from('sessions')
+        .select('status, min_seats, bookings_count')
+        .eq('id', session_id)
+        .single()
+      if (
+        sessionStatus &&
+        sessionStatus.status === 'open' &&
+        sessionStatus.min_seats != null &&
+        sessionStatus.bookings_count >= sessionStatus.min_seats
+      ) {
+        await supabase.from('sessions').update({ status: 'confirmed' }).eq('id', session_id)
+        console.log('[auto-confirm] session confirmed at', sessionStatus.bookings_count, 'seats')
+      }
+    }
 
     // ── Send booking confirmation email (fire-and-forget) ────────
     // Fetch session + choreographer + user profile for email content.

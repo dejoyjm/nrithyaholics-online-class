@@ -412,6 +412,24 @@ serve(async (req) => {
     await supabase.rpc('increment_bookings_count', { session_id_input: session_id, seats_input: seats })
     console.log('Webhook: booking created successfully for order:', order_id)
 
+    // ── Auto-confirm session when min_seats reached ───────────────
+    {
+      const { data: sessionStatus } = await supabase
+        .from('sessions')
+        .select('status, min_seats, bookings_count')
+        .eq('id', session_id)
+        .single()
+      if (
+        sessionStatus &&
+        sessionStatus.status === 'open' &&
+        sessionStatus.min_seats != null &&
+        sessionStatus.bookings_count >= sessionStatus.min_seats
+      ) {
+        await supabase.from('sessions').update({ status: 'confirmed' }).eq('id', session_id)
+        console.log('[auto-confirm] session confirmed at', sessionStatus.bookings_count, 'seats')
+      }
+    }
+
     // ── Send booking confirmation email ──────────────────────────
     // Fetch session + choreographer + learner profile for email content
     const [sessionRes, profileRes] = await Promise.all([
