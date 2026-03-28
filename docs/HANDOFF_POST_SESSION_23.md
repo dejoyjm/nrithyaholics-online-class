@@ -120,3 +120,62 @@ The `fetchAuditBookings` SELECT included `seats` which does not exist on the `bo
 - `[financials] update ok / update failed` — captures the Supabase UPDATE error if the column update fails
 
 **To diagnose:** Check Supabase function logs (`Dashboard → Functions → verify-payment → Logs`) after the next real booking. The `[financials]` lines will show exactly where it breaks. Most likely candidate: a column that doesn't exist or a permissions issue on `revenue_policies`.
+
+---
+
+## Session 24 (2026-03-28)
+
+### Commit 1: `e72b6ea` — refactor: split AdminPage into tab components
+
+AdminPage.jsx (2696 lines) split into 5 focused files under `frontend/src/pages/admin/`:
+
+| File | Contents |
+|---|---|
+| `admin/BookingsTab.jsx` | Bookings table, email/resolve actions, announcement modal |
+| `admin/UsersTab.jsx` | Applications + users tabs, user profile drawer, revoke/suspend dialogs |
+| `admin/SessionsTab.jsx` | Sessions table, admin edit modal, session row actions |
+| `admin/RevenueTab.jsx` | Revenue policies, simulator, booking audit, policy edit modal |
+| `admin/SettingsTab.jsx` | Platform config (pre-join/grace minutes) |
+
+`AdminPage.jsx` is now a ~150-line shell: `fetchAll`, tab state, stats bar, nav, renders tab components. Pure refactor — zero behaviour changes. Build passes.
+
+### Commit 2: `a5ab3aa` — feat: multi-ticket guest booking + invite flow
+
+**DB prerequisite:** The `bookings` table must have these columns (already migrated per session plan):
+- `is_guest_booking` boolean
+- `guest_email` text
+- `primary_booking_id` uuid (FK → bookings.id)
+- `invited_at` timestamptz
+
+**What was built:**
+
+**SessionPage.jsx:**
+- When `seats > 1`, shows email input fields for each additional seat (Guest 1, Guest 2…)
+- `guest_emails[]` is passed to `verify-payment` and stored in `sessionStorage` for the redirect payment path
+- `checkExistingBooking` now uses OR filter `booked_by.eq.${user.id},guest_email.eq.${user.email}` — invited guests see their seat when they visit the session page; booking is auto-claimed (sets `booked_by = user.id`)
+
+**verify-payment/index.ts:**
+- Accepts `guest_emails[]` in request body
+- After buyer booking INSERT: creates guest bookings (`is_guest_booking=true`, `guest_email`, `primary_booking_id=buyer.id`, `booked_by=null`) — fire-and-forget
+- Sends Resend invite email to each guest with session link
+
+**ProfilePage.jsx:**
+- `fetchBookings` also fetches guest sub-bookings (`primary_booking_id IN buyer_booking_ids`)
+- `BookingRow` shows a **Guest seats** section: email, ✅ Joined / ⏳ Pending badge, ✏️ Edit email button, 📧 Resend button
+
+**supabase/functions/resend-guest-invite/index.ts (new):**
+- Auth-gated edge function; verifies caller owns the primary booking
+- Optional `new_email`: updates `guest_email` before resending
+- Sends Resend invite email and stamps `invited_at`
+- Deployed: `supabase functions deploy resend-guest-invite --no-verify-jwt`
+
+---
+
+## Known issues / next candidates
+
+- Remove `[NRH pricing debug]` console.log from SessionPage once gateway fee root cause is confirmed
+- Confirm `[financials]` logs in verify-payment show success on next real booking
+- Guest booking claim: if a guest books separately (creates their own booking) rather than logging in via the invite link, there may be a duplicate seat. No deduplication logic yet.
+- Choreographer payout report (export PDF or CSV for a date range)
+- Admin: mark session as settled / payout tracking
+- Waitlist auto-promotion when a booking is cancelled
