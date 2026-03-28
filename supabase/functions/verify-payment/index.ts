@@ -499,8 +499,6 @@ serve(async (req) => {
             primary_booking_id: booking.id,
             status: 'confirmed',
             credits_paid: 0,
-            razorpay_order_id,
-            razorpay_payment_id,
             invited_at: now,
           }))
           const { error: guestError } = await supabase.from('bookings').insert(guestRows)
