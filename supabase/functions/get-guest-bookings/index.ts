@@ -36,44 +36,46 @@ serve(async (req) => {
     }
 
     const { booking_ids } = await req.json()
-    if (!Array.isArray(booking_ids) || booking_ids.length === 0) {
-      return new Response(
-        JSON.stringify({ guest_bookings: [] }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const safeBookingIds: string[] = Array.isArray(booking_ids) ? booking_ids : []
 
-    // Verify caller actually owns these booking IDs (prevent enumeration)
-    const { data: ownerCheck } = await supabase
-      .from('bookings')
-      .select('id')
-      .in('id', booking_ids)
-      .eq('booked_by', user.id)
+    // Run both queries in parallel
+    const [guestBookings, invitedBookings] = await Promise.all([
+      // 1. Sub-bookings created by this buyer (guest seats they sold)
+      (async () => {
+        if (safeBookingIds.length === 0) return []
+        // Verify caller actually owns these booking IDs (prevent enumeration)
+        const { data: ownerCheck } = await supabase
+          .from('bookings')
+          .select('id')
+          .in('id', safeBookingIds)
+          .eq('booked_by', user.id)
+        const verifiedIds = (ownerCheck || []).map((b: any) => b.id)
+        if (verifiedIds.length === 0) return []
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('id, guest_email, booked_by, invited_at, primary_booking_id')
+          .in('primary_booking_id', verifiedIds)
+          .eq('is_guest_booking', true)
+        if (error) console.error('[get-guest-bookings] sub-bookings error:', error)
+        return data || []
+      })(),
 
-    const verifiedIds = (ownerCheck || []).map(b => b.id)
-    if (verifiedIds.length === 0) {
-      return new Response(
-        JSON.stringify({ guest_bookings: [] }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const { data: guestBookings, error } = await supabase
-      .from('bookings')
-      .select('id, guest_email, booked_by, invited_at, primary_booking_id')
-      .in('primary_booking_id', verifiedIds)
-      .eq('is_guest_booking', true)
-
-    if (error) {
-      console.error('[get-guest-bookings] query error:', error)
-      return new Response(
-        JSON.stringify({ error: error.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+      // 2. Sessions this user was invited to (they are the guest)
+      (async () => {
+        const email = user.email
+        if (!email) return []
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
+          .eq('guest_email', email)
+          .eq('status', 'confirmed')
+        if (error) console.error('[get-guest-bookings] invited error:', error)
+        return data || []
+      })(),
+    ])
 
     return new Response(
-      JSON.stringify({ guest_bookings: guestBookings || [] }),
+      JSON.stringify({ guest_bookings: guestBookings, invited_bookings: invitedBookings }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (err) {

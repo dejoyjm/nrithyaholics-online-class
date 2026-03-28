@@ -50,54 +50,54 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   useEffect(() => { fetchBookings() }, [])
 
   async function fetchBookings() {
-    const [{ data: ownedData }, { data: invitedData }] = await Promise.all([
+    // Fetch owned bookings + call edge function in parallel
+    const [{ data: ownedData }, authSession] = await Promise.all([
       supabase
         .from('bookings')
         .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
         .eq('booked_by', user.id)
         .eq('status', 'confirmed')
         .order('created_at', { ascending: false }),
-      supabase
-        .from('bookings')
-        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
-        .eq('guest_email', user.email)
-        .eq('status', 'confirmed')
-        .order('created_at', { ascending: false }),
+      supabase.auth.getSession().then(r => r.data.session),
     ])
-    // Merge and deduplicate (a claimed guest booking appears in both queries)
-    const seen = new Set()
-    const allBookings = [...(ownedData || []), ...(invitedData || [])].filter(b => {
-      if (seen.has(b.id)) return false
-      seen.add(b.id)
-      return true
-    })
-    setBookings(allBookings)
 
-    // Fetch guest sub-bookings via edge function (service role bypasses RLS)
-    const bookingIds = allBookings.map(b => b.id)
-    if (bookingIds.length > 0) {
-      try {
-        const { data: { session: authSession } } = await supabase.auth.getSession()
-        const token = authSession?.access_token
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-guest-bookings`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ booking_ids: bookingIds }),
-          }
-        )
-        const guestRes = await res.json()
-        const guestData = guestRes.guest_bookings || []
-        const map = {}
-        guestData.forEach(g => {
-          if (!map[g.primary_booking_id]) map[g.primary_booking_id] = []
-          map[g.primary_booking_id].push(g)
-        })
-        setGuestBookingsMap(map)
-      } catch (e) {
-        console.error('[ProfilePage] guest fetch error:', e)
-      }
+    const ownedBookings = ownedData || []
+    const ownedIds = ownedBookings.map(b => b.id)
+
+    // Edge function returns:
+    // - guest_bookings: sub-bookings this buyer created (for guest seats display)
+    // - invited_bookings: sessions this user was invited to as a guest
+    try {
+      const token = authSession?.access_token
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-guest-bookings`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ booking_ids: ownedIds }),
+        }
+      )
+      const { guest_bookings: guestSubs = [], invited_bookings: invitedBookings = [] } = await res.json()
+
+      // Merge owned + invited, deduplicate by id (claimed rows appear in both)
+      const seen = new Set()
+      const allBookings = [...ownedBookings, ...invitedBookings].filter(b => {
+        if (seen.has(b.id)) return false
+        seen.add(b.id)
+        return true
+      })
+      setBookings(allBookings)
+
+      // Build map of guest sub-bookings for buyer's BookingRow display
+      const map = {}
+      guestSubs.forEach(g => {
+        if (!map[g.primary_booking_id]) map[g.primary_booking_id] = []
+        map[g.primary_booking_id].push(g)
+      })
+      setGuestBookingsMap(map)
+    } catch (e) {
+      console.error('[ProfilePage] edge function error:', e)
+      setBookings(ownedBookings)
     }
     setLoadingBookings(false)
   }
