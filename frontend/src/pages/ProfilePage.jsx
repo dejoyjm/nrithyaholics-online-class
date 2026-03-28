@@ -22,6 +22,7 @@ function cleanInstagram(val) {
 export default function ProfilePage({ user, profile, platformConfig, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick, onJoinClass }) {
   const [bookings, setBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
+  const [guestBookingsMap, setGuestBookingsMap] = useState({})
   const [activeTab, setActiveTab] = useState('profile')
   const [editMode, setEditMode] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -55,7 +56,24 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
       .eq('booked_by', user.id)
       .eq('status', 'confirmed')
       .order('created_at', { ascending: false })
-    setBookings(data || [])
+    const allBookings = data || []
+    setBookings(allBookings)
+
+    // Fetch guest sub-bookings for each of this user's bookings
+    const bookingIds = allBookings.map(b => b.id)
+    if (bookingIds.length > 0) {
+      const { data: guestData } = await supabase
+        .from('bookings')
+        .select('id, guest_email, booked_by, invited_at, primary_booking_id')
+        .in('primary_booking_id', bookingIds)
+        .eq('is_guest_booking', true)
+      const map = {}
+      ;(guestData || []).forEach(g => {
+        if (!map[g.primary_booking_id]) map[g.primary_booking_id] = []
+        map[g.primary_booking_id].push(g)
+      })
+      setGuestBookingsMap(map)
+    }
     setLoadingBookings(false)
   }
 
@@ -391,13 +409,13 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
                 {upcoming.length > 0 && (
                   <div style={{ marginBottom: 28 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>UPCOMING ({upcoming.length})</div>
-                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} onJoinClass={onJoinClass} platformConfig={platformConfig} />)}
+                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} onJoinClass={onJoinClass} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} />)}
                   </div>
                 )}
                 {past.length > 0 && (
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>PAST ({past.length})</div>
-                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} />)}
+                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} />)}
                   </div>
                 )}
               </div>
@@ -410,7 +428,9 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   )
 }
 
-function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig }) {
+function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig, guestBookings, user, onGuestRefresh }) {
+const [editingGuest, setEditingGuest] = useState(null) // { id, email }
+const [sendingGuest, setSendingGuest] = useState(null) // guest booking id being acted on
 const session = booking.sessions
 if (!session) return null
 const styleKey = session.style_tags?.[0]?.toLowerCase().replace(/\s/g, '') || ''
@@ -423,6 +443,28 @@ const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
 const preJoinMs = (session.guest_pre_join_minutes_override ?? platformConfig?.guest_pre_join_minutes ?? 5) * 60 * 1000
 const graceMs   = (session.guest_grace_minutes_override    ?? platformConfig?.guest_grace_minutes    ?? 15) * 60 * 1000
 const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
+
+async function callResendInvite(guestBookingId, newEmail) {
+  setSendingGuest(guestBookingId)
+  try {
+    const { data: { session: authSession } } = await supabase.auth.getSession()
+    const token = authSession?.access_token
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resend-guest-invite`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ guest_booking_id: guestBookingId, new_email: newEmail }),
+      }
+    )
+    const data = await res.json()
+    if (!res.ok) { alert(data.error || 'Failed to send invite'); return }
+    setEditingGuest(null)
+    if (onGuestRefresh) onGuestRefresh()
+  } catch (e) { alert(e.message) }
+  setSendingGuest(null)
+}
+
   return (
     <div style={{ padding: '14px 0', borderBottom: '1px solid #f0ebe6' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -444,6 +486,52 @@ const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= se
           style={{ marginTop: 10, marginLeft: 18, background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           🎬 Join Class Now
         </button>
+      )}
+      {guestBookings && guestBookings.length > 0 && (
+        <div style={{ marginTop: 10, marginLeft: 18, padding: '10px 14px', background: '#faf7f2', borderRadius: 10, border: '1px solid #e2dbd4' }}>
+          <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 700 }}>
+            Guest seats ({guestBookings.length})
+          </div>
+          {guestBookings.map(g => (
+            <div key={g.id} style={{ marginBottom: 8 }}>
+              {editingGuest?.id === g.id ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input type="email" value={editingGuest.email}
+                    onChange={e => setEditingGuest(x => ({ ...x, email: e.target.value }))}
+                    style={{ flex: 1, border: '1px solid #e2dbd4', borderRadius: 6, padding: '6px 10px', fontSize: 12, outline: 'none' }}
+                  />
+                  <button onClick={() => callResendInvite(g.id, editingGuest.email)} disabled={!!sendingGuest}
+                    style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    {sendingGuest === g.id ? '...' : 'Send'}
+                  </button>
+                  <button onClick={() => setEditingGuest(null)}
+                    style={{ background: 'none', border: 'none', color: '#7a6e65', cursor: 'pointer', fontSize: 16 }}>×</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#0f0c0c' }}>{g.guest_email}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                      background: g.booked_by ? '#e6f4ec' : '#fff8e6',
+                      color: g.booked_by ? '#1a7a3c' : '#e8a020' }}>
+                      {g.booked_by ? '✅ Joined' : '⏳ Pending'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => setEditingGuest({ id: g.id, email: g.guest_email || '' })}
+                      style={{ background: 'none', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#5a4e47' }}>
+                      ✏️ Edit
+                    </button>
+                    <button onClick={() => callResendInvite(g.id, null)} disabled={!!sendingGuest}
+                      style={{ background: 'none', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#5a4e47', opacity: sendingGuest === g.id ? 0.5 : 1 }}>
+                      {sendingGuest === g.id ? '...' : '📧 Resend'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

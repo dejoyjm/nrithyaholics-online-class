@@ -87,9 +87,19 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [refreshBookingMsg, setRefreshBookingMsg] = useState(null)
   const [revPolicy, setRevPolicy] = useState(null)
   const [pricingRules, setPricingRules] = useState([])
+  const [guestEmails, setGuestEmails] = useState([])
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
+
+  // Keep guestEmails array in sync with seats count
+  useEffect(() => {
+    setGuestEmails(prev => {
+      const next = [...prev]
+      while (next.length < seats - 1) next.push('')
+      return next.slice(0, seats - 1)
+    })
+  }, [seats])
 
   // Check waitlist status when session loads and is full
   useEffect(() => {
@@ -167,11 +177,22 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   }
 
   async function checkExistingBooking(sid) {
-    const { data } = await supabase
-      .from('bookings').select('id')
-      .eq('session_id', sid).eq('booked_by', user.id).eq('status', 'confirmed')
-      .maybeSingle()
-    if (data) setAlreadyBooked(true)
+    const email = user.email
+    let query = supabase.from('bookings').select('id, booked_by, guest_email')
+      .eq('session_id', sid).eq('status', 'confirmed')
+    if (email) {
+      query = query.or(`booked_by.eq.${user.id},guest_email.eq.${email}`)
+    } else {
+      query = query.eq('booked_by', user.id)
+    }
+    const { data } = await query.maybeSingle()
+    if (data) {
+      // Claim guest booking: set booked_by so user sees it in their profile
+      if (!data.booked_by && data.guest_email) {
+        await supabase.from('bookings').update({ booked_by: user.id }).eq('id', data.id)
+      }
+      setAlreadyBooked(true)
+    }
   }
 
   async function handleRefreshBooking() {
@@ -250,11 +271,13 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         return
       }
 
+      const validGuestEmails = guestEmails.filter(e => e.trim())
       sessionStorage.setItem('nrh_pending_payment', JSON.stringify({
         session_id: session.id,
         seats,
         amount_inr,
         order_id: orderData.order_id,
+        guest_emails: validGuestEmails,
       }))
 
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
@@ -294,6 +317,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             amount_inr,
             ticket_price: _ticketPricePerSeat,
             user_id: user.id,
+            guest_emails: validGuestEmails,
           }, token)
 
           if (result.success) {
@@ -678,6 +702,22 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
               <span style={{ fontSize: 13, color: '#7a6e65' }}>max 5</span>
             </div>
           </div>
+
+          {seats > 1 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Guest emails (they'll receive an invite link)</div>
+              {guestEmails.map((email, i) => (
+                <input key={i} type="email" value={email}
+                  onChange={e => setGuestEmails(g => g.map((x, j) => j === i ? e.target.value : x))}
+                  placeholder={`Guest ${i + 1} email`}
+                  style={{ width: '100%', border: '1px solid #e2dbd4', borderRadius: 8, padding: '10px 14px', fontSize: 13, outline: 'none', marginBottom: 8, boxSizing: 'border-box', background: '#faf7f2', color: '#0f0c0c' }}
+                />
+              ))}
+              <div style={{ fontSize: 11, color: '#a09890', lineHeight: 1.5 }}>
+                Guests will get an email to join the class. You can also add them later.
+              </div>
+            </div>
+          )}
 
           {gatewayFeePerSeat > 0 && (
             <div style={{ background: '#faf7f2', borderRadius: 10, padding: 16, marginBottom: 20 }}>
