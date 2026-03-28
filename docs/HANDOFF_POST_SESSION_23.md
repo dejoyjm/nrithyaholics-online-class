@@ -99,3 +99,24 @@ The `fetchAuditBookings` SELECT included `seats` which does not exist on the `bo
 - Removed `seats` from the SELECT string
 - Replaced `b.seats || 1` with `1` in totals accumulator, CSV export (`Tickets` field), and table cell
 - Date inputs now call `fetchAuditBookings(newDate, otherDate)` directly in `onChange` (in addition to setState) so the fetch fires with the correct value immediately rather than waiting for the next render cycle
+
+---
+
+## Post-session hotfix 2 (2026-03-28)
+
+**Commit:** `b8a4972` — fix: audit email from profiles_with_email + verify-payment financial snapshot
+
+### Fix 1: Booking Audit — learner email showing as `—`
+
+`fetchAuditBookings` was querying `profiles` table which has no `email` column. Changed to `profiles_with_email` (a view that joins `profiles` + `auth.users.email`, no RLS). Added `profilesError` logging and a count log so future fetch failures are visible in browser console.
+
+### Fix 2: ticket_price / nrh_share / choreo_share null on all bookings
+
+**Finding:** The financial snapshot block in `verify-payment/index.ts` already existed (lines 484–559). It is inside a `financialsPromise` registered with `EdgeRuntime.waitUntil` and wrapped in a try/catch that previously only logged `'Financial breakdown update failed silently'` — no detail on what failed.
+
+**Action:** Added diagnostic logging:
+- `[financials] starting` — confirms the block fires
+- `[financials] computed` — logs `ticketPricePerSeat`, `marginalNrhShare`, `choreoShare`, `policyName`, `currentCount`
+- `[financials] update ok / update failed` — captures the Supabase UPDATE error if the column update fails
+
+**To diagnose:** Check Supabase function logs (`Dashboard → Functions → verify-payment → Logs`) after the next real booking. The `[financials]` lines will show exactly where it breaks. Most likely candidate: a column that doesn't exist or a permissions issue on `revenue_policies`.
