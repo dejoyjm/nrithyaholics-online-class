@@ -537,16 +537,18 @@ async function callResendInvite(guestBookingId, newEmail) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#0f0c0c' }}>{g.guest_email}</span>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-                      background: g.booked_by ? '#e6f4ec' : '#fff8e6',
-                      color: g.booked_by ? '#1a7a3c' : '#e8a020' }}>
-                      {g.booked_by ? '✅ Joined' : '⏳ Pending'}
+                      background: g.booked_by ? '#e6f4ec' : g.invited_at ? '#fff8e6' : '#f0f0f0',
+                      color: g.booked_by ? '#1a7a3c' : g.invited_at ? '#e8a020' : '#7a6e65' }}>
+                      {g.booked_by ? '✅ Joined' : g.invited_at ? '⏳ Pending' : '📋 Not invited yet'}
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => setEditingGuest({ id: g.id, email: g.guest_email || '' })}
-                      style={{ background: 'none', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#5a4e47' }}>
-                      ✏️ Edit
-                    </button>
+                    {!g.booked_by && (
+                      <button onClick={() => setEditingGuest({ id: g.id, email: g.guest_email || '' })}
+                        style={{ background: 'none', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#5a4e47' }}>
+                        ✏️ Edit
+                      </button>
+                    )}
                     <button onClick={() => callResendInvite(g.id, null)} disabled={!!sendingGuest}
                       style={{ background: 'none', border: '1px solid #e2dbd4', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#5a4e47', opacity: sendingGuest === g.id ? 0.5 : 1 }}>
                       {sendingGuest === g.id ? '...' : '📧 Resend'}
