@@ -436,6 +436,32 @@ serve(async (req) => {
       .maybeSingle()
 
     if (existing) {
+      console.log('[already_existed] booking:', existing.id)
+      const guestEmailList: string[] = Array.isArray(guest_emails)
+        ? guest_emails.map((e: string) => e.trim()).filter(Boolean)
+        : []
+      if (guestEmailList.length > 0) {
+        const { data: existingGuests } = await supabase
+          .from('bookings')
+          .select('id')
+          .eq('primary_booking_id', existing.id)
+          .limit(1)
+        if (!existingGuests || existingGuests.length === 0) {
+          const now = new Date().toISOString()
+          const guestRows = guestEmailList.map((email: string) => ({
+            session_id,
+            booked_by: null,
+            is_guest_booking: true,
+            guest_email: email,
+            primary_booking_id: existing.id,
+            status: 'confirmed',
+            credits_paid: 0,
+            invited_at: now,
+          }))
+          const { error: guestErr } = await supabase.from('bookings').insert(guestRows)
+          console.log('[already_existed] guest insert:', JSON.stringify(guestErr))
+        }
+      }
       return new Response(
         JSON.stringify({ success: true, booking_id: existing.id, already_existed: true }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
