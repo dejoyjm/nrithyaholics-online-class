@@ -460,6 +460,58 @@ serve(async (req) => {
           }))
           const { error: guestErr } = await supabase.from('bookings').insert(guestRows)
           console.log('[already_existed] guest insert:', JSON.stringify(guestErr))
+          if (!guestErr) {
+            // Send invite emails fire-and-forget
+            const invitePromise = (async () => {
+              try {
+                const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+                const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
+                const APP_URL = 'https://online.nrithyaholics.in'
+                if (RESEND_API_KEY) {
+                  const sessionRes2 = await supabase.from('sessions')
+                    .select('title, scheduled_at, duration_minutes').eq('id', session_id).single()
+                  const sessionTitle = sessionRes2.data?.title || 'your dance class'
+                  const sessionDate = sessionRes2.data?.scheduled_at
+                    ? new Date(sessionRes2.data.scheduled_at).toLocaleDateString('en-IN', {
+                        weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                        timeZone: 'Asia/Kolkata',
+                      })
+                    : ''
+                  const sessionUrl = `${APP_URL}/?session=${session_id}`
+                  for (const guestEmail of guestEmailList) {
+                    try {
+                      await fetch('https://api.resend.com/emails', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          from: `NrithyaHolics Online <${RESEND_FROM}>`,
+                          to: [guestEmail],
+                          subject: `You're invited to ${sessionTitle} 💃`,
+                          html: `<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:24px;">
+<h2 style="color:#c8430a;">You've been invited to a dance class!</h2>
+<p>Someone booked a seat for you in <strong>${sessionTitle}</strong>${sessionDate ? ` on ${sessionDate} (IST)` : ''}.</p>
+<p>Visit the link below to view your class and join when it's time:</p>
+<a href="${sessionUrl}" style="display:inline-block;background:#c8430a;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;margin:16px 0;">View My Class →</a>
+<p style="color:#7a6e65;font-size:13px;">This invite was sent to ${guestEmail}. If you have any questions, contact us at bookings@nrithyaholics.in</p>
+</div>`,
+                        }),
+                      })
+                    } catch (emailErr) {
+                      console.error('[already_existed] invite email failed for', guestEmail, emailErr)
+                    }
+                  }
+                }
+              } catch (err) {
+                console.error('[already_existed] invite emails unexpected error', err)
+              }
+            })()
+            try {
+              // @ts-ignore
+              EdgeRuntime.waitUntil(invitePromise)
+            } catch {
+              invitePromise.catch(() => {})
+            }
+          }
         }
       }
       return new Response(
