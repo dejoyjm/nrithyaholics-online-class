@@ -85,3 +85,17 @@ There are still no automated tests. All verification is manual via dev server.
 - Choreographer payout report (export PDF or CSV for a date range)
 - Admin: mark session as settled / payout tracking
 - Waitlist auto-promotion when a booking is cancelled
+
+---
+
+## Post-session hotfix (2026-03-28)
+
+**Commit:** `a546dce` — fix: remove seats from audit query, fix date filter defaults
+
+### Bug: Booking Audit crash — `column bookings.seats does not exist`
+
+The `fetchAuditBookings` SELECT included `seats` which does not exist on the `bookings` table. Fixed:
+
+- Removed `seats` from the SELECT string
+- Replaced `b.seats || 1` with `1` in totals accumulator, CSV export (`Tickets` field), and table cell
+- Date inputs now call `fetchAuditBookings(newDate, otherDate)` directly in `onChange` (in addition to setState) so the fetch fires with the correct value immediately rather than waiting for the next render cycle
