@@ -4,6 +4,7 @@ import ClassroomPage from './ClassroomPage'
 import SetupTestModal from './SetupTestModal'
 import { isIST, getTimezoneCode, formatClassTime } from '../utils/timezone'
 import { resolvePolicy, calculateGatewayFee } from '../utils/revenue'
+import { canJoinNow as computeCanJoin } from '../utils/sessionTime'
 
 function resolveActivePrice(session, pricingRules) {
   const now = new Date()
@@ -366,13 +367,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const isChoreo = user && session.choreographer_id === user.id
   const isHost = isChoreo || profile?.is_admin
 
-  const preJoinMs = isHost
-    ? (session.host_pre_join_minutes_override  ?? platformConfig?.host_pre_join_minutes  ?? 15) * 60 * 1000
-    : (session.guest_pre_join_minutes_override ?? platformConfig?.guest_pre_join_minutes ?? 5)  * 60 * 1000
-  const graceMs = isHost
-    ? (session.host_grace_minutes_override  ?? platformConfig?.host_grace_minutes  ?? 30) * 60 * 1000
-    : (session.guest_grace_minutes_override ?? platformConfig?.guest_grace_minutes ?? 15) * 60 * 1000
-  const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
+  const canJoinNow = computeCanJoin(session, platformConfig, isHost)
 
   // Who can see "Test my setup" — anytime, no time gate
   const canTestSetup = user && session.status !== 'cancelled' && (isChoreo || alreadyBooked || booked)
@@ -405,6 +400,29 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const isMobile = window.innerWidth < 768
 
   // ── Shared JSX chunks (used in both mobile and desktop) ─────────
+
+  const seriesPartsBlock = session.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length > 0 ? (
+    <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', marginBottom: 8 }}>Workshop Schedule</div>
+      {session.series_parts.map((part, idx) => {
+        const partStart = new Date(part.start)
+        const partEnd = new Date(partStart.getTime() + (part.duration_minutes || 60) * 60 * 1000)
+        const dateStr = partStart.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })
+        const startTimeStr = partStart.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+        const endTimeStr = partEnd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+        return (
+          <div key={part.part}>
+            {idx > 0 && <div style={{ height: 1, background: '#e2dbd4', margin: '10px 0' }} />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontWeight: 700, color: '#0f0c0c', fontSize: 14, width: 60, flexShrink: 0 }}>Part {part.part}</div>
+              <div style={{ fontSize: 13, color: '#5a4e47', flexShrink: 0 }}>—</div>
+              <div style={{ fontSize: 14, color: '#3d3530' }}>{dateStr} · {startTimeStr} – {endTimeStr} IST</div>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  ) : null
 
   const badgesAndTitle = (
     <div>
@@ -839,6 +857,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: 20 }}>
           {badgesAndTitle}
           {choreoCard}
+          {seriesPartsBlock}
           {session.description && (
             <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #e2dbd4' }}>
               <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>About this session</div>
@@ -907,6 +926,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
 
         {badgesAndTitle}
         {choreoCard}
+        {seriesPartsBlock}
 
         {session.description && (
           <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #e2dbd4' }}>

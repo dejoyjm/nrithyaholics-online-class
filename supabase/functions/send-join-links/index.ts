@@ -203,6 +203,7 @@ serve(async (req) => {
       .select('id, title, scheduled_at, duration_minutes, choreographer_id, guest_pre_join_minutes_override, reminder_sent_at')
       .in('status', ['open', 'confirmed'])
       .is('reminder_sent_at', null)
+      .eq('session_type', 'single')
 
     if (manualSessionId) {
       // Manual trigger — send for this specific session regardless of timing

@@ -195,28 +195,118 @@ serve(async (req) => {
       ? (session.host_grace_minutes_override  ?? config?.host_grace_minutes  ?? 30)
       : (session.guest_grace_minutes_override ?? config?.guest_grace_minutes ?? 15)
 
-    const nowEpoch       = Math.floor(Date.now() / 1000)
-    const scheduledStart = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
-    const scheduledEnd   = scheduledStart + (session.duration_minutes || 60) * 60
-    const tokenValidFrom = scheduledStart - (preJoinMinutes * 60)
-    const tokenExpiry    = scheduledEnd   + (graceMinutes   * 60)
+    const preJoinSeconds = preJoinMinutes * 60
+    const graceSeconds   = graceMinutes   * 60
 
-    if (nowEpoch < tokenValidFrom) {
-      const minsLeft = Math.ceil((tokenValidFrom - nowEpoch) / 60)
-      return new Response(
-        JSON.stringify({
-          error: 'too_early',
-          message: `Classroom opens in ${minsLeft} minute${minsLeft !== 1 ? 's' : ''}. Come back then!`,
-          opens_at: tokenValidFrom,
-        }),
+    const nowEpoch = Math.floor(Date.now() / 1000)
+
+    let tokenValidFrom: number
+    let tokenExpiry: number
+    let scheduledEnd: number
+
+    if (session.session_type === 'series') {
+      // ── Series session: find the currently active part ───────────────────────
+      const parts: Array<{ part: number; start: string; duration_minutes: number }> =
+        session.series_parts || []
+
+      // Sort ascending by start time
+      parts.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+
+      let activePart: (typeof parts)[0] | null = null
+      for (const p of parts) {
+        const partStart = Math.floor(new Date(p.start).getTime() / 1000)
+        const partEnd   = partStart + (p.duration_minutes || 60) * 60
+        if (nowEpoch >= partStart - preJoinSeconds && nowEpoch <= partEnd + graceSeconds) {
+          activePart = p
+          break
+        }
+      }
+
+      if (activePart) {
+        const partStart  = Math.floor(new Date(activePart.start).getTime() / 1000)
+        const partEnd    = partStart + (activePart.duration_minutes || 60) * 60
+        tokenValidFrom   = partStart - preJoinSeconds
+        tokenExpiry      = partEnd   + graceSeconds
+        scheduledEnd     = partEnd
+      } else {
+        // Not in any active window — check if all done or between parts
+        const allDone = parts.every(p => {
+          const partStart = Math.floor(new Date(p.start).getTime() / 1000)
+          const partEnd   = partStart + (p.duration_minutes || 60) * 60
+          return nowEpoch > partEnd + graceSeconds
+        })
+
+        if (allDone) {
+          return new Response(
+            JSON.stringify({ error: 'session_ended', message: 'This session has ended.' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Find the next upcoming part
+        const nextPart = parts.find(p => {
+          const partStart = Math.floor(new Date(p.start).getTime() / 1000)
+          return nowEpoch < partStart - preJoinSeconds
+        })
+
+        if (nextPart) {
+          const nextPartStart = Math.floor(new Date(nextPart.start).getTime() / 1000)
+          const opensAt = nextPartStart - preJoinSeconds
+
+          // Before Part 1 window
+          if (nextPart.part === parts[0].part) {
+            const minsLeft = Math.ceil((opensAt - nowEpoch) / 60)
+            return new Response(
+              JSON.stringify({
+                error: 'too_early',
+                message: `Classroom opens in ${minsLeft} minute${minsLeft !== 1 ? 's' : ''}. Come back then!`,
+                opens_at: opensAt,
+              }),
+              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Between parts
+          return new Response(
+            JSON.stringify({
+              error: 'between_parts',
+              next_part: nextPart.part,
+              opens_at: opensAt,
+            }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Fallback — treat as ended
+        return new Response(
+          JSON.stringify({ error: 'session_ended', message: 'This session has ended.' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    } else {
+      // ── Single session: existing logic unchanged ─────────────────────────────
+      const scheduledStart = Math.floor(new Date(session.scheduled_at).getTime() / 1000)
+      scheduledEnd   = scheduledStart + (session.duration_minutes || 60) * 60
+      tokenValidFrom = scheduledStart - preJoinSeconds
+      tokenExpiry    = scheduledEnd   + graceSeconds
+
+      if (nowEpoch < tokenValidFrom) {
+        const minsLeft = Math.ceil((tokenValidFrom - nowEpoch) / 60)
+        return new Response(
+          JSON.stringify({
+            error: 'too_early',
+            message: `Classroom opens in ${minsLeft} minute${minsLeft !== 1 ? 's' : ''}. Come back then!`,
+            opens_at: tokenValidFrom,
+          }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (nowEpoch > tokenExpiry) return new Response(
+        JSON.stringify({ error: 'session_ended', message: 'This session has ended.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-
-    if (nowEpoch > tokenExpiry) return new Response(
-      JSON.stringify({ error: 'session_ended', message: 'This session has ended.' }),
-      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
 
     if (!isHost) {
       const { data: booking } = await supabase

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
+import { canJoinNow as computeCanJoin } from '../utils/sessionTime'
 
 const STYLES = ['Bollywood', 'Bharatanatyam', 'Contemporary', 'Hip Hop', 'Kathak', 'Folk', 'Jazz', 'Fusion']
 const LANGUAGES = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Marathi', 'Punjabi', 'Bengali', 'Gujarati']
@@ -465,9 +466,7 @@ const fmt = (d) => new Date(d).toLocaleDateString('en-IN', { weekday: 'short', d
 const sessionStart = new Date(session.scheduled_at).getTime()
 const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
 // Learners are always guests on ProfilePage
-const preJoinMs = (session.guest_pre_join_minutes_override ?? platformConfig?.guest_pre_join_minutes ?? 5) * 60 * 1000
-const graceMs   = (session.guest_grace_minutes_override    ?? platformConfig?.guest_grace_minutes    ?? 15) * 60 * 1000
-const canJoinNow = (Date.now() >= sessionStart - preJoinMs) && (Date.now() <= sessionEnd + graceMs)
+const canJoin = computeCanJoin(session, platformConfig, false)
 
 async function callResendInvite(guestBookingId, newEmail) {
   setSendingGuest(guestBookingId)
@@ -505,7 +504,7 @@ async function callResendInvite(guestBookingId, newEmail) {
           </span>
         </div>
       </div>
-      {canJoinNow && isUpcoming && (onJoinClass || onSessionClick) && (
+      {canJoin && isUpcoming && (onJoinClass || onSessionClick) && (
         <button
           onClick={() => onJoinClass ? onJoinClass(booking.session_id, booking.sessions) : onSessionClick(booking.session_id)}
           style={{ marginTop: 10, marginLeft: 18, background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>

@@ -34,6 +34,11 @@ rzp_live_bYmMMbiG8WZC34
 
 IfKXY0is1AoyaD9T7Zt9QRXJ
 
+
+$creds = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("rzp_live_bYmMMbiG8WZC34:IfKXY0is1AoyaD9T7Zt9QRXJ"))
+Invoke-WebRequest -Uri "https://api.razorpay.com/v1/payments/pay_STnzok77uQpGk6" -Headers @{"Authorization"="Basic $creds"} | Select-Object -ExpandProperty Content
+
+
 supabase link --project-ref vuxqimoqsbqsgvkashak
 
 supabase secrets set RAZORPAY_KEY_SECRET=IfKXY0is1AoyaD9T7Zt9QRXJ
@@ -61,3 +66,406 @@ password : n3jD_bdjYyJmP-kr9CmUorwbX8HeLZlT
 
 sip endpoint : sip.100ms.live
 
+
+##Local SDK
+
+When you're ready to test, the SQL to flip is:
+UPDATE platform_config SET classroom_mode = 'sdk' WHERE id = 1;
+And to roll back:
+UPDATE platform_config SET classroom_mode = 'prebuilt' WHERE id = 1;
+
+
+
+##Railway App
+
+Project ID: b5cbee43-ca16-4756-ac70-4f8f18ad9c9e
+PS C:\Users\dejoy.mathai\OneDrive - Reliance Corporate IT Park Limited\User_Data\Personal\Personal\NrithyaHolics\V2 - Class\nrithyaholics-platform> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+0b96a662e9697b298e624b240ed4ec9b1ae41e7c651fb07553c159dc68560cbe
+
+supabase secrets set MUSIC_BOT_SERVER_SECRET=0b96a662e9697b298e624b240ed4ec9b1ae41e7c651fb07553c159dc68560cbe
+
+Created project music-bot-server on dejoyjm's Projects
+https://railway.com/project/b5cbee43-ca16-4756-ac70-4f8f18ad9c9e
+
+Public Networking: music-bot-server-production.up.railway.app
+
+
+
+music_track_type, music_track_title, music_track_thumb}).eq('id', session.id) → calls onSaved with the updated fields
+  - "Cancel" button → calls onClose
+
+Clear existing track:
+  - Only show if session.music_track_url is already set (i.e. editing existing)
+  - "Remove saved music track" text link at bottom → sets all 4 music fields to null in DB → calls onSaved with nulls
+
+After making all changes:
+- Run: cd frontend && npm run build
+- Fix any build errors before committing
+- Commit to music-bot branch with message: "feat: Phase 2 — music setup UI in ChoreoPage"
+- Push to origin music-bot
+- Do NOT merge to master
+
+● Bash(cd "C:\Users\dejoy.mathai\OneDrive - Reliance Corporate IT Park Limited\User_Data\Personal\Personal\NrithyaHolics\V2 -              Class\nrithyaholics-platform" && git bran…)
+  ⎿  music-bot                                                                                                                       
+● Good. Let me read the handoff docs and the full ChoreoPage before touching anything.                                               
+  Read 2 files (ctrl+o to expand)
+
+● Good — I have the full picture. Now making all changes surgically:
+
+  Change 1: Add musicSession state
+                                                                                                                                     ● Update(frontend\src\pages\ChoreoPage.jsx)
+  ⎿  Added 1 line
+      49    const [loading, setLoading] = useState(true)                                                                                   50    const [showCreate, setShowCreate] = useState(false)
+      51    const [editSession, setEditSession] = useState(null)                                                                           52 +  const [musicSession, setMusicSession] = useState(null)
+      53
+      54    useEffect(() => { fetchSessions() }, [])
+      55
+
+● Change 2: Add music track pill after the date/seats info line
+
+● Update(frontend\src\pages\ChoreoPage.jsx)
+  ⎿  Added 8 lines
+      138                      <span style={{ background: statusColor[s.status] + '22', color: statusColor[s.status],                           fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase'
+           }}>{s.status}</span>                                                                                                            139                    </div>
+      140                    <div style={{ fontSize: 13, color: '#7a6e65' }}>{formatDate(s.scheduled_at)} ·                                     {s.duration_minutes} min · {s.bookings_count || 0}/{s.max_seats} seats</div>
+      141 +                  {s.music_track_url && (
+      142 +                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+      143 +                      {s.music_track_thumb && (
+      144 +                        <img src={s.music_track_thumb} alt="" style={{ width: 24, height: 18, objectFit: 'cover',
+          +borderRadius: 3, flexShrink: 0 }} />
+      145 +                      )}
+      146 +                      <span style={{ fontSize: 12, color: '#c8430a', fontWeight: 600 }}>🎵 {s.music_track_title ||
+          + 'Track ready'}</span>
+      147 +                    </div>
+      148 +                  )}
+      149                  </div>
+      150                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+      151                    <div style={{ fontSize: 16, fontWeight: 800, color: '#0f0c0c' }}>
+
+● Change 3: Add "Set up music" button after the Edit button
+
+● Update(frontend\src\pages\ChoreoPage.jsx)
+  ⎿  Added 11 lines
+      166                        ✏️ Edit                                                                                                   167                      </button>
+      168                    )}                                                                                                            169 +                  {['open', 'draft', 'confirmed'].includes(s.status) && (
+      170 +                    <button onClick={() => setMusicSession(s)}                                                                  171 +                      style={{
+      172 +                        background: s.music_track_url ? '#1a7a3c' : '#faf7f2',
+      173 +                        color: s.music_track_url ? 'white' : '#0f0c0c',
+      174 +                        border: s.music_track_url ? 'none' : '1px solid #e2dbd4',
+      175 +                        borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+          +whiteSpace: 'nowrap',
+      176 +                      }}>
+      177 +                      {s.music_track_url ? '🎵 Music set ✓' : '🎵 Set up music'}
+      178 +                    </button>
+      179 +                  )}
+      180                  </div>
+      181                </div>
+      182              )
+
+● Change 4: Add MusicSetupModal invocation in the return block
+
+● Update(frontend\src\pages\ChoreoPage.jsx)
+  ⎿  Added 11 lines
+      186                                                                                                                                  187        {showCreate && <SessionModal user={user} onClose={() => setShowCreate(false)} onSaved={() => {
+           setShowCreate(false); fetchSessions() }} />}                                                                                    188        {editSession && <SessionModal user={user} session={editSession} onClose={() => setEditSession(null)}
+           onSaved={() => { setEditSession(null); fetchSessions() }} />}                                                                   189 +      {musicSession && (
+      190 +        <MusicSetupModal
+      191 +          session={musicSession}
+      192 +          user={user}
+      193 +          onClose={() => setMusicSession(null)}
+      194 +          onSaved={(updated) => {
+      195 +            setSessions(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s))
+      196 +            setMusicSession(null)
+      197 +          }}
+      198 +        />
+      199 +      )}
+      200      </div>
+      201    )
+      202  }
+
+● Change 5: Add MusicSetupModal component at the bottom of the file
+
+● Update(frontend\src\pages\ChoreoPage.jsx)
+  ⎿  Added 224 lines
+      494        </div>                                                                                                                    495      </div>
+      496    )                                                                                                                             497 +}
+      498 +                                                                                                                                499 +function MusicSetupModal({ session, user, onClose, onSaved }) {
+      500 +  const hasExisting = !!session.music_track_url
+      501 +
+      502 +  const [ytUrl, setYtUrl]         = useState('')
+      503 +  const [fetching, setFetching]   = useState(false)
+      504 +  const [fetchError, setFetchError] = useState(null)
+      505 +  const [track, setTrack]         = useState(
+      506 +    hasExisting
+      507 +      ? { url: session.music_track_url, type: session.music_track_type, title: session.music_track_title, thumb:
+          +session.music_track_thumb }
+      508 +      : null
+      509 +  )
+      510 +  const [uploading, setUploading] = useState(false)
+      511 +  const [saving, setSaving]       = useState(false)
+      512 +
+      513 +  const inputStyle = {
+      514 +    flex: 1, background: '#faf7f2', border: '1px solid #e2dbd4',
+      515 +    borderRadius: 8, padding: '10px 14px', fontSize: 14,
+      516 +    outline: 'none', color: '#0f0c0c', boxSizing: 'border-box',
+      517 +  }
+      518 +
+      519 +  async function fetchYouTubeInfo() {
+      520 +    if (!ytUrl.trim()) return
+      521 +    setFetching(true)
+      522 +    setFetchError(null)
+      523 +    try {
+      524 +      const res = await fetch(
+      525 +        `https://www.youtube.com/oembed?url=${encodeURIComponent(ytUrl.trim())}&format=json`
+      526 +      )
+      527 +      if (!res.ok) throw new Error('Could not fetch track info — check the URL and try again')
+      528 +      const data = await res.json()
+      529 +      setTrack({ url: ytUrl.trim(), type: 'youtube', title: data.title, thumb: data.thumbnail_url })
+      530 +    } catch (err) {
+      531 +      setFetchError(err.message || 'Failed to fetch YouTube info')
+      532 +    } finally {
+      533 +      setFetching(false)
+      534 +    }
+      535 +  }
+      536 +
+      537 +  async function handleMp3Select(e) {
+      538 +    const file = e.target.files?.[0]
+      539 +    if (!file) return
+      540 +    setUploading(true)
+      541 +    setFetchError(null)
+      542 +    try {
+      543 +      const path = `${user.id}/${session.id}/track.mp3`
+      544 +      const { error: uploadError } = await supabase.storage
+      545 +        .from('music-tracks')
+      546 +        .upload(path, file, { upsert: true, contentType: 'audio/mpeg' })
+      547 +      if (uploadError) throw uploadError
+      548 +      const { data: urlData } = supabase.storage.from('music-tracks').getPublicUrl(path)
+      549 +      const title = file.name.replace(/\.mp3$/i, '')
+      550 +      setTrack({ url: urlData.publicUrl, type: 'mp3', title, thumb: null })
+      551 +    } catch (err) {
+      552 +      setFetchError('Upload failed: ' + (err.message || 'Unknown error'))
+      553 +    } finally {
+      554 +      setUploading(false)
+      555 +    }
+      556 +  }
+      557 +
+      558 +  async function handleSave() {
+      559 +    if (!track) return
+      560 +    setSaving(true)
+      561 +    const { error } = await supabase.from('sessions').update({
+      562 +      music_track_url:   track.url,
+      563 +      music_track_type:  track.type,
+      564 +      music_track_title: track.title,
+      565 +      music_track_thumb: track.thumb || null,
+      566 +    }).eq('id', session.id)
+      567 +    if (error) {
+      568 +      setFetchError('Save failed: ' + error.message)
+      569 +      setSaving(false)
+      570 +      return
+      571 +    }
+      572 +    onSaved({
+      573 +      id:                session.id,
+      574 +      music_track_url:   track.url,
+      575 +      music_track_type:  track.type,
+      576 +      music_track_title: track.title,
+      577 +      music_track_thumb: track.thumb || null,
+      578 +    })
+      579 +  }
+      580 +
+      581 +  async function handleRemove() {
+      582 +    setSaving(true)
+      583 +    const { error } = await supabase.from('sessions').update({
+      584 +      music_track_url:   null,
+      585 +      music_track_type:  null,
+      586 +      music_track_title: null,
+      587 +      music_track_thumb: null,
+      588 +    }).eq('id', session.id)
+      589 +    if (error) {
+      590 +      setFetchError('Remove failed: ' + error.message)
+      591 +      setSaving(false)
+      592 +      return
+      593 +    }
+      594 +    onSaved({
+      595 +      id:                session.id,
+      596 +      music_track_url:   null,
+      597 +      music_track_type:  null,
+      598 +      music_track_title: null,
+      599 +      music_track_thumb: null,
+      600 +    })
+      601 +  }
+      602 +
+      603 +  return (
+      604 +    <div
+      605 +      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center',
+          +justifyContent: 'center', zIndex: 300, padding: 24 }}
+      606 +      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      607 +    >
+      608 +      <div style={{ background: 'white', borderRadius: 20, padding: 32, width: '100%', maxWidth: 480, maxHeight:
+          +'90vh', overflowY: 'auto' }}>
+      609 +
+      610 +        {/* Header */}
+      611 +        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24
+          + }}>
+      612 +          <div>
+      613 +            <div style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif' }}>🎵
+          +Music for this session</div>
+      614 +            <div style={{ fontSize: 13, color: '#7a6e65', marginTop: 4 }}>{session.title}</div>
+      615 +          </div>
+      616 +          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer',
+          +color: '#7a6e65', lineHeight: 1, padding: 0 }}>×</button>
+      617 +        </div>
+      618 +
+      619 +        {/* Error box */}
+      620 +        {fetchError && (
+      621 +          <div style={{ background: '#fff3cd', border: '1px solid #f0a500', borderRadius: 8, padding: '10px 14px',
+          + marginBottom: 16, fontSize: 13, color: '#7a4f00' }}>
+      622 +            {fetchError}
+      623 +          </div>
+      624 +        )}
+      625 +
+      626 +        {/* Track preview */}
+      627 +        {track && (
+      628 +          <div style={{ background: '#f0faf4', border: '1px solid #a8e0b8', borderRadius: 10, padding: '12px
+          +14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+      629 +            {track.thumb && (
+      630 +              <img src={track.thumb} alt="" style={{ width: 60, height: 45, objectFit: 'cover', borderRadius: 6,
+          +flexShrink: 0 }} />
+      631 +            )}
+      632 +            <div style={{ flex: 1, minWidth: 0 }}>
+      633 +              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', overflow: 'hidden', textOverflow:
+          +'ellipsis', whiteSpace: 'nowrap' }}>{track.title}</div>
+      634 +              <div style={{ fontSize: 11, color: '#1a7a3c', fontWeight: 600, marginTop: 2, textTransform:
+          +'uppercase' }}>{track.type}</div>
+      635 +            </div>
+      636 +            <button
+      637 +              onClick={() => { setTrack(null); setYtUrl('') }}
+      638 +              style={{ background: 'none', border: 'none', color: '#7a6e65', fontSize: 18, cursor: 'pointer',
+          +flexShrink: 0, lineHeight: 1, padding: 0 }}
+      639 +              title="Clear track"
+      640 +            >✕</button>
+      641 +          </div>
+      642 +        )}
+      643 +
+      644 +        {/* YouTube section */}
+      645 +        <div style={{ marginBottom: 8 }}>
+      646 +          <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1,
+          +marginBottom: 8, fontWeight: 600 }}>Add a YouTube link</div>
+      647 +          <div style={{ display: 'flex', gap: 8 }}>
+      648 +            <input
+      649 +              style={inputStyle}
+      650 +              placeholder="https://youtube.com/watch?v=..."
+      651 +              value={ytUrl}
+      652 +              onChange={e => { setYtUrl(e.target.value); setFetchError(null) }}
+      653 +              onKeyDown={e => { if (e.key === 'Enter') fetchYouTubeInfo() }}
+      654 +            />
+      655 +            <button
+      656 +              onClick={fetchYouTubeInfo}
+      657 +              disabled={fetching || !ytUrl.trim()}
+      658 +              style={{ background: '#0f0c0c', color: 'white', border: 'none', borderRadius: 8, padding: '10px
+          +16px', fontSize: 13, fontWeight: 700, cursor: fetching || !ytUrl.trim() ? 'not-allowed' : 'pointer', whiteSpace:
+          +'nowrap', opacity: fetching || !ytUrl.trim() ? 0.5 : 1 }}>
+      659 +              {fetching ? '…' : 'Fetch Info'}
+      660 +            </button>
+      661 +          </div>
+      662 +        </div>
+      663 +
+      664 +        {/* Divider */}
+      665 +        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
+      666 +          <div style={{ flex: 1, height: 1, background: '#e2dbd4' }} />
+      667 +          <span style={{ fontSize: 12, color: '#a09890', flexShrink: 0 }}>or</span>
+      668 +          <div style={{ flex: 1, height: 1, background: '#e2dbd4' }} />
+      669 +        </div>
+      670 +
+      671 +        {/* MP3 upload */}
+      672 +        <div style={{ marginBottom: 24 }}>
+      673 +          <div style={{ fontSize: 12, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1,
+          +marginBottom: 8, fontWeight: 600 }}>Upload MP3</div>
+      674 +          <input
+      675 +            id="mp3-upload-input"
+      676 +            type="file"
+      677 +            accept=".mp3,audio/mpeg"
+      678 +            onChange={handleMp3Select}
+      679 +            style={{ display: 'none' }}
+      680 +          />
+      681 +          <label htmlFor="mp3-upload-input" style={{
+      682 +            display: 'inline-flex', alignItems: 'center', gap: 8,
+      683 +            background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8,
+      684 +            padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: uploading ? 'not-allowed' : 'pointer',
+          +color: '#0f0c0c',
+      685 +            opacity: uploading ? 0.6 : 1,
+      686 +          }}>
+      687 +            {uploading ? '⏳ Uploading...' : '📁 Choose file'}
+      688 +          </label>
+      689 +        </div>
+      690 +
+      691 +        {/* Action buttons */}
+      692 +        <div style={{ display: 'flex', gap: 10 }}>
+      693 +          <button
+      694 +            onClick={handleSave}
+      695 +            disabled={!track || saving}
+      696 +            style={{ flex: 1, background: !track || saving ? '#a09890' : '#c8430a', color: 'white', border:
+          +'none', borderRadius: 10, padding: '13px', fontSize: 14, fontWeight: 700, cursor: !track || saving ? 'not-allowed'
+          + : 'pointer' }}>
+      697 +            {saving ? 'Saving...' : '💾 Save for this session'}
+      698 +          </button>
+      699 +          <button
+      700 +            onClick={onClose}
+      701 +            style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 10, padding: '13px 18px',
+          +fontSize: 14, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>
+      702 +            Cancel
+      703 +          </button>
+      704 +        </div>
+      705 +
+      706 +        {/* Remove existing track */}
+      707 +        {hasExisting && (
+      708 +          <div style={{ textAlign: 'center', marginTop: 16 }}>
+      709 +            <button
+      710 +              onClick={handleRemove}
+      711 +              disabled={saving}
+      712 +              style={{ background: 'none', border: 'none', color: '#cc0000', fontSize: 12, cursor: 'pointer',
+          +textDecoration: 'underline', padding: 0 }}>
+      713 +              Remove saved music track
+      714 +            </button>
+      715 +          </div>
+      716 +        )}
+      717 +
+      718 +      </div>
+      719 +    </div>
+      720 +  )
+      721  }
+      722   No newline at end of file
+  ⎿  You've hit your limit · resets 7:30pm (Asia/Calcutta)
+
+✻ Worked for 1m 36s
+
+
+
+
+
+
+-- Step 1: Preview first — always check before changing
+SELECT s.id, s.title, s.scheduled_at, s.status
+FROM sessions s
+JOIN profiles p ON s.choreographer_id = p.id
+JOIN auth.users u ON p.id = u.id
+WHERE u.email = 'jishajc@gmail.com'
+ORDER BY s.scheduled_at DESC;
+
+
+-- Delete bookings on these sessions first
+DELETE FROM bookings
+WHERE session_id IN (
+  'af997695-2d41-46fb-8bc2-58d5bfff4dd9',
+  '7df9f53f-9849-42e1-9df2-8cf1f691ae54',
+  '5bedbe18-2855-462e-9314-6c20a9f985e5',
+  '6220fc96-968c-445a-8f83-d2df83b1c0d2'
+);
+
+-- Then delete the sessions
+DELETE FROM sessions
+WHERE id IN (
+  'af997695-2d41-46fb-8bc2-58d5bfff4dd9',
+  '7df9f53f-9849-42e1-9df2-8cf1f691ae54',
+  '5bedbe18-2855-462e-9314-6c20a9f985e5',
+  '6220fc96-968c-445a-8f83-d2df83b1c0d2'
+);

@@ -41,6 +41,20 @@ function getLowestPrice(tiers) {
   return Math.min(...tiers.map(t => t.price))
 }
 
+function formatSeriesDateLine(parts) {
+  if (!parts || parts.length === 0) return ''
+  const sorted = [...parts].sort((a, b) => new Date(a.start) - new Date(b.start))
+  const dayParts = sorted.map(p => {
+    const d = new Date(p.start)
+    const weekday = d.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'Asia/Kolkata' })
+    const day = d.toLocaleDateString('en-IN', { day: 'numeric', timeZone: 'Asia/Kolkata' })
+    return `${weekday} ${day}`
+  })
+  const lastMonth = new Date(sorted[sorted.length - 1].start).toLocaleDateString('en-IN', { month: 'short', timeZone: 'Asia/Kolkata' })
+  const count = sorted.length
+  return `${dayParts.join(' + ')} ${lastMonth} · ${count} part${count !== 1 ? 's' : ''}`
+}
+
 function isDateInRange(dateStr, range) {
   const d = new Date(dateStr)
   const now = new Date()
@@ -152,8 +166,8 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forc
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.7) 100%)' }} />
         )}
 
-        {/* Top-left: style tag badge */}
-        <div style={{ position: 'absolute', top: 10, left: 12 }}>
+        {/* Top-left: style tag badge + optional Workshop Series badge */}
+        <div style={{ position: 'absolute', top: 10, left: 12, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
           <span style={{
             background: 'rgba(0,0,0,0.35)', color: 'white',
             fontSize: 10, fontWeight: 700, letterSpacing: 1,
@@ -161,6 +175,11 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forc
           }}>
             {session.style_tags?.[0] || 'Dance'}
           </span>
+          {session.session_type === 'series' && (
+            <span style={{ background: '#1a1a2e', color: 'white', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
+              🎓 Workshop Series
+            </span>
+          )}
         </div>
 
         {/* Top-right: NEW / hot / full badges */}
@@ -252,9 +271,11 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forc
         </div>
 
         <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 10 }}>
-          📅 {isIST()
-            ? formatDate(session.scheduled_at)
-            : `${formatClassTime(session.scheduled_at, forceIST)} ${forceIST ? 'IST' : getTimezoneCode()}`
+          📅 {session.session_type === 'series' && session.series_parts?.length
+            ? formatSeriesDateLine(session.series_parts)
+            : isIST()
+              ? formatDate(session.scheduled_at)
+              : `${formatClassTime(session.scheduled_at, forceIST)} ${forceIST ? 'IST' : getTimezoneCode()}`
           }
         </div>
 
