@@ -1,0 +1,22 @@
+﻿# Dependencies
+node_modules/
+music-bot-server/node_modules/
+
+# Claude Code internals
+.claude/
+
+# IDE
+.idea/
+.vscode/
+
+# Build output
+frontend/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env files
+.env
+.env.local
+.env.production
