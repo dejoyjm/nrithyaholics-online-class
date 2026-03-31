@@ -43,6 +43,8 @@ async function sendBookingConfirmationEmail(
   amountInr: number,
   seats: number,
   choreographerName: string,
+  sessionType: string,
+  seriesParts: any[] | null,
   sessionId: string,
 ) {
   try {
@@ -77,6 +79,46 @@ async function sendBookingConfirmationEmail(
     const gcalStart = sessionDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
     const gcalEnd   = endTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
     const firstName  = toName?.split(' ')[0] || 'there'
+
+    // Series-aware date section and CTA button
+    const isSeries = sessionType === 'series' && Array.isArray(seriesParts) && seriesParts.length > 0
+    let dateTimeRows: string
+    let sessionCtaButton: string
+    let subject: string
+
+    if (isSeries) {
+      const sortedParts = [...seriesParts].sort((a: any, b: any) => new Date(a.start).getTime() - new Date(b.start).getTime())
+      const partLines = sortedParts.map((p: any, idx: number) => {
+        const pd = new Date(p.start)
+        const pdStr = pd.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })
+        const ptStr = pd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+        const pe = new Date(pd.getTime() + p.duration_minutes * 60 * 1000)
+        const peStr = pe.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+        const sep = idx < sortedParts.length - 1 ? '<hr style="border:none;border-top:1px solid #e2dbd4;margin:8px 0;"/>' : ''
+        return `<div style="font-size:13px;color:#0f0c0c;font-weight:600;padding:4px 0;">Part ${p.part} — ${pdStr} · ${ptStr} – ${peStr} IST</div>${sep}`
+      }).join('')
+      dateTimeRows = `
+        <tr>
+          <td colspan="2" style="padding:6px 0 4px; font-size:13px; color:#7a6e65; font-weight:700;">📚 Your Workshop Schedule</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding:4px 0 8px;">${partLines}</td>
+        </tr>`
+      sessionCtaButton = `<a href="${sessionUrl}" style="display:block;background:#5b4fcf;color:white;text-decoration:none;padding:16px;border-radius:8px;font-size:14px;font-weight:700;text-align:center;margin-bottom:8px;">🎓 Go to Workshop Hub →</a>`
+      subject = `Confirmed: ${sessionTitle} — Workshop Series`
+    } else {
+      dateTimeRows = `
+        <tr>
+          <td style="padding:6px 0; font-size:13px; color:#7a6e65; width:40%;">📅 Date</td>
+          <td style="padding:6px 0; font-size:13px; color:#0f0c0c; font-weight:600;">${dateStr}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0; font-size:13px; color:#7a6e65;">⏰ Time</td>
+          <td style="padding:6px 0; font-size:13px; color:#0f0c0c; font-weight:600;">${timeStr} – ${endTimeStr} IST</td>
+        </tr>`
+      sessionCtaButton = `<a href="${sessionUrl}" style="display:block;background:#0f0c0c;color:white;text-decoration:none;padding:16px;border-radius:8px;font-size:14px;font-weight:700;text-align:center;margin-bottom:8px;">Join Class →</a>`
+      subject = `Confirmed: ${sessionTitle} on ${dateStr}`
+    }
 
     const html = `
 <!DOCTYPE html>
@@ -124,16 +166,9 @@ async function sendBookingConfirmationEmail(
       </div>
 
       <table style="width:100%; border-collapse:collapse;">
+        ${dateTimeRows}
         <tr>
-          <td style="padding:6px 0; font-size:13px; color:#7a6e65; width:40%;">📅 Date</td>
-          <td style="padding:6px 0; font-size:13px; color:#0f0c0c; font-weight:600;">${dateStr}</td>
-        </tr>
-        <tr>
-          <td style="padding:6px 0; font-size:13px; color:#7a6e65;">⏰ Time</td>
-          <td style="padding:6px 0; font-size:13px; color:#0f0c0c; font-weight:600;">${timeStr} – ${endTimeStr} IST</td>
-        </tr>
-        <tr>
-          <td style="padding:6px 0; font-size:13px; color:#7a6e65;">🎟️ Seats</td>
+          <td style="padding:6px 0; font-size:13px; color:#7a6e65; width:40%;">🎟️ Seats</td>
           <td style="padding:6px 0; font-size:13px; color:#0f0c0c; font-weight:600;">${seats} seat${seats > 1 ? 's' : ''}</td>
         </tr>
         <tr>
@@ -157,6 +192,7 @@ async function sendBookingConfirmationEmail(
 
     <!-- Action buttons -->
     <div style="max-width:400px; margin:0 auto 24px;">
+      ${sessionCtaButton}
       <a href="${APP_URL}/?test=1"
          style="display:block; background:#c8430a; color:white; text-decoration:none;
                 padding:16px; border-radius:8px; font-size:14px; font-weight:700;
@@ -218,7 +254,7 @@ async function sendBookingConfirmationEmail(
       body: JSON.stringify({
         from: `NrithyaHolics Online <${RESEND_FROM}>`,
         to:   [toEmail],
-        subject: `Confirmed: ${sessionTitle} on ${dateStr}`,
+        subject,
         html,
       }),
     })
@@ -735,7 +771,7 @@ serve(async (req) => {
     const [sessionRes, profileRes] = await Promise.all([
       supabase
         .from('sessions')
-        .select('title, scheduled_at, duration_minutes, choreographer_id')
+        .select('*')
         .eq('id', session_id)
         .single(),
       supabase
@@ -772,6 +808,8 @@ serve(async (req) => {
           amount_inr,
           seats || 1,
           choreographerName,
+          sessionData.session_type || 'single',
+          sessionData.series_parts || null,
           session_id,
         )
         if (sent) {

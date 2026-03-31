@@ -131,6 +131,9 @@ export default function SessionsTab({ sessions, waitlistCounts, onRefresh }) {
               <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>{s.profiles?.full_name || '—'}</td>
               <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47', whiteSpace: 'nowrap' }}>
                 {new Date(s.scheduled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {s.session_type === 'series' && Array.isArray(s.series_parts) && s.series_parts.length > 1 && (
+                  <span style={{ marginLeft: 6, fontSize: 11, color: '#5b4fcf', fontWeight: 700 }}>· Series · {s.series_parts.length} parts</span>
+                )}
               </td>
               <td style={{ padding: '14px 20px', fontSize: 13, color: '#5a4e47' }}>
                 {s.bookings_count || 0} / {s.max_seats || '—'}
@@ -353,6 +356,17 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
               </select>
             </div>
           </div>
+          {session.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length > 0 && (
+            <div style={{ background: '#fff8e6', border: '1px solid #f0c040', borderRadius: 8, padding: 12, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, color: '#7a5a00', marginBottom: 8 }}>Workshop Series: {session.series_parts.length} parts</div>
+              {[...session.series_parts].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()).map((p, idx) => (
+                <div key={p.part} style={{ color: '#5a4e47', marginBottom: idx < session.series_parts.length - 1 ? 6 : 0 }}>
+                  <strong>Part {p.part}</strong> — {new Date(p.start).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} · {new Date(p.start).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })} ({p.duration_minutes} min)
+                </div>
+              ))}
+              <div style={{ fontSize: 12, color: '#a09890', marginTop: 10 }}>To edit series dates, ask the choreographer to update via their dashboard.</div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             <div>
               <label style={labelStyle}>Price (₹)</label>
