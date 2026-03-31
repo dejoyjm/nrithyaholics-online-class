@@ -82,8 +82,8 @@ export default function Controls({
             background: viewMode === 'self' ? '#c8430a' : '#2a2a2a',
           }}
         >
-          {viewMode === 'class' ? '📷' : '👥'}
-          <span>{viewMode === 'class' ? 'See Yourself' : 'See Class'}</span>
+          {viewMode === 'class' ? '🪞' : '👥'}
+          <span>{viewMode === 'class' ? 'See Myself' : 'See Class'}</span>
         </button>
       )}
 
