@@ -316,36 +316,116 @@ function SessionModal({ user, session, onClose, onSaved }) {
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
+  // ── Session type & series parts ──────────────────────────────
+  const [sessionType, setSessionType] = useState(session?.session_type ?? 'single')
+  const [seriesParts, setSeriesParts] = useState(() => {
+    if (session?.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length >= 2) {
+      return session.series_parts.map(p => {
+        const d = new Date(p.start)
+        const t = parseTimeString(`${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`)
+        return { part: p.part, date: toLocalDateString(p.start), hour: t.hour, minute: t.minute, duration: p.duration_minutes || 60 }
+      })
+    }
+    return [
+      { part: 1, date: '', hour: 9, minute: '00', duration: 60 },
+      { part: 2, date: '', hour: 9, minute: '00', duration: 60 },
+    ]
+  })
+
+  function addOneDay(dateStr) {
+    if (!dateStr) return ''
+    const d = new Date(dateStr + 'T12:00:00')
+    d.setDate(d.getDate() + 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  }
+
+  function buildPartISO(part) {
+    const timeStr = `${String(part.hour).padStart(2,'0')}:${part.minute}:00`
+    return (schedulingInIST && !isIST())
+      ? new Date(`${part.date}T${timeStr}+05:30`).toISOString()
+      : new Date(`${part.date}T${timeStr}`).toISOString()
+  }
+
+  function updatePart(idx, field, val) {
+    setSeriesParts(ps => ps.map((p, i) => i === idx ? { ...p, [field]: val } : p))
+  }
+
+  function handleToggleType(type) {
+    if (type === 'single' && sessionType === 'series') {
+      if (!window.confirm('Switching to Single Class will remove the series schedule. Continue?')) return
+    }
+    if (type === 'series' && sessionType !== 'series') {
+      // Seed Part 1 from current single form; clone Part 2 from Part 1 with date +1 day
+      const p2date = form.date ? addOneDay(form.date) : ''
+      setSeriesParts([
+        { part: 1, date: form.date || '', hour: form.hour, minute: form.minute, duration: form.duration },
+        { part: 2, date: p2date, hour: form.hour, minute: form.minute, duration: form.duration },
+      ])
+    }
+    setSessionType(type)
+  }
+
   async function handleSave() {
-    if (!form.title || !form.date || form.hour === '' || !form.minute) {
-      alert('Please fill in title, date and time')
+    if (!form.title) {
+      alert('Please fill in a title')
       return
     }
     setSaving(true)
-    const timeStr = `${String(form.hour).padStart(2,'0')}:${form.minute}:00`
-    // If user is not in IST but is scheduling in IST, append the +05:30 offset so
-    // the browser doesn't misinterpret the entered time as local (e.g. SGT) time.
-    const scheduledAt = (schedulingInIST && !isIST())
-      ? new Date(`${form.date}T${timeStr}+05:30`).toISOString()
-      : new Date(`${form.date}T${timeStr}`).toISOString()
+    let scheduledAt, durationMinutes, seriesPartsPayload = null
+
+    if (sessionType === 'single') {
+      if (!form.date || form.hour === '' || !form.minute) {
+        alert('Please fill in date and time')
+        setSaving(false)
+        return
+      }
+      const timeStr = `${String(form.hour).padStart(2,'0')}:${form.minute}:00`
+      scheduledAt = (schedulingInIST && !isIST())
+        ? new Date(`${form.date}T${timeStr}+05:30`).toISOString()
+        : new Date(`${form.date}T${timeStr}`).toISOString()
+      durationMinutes = form.duration
+    } else {
+      if (seriesParts.some(p => !p.date)) {
+        alert('Please set a date for all parts before saving.')
+        setSaving(false)
+        return
+      }
+      for (let i = 1; i < seriesParts.length; i++) {
+        if (new Date(buildPartISO(seriesParts[i])) <= new Date(buildPartISO(seriesParts[i - 1]))) {
+          alert('Part dates must be in order (earliest first).')
+          setSaving(false)
+          return
+        }
+      }
+      scheduledAt = buildPartISO(seriesParts[0])
+      durationMinutes = seriesParts[0].duration
+      seriesPartsPayload = seriesParts.map(p => ({
+        part: p.part,
+        start: buildPartISO(p),
+        duration_minutes: p.duration,
+      }))
+    }
+
     const payload = {
-      title:           form.title,
-      description:     form.description,
-      style_tags:      [form.style],
-      skill_level:     form.level,
-      scheduled_at:    scheduledAt,
-      duration_minutes: form.duration,
-      price_tiers:     [{ seats: form.max_seats, price: form.price }],
-      min_seats:       form.min_seats,
-      max_seats:       form.max_seats,
-      cover_photo_url:      coverUrl || null,
-      cover_photo_focal_x:  coverUrl ? coverFocalX : null,
-      cover_photo_focal_y:  coverUrl ? coverFocalY : null,
-      card_thumbnail_url:   thumbnailUrl || null,
-      card_thumbnail_focal_x: thumbnailUrl ? thumbnailFocalX : null,
-      card_thumbnail_focal_y: thumbnailUrl ? thumbnailFocalY : null,
-      age_groups:           form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
-      choreo_reference_url: form.choreo_reference_url.trim() || null,
+      title:            form.title,
+      description:      form.description,
+      style_tags:       [form.style],
+      skill_level:      form.level,
+      scheduled_at:     scheduledAt,
+      duration_minutes: durationMinutes,
+      price_tiers:      [{ seats: form.max_seats, price: form.price }],
+      min_seats:        form.min_seats,
+      max_seats:        form.max_seats,
+      cover_photo_url:          coverUrl || null,
+      cover_photo_focal_x:      coverUrl ? coverFocalX : null,
+      cover_photo_focal_y:      coverUrl ? coverFocalY : null,
+      card_thumbnail_url:       thumbnailUrl || null,
+      card_thumbnail_focal_x:   thumbnailUrl ? thumbnailFocalX : null,
+      card_thumbnail_focal_y:   thumbnailUrl ? thumbnailFocalY : null,
+      age_groups:               form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
+      choreo_reference_url:     form.choreo_reference_url.trim() || null,
+      session_type:             sessionType,
+      series_parts:             seriesPartsPayload,
     }
     let error, savedSessionId
     if (isEdit) {
@@ -523,51 +603,110 @@ function SessionModal({ user, session, onClose, onSaved }) {
             </div>
           </div>
 
-          {/* Date + Time ── NEW: hour + minute dropdowns, 24x7, 15-min granularity */}
+          {/* Session type toggle */}
           <div>
-            <label style={labelStyle}>Date & Time *</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr', gap: 10 }}>
-              {/* Date */}
-              <input type="date" style={inputStyle} value={form.date}
-                onChange={e => set('date', e.target.value)}
-                min={new Date().toISOString().split('T')[0]} />
-              {/* Hour */}
-              <select style={inputStyle} value={form.hour} onChange={e => set('hour', Number(e.target.value))}>
-                {HOURS.map(h => (
-                  <option key={h} value={h}>{fmtHour(h)}</option>
-                ))}
-              </select>
-              {/* Minute */}
-              <select style={inputStyle} value={form.minute} onChange={e => set('minute', e.target.value)}>
-                {MINUTES.map(m => (
-                  <option key={m} value={m}>:{m}</option>
-                ))}
-              </select>
+            <label style={labelStyle}>Session Type</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['single', 'series'].map(type => (
+                <button key={type} type="button" onClick={() => handleToggleType(type)} style={{
+                  padding: '8px 18px', borderRadius: 20, border: '1px solid #e2dbd4', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                  background: sessionType === type ? '#0f0c0c' : '#faf7f2',
+                  color: sessionType === type ? 'white' : '#5a4e47',
+                }}>
+                  {type === 'single' ? 'Single Class' : 'Workshop Series'}
+                </button>
+              ))}
             </div>
-            <div style={{ fontSize: 11, color: '#a09890', marginTop: 6 }}>
-              {form.date && form.hour !== '' ? (() => {
-                const d = new Date(`${form.date}T${String(form.hour).padStart(2,'0')}:${form.minute}:00`)
-                return `Scheduled: ${d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} at ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`
-              })() : 'Select a date and time'}
-            </div>
-            {!isIST() && (() => {
-              const istPreview = toISTPreview(form.date, form.hour, schedulingInIST)
-              return istPreview ? (
-                <div style={{ fontSize: 12, color: '#c8430a', marginTop: 4 }}>
-                  → {istPreview} IST (India)
-                </div>
-              ) : null
-            })()}
           </div>
 
-          {/* Duration + Price */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Date + Time — single only */}
+          {sessionType === 'single' && (
             <div>
-              <label style={labelStyle}>Duration (minutes)</label>
-              <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
-                {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
-              </select>
+              <label style={labelStyle}>Date & Time *</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr', gap: 10 }}>
+                <input type="date" style={inputStyle} value={form.date}
+                  onChange={e => set('date', e.target.value)}
+                  min={new Date().toISOString().split('T')[0]} />
+                <select style={inputStyle} value={form.hour} onChange={e => set('hour', Number(e.target.value))}>
+                  {HOURS.map(h => (
+                    <option key={h} value={h}>{fmtHour(h)}</option>
+                  ))}
+                </select>
+                <select style={inputStyle} value={form.minute} onChange={e => set('minute', e.target.value)}>
+                  {MINUTES.map(m => (
+                    <option key={m} value={m}>:{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ fontSize: 11, color: '#a09890', marginTop: 6 }}>
+                {form.date && form.hour !== '' ? (() => {
+                  const d = new Date(`${form.date}T${String(form.hour).padStart(2,'0')}:${form.minute}:00`)
+                  return `Scheduled: ${d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} at ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                })() : 'Select a date and time'}
+              </div>
+              {!isIST() && (() => {
+                const istPreview = toISTPreview(form.date, form.hour, schedulingInIST)
+                return istPreview ? (
+                  <div style={{ fontSize: 12, color: '#c8430a', marginTop: 4 }}>
+                    → {istPreview} IST (India)
+                  </div>
+                ) : null
+              })()}
             </div>
+          )}
+
+          {/* Series parts — series only */}
+          {sessionType === 'series' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label style={labelStyle}>Workshop Parts</label>
+              {seriesParts.map((part, idx) => (
+                <div key={part.part} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#5b4fcf', marginBottom: 8 }}>Part {part.part}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.9fr', gap: 8 }}>
+                    <input type="date" style={inputStyle} value={part.date}
+                      onChange={e => updatePart(idx, 'date', e.target.value)}
+                      min={new Date().toISOString().split('T')[0]} />
+                    <select style={inputStyle} value={part.hour} onChange={e => updatePart(idx, 'hour', Number(e.target.value))}>
+                      {HOURS.map(h => (
+                        <option key={h} value={h}>{fmtHour(h)}</option>
+                      ))}
+                    </select>
+                    <select style={inputStyle} value={part.minute} onChange={e => updatePart(idx, 'minute', e.target.value)}>
+                      {MINUTES.map(m => (
+                        <option key={m} value={m}>:{m}</option>
+                      ))}
+                    </select>
+                    <select style={inputStyle} value={part.duration} onChange={e => updatePart(idx, 'duration', Number(e.target.value))}>
+                      {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                    </select>
+                  </div>
+                </div>
+              ))}
+              {seriesParts.length === 2 && (
+                <button type="button" onClick={() => setSeriesParts(ps => [...ps, { part: 3, date: addOneDay(ps[1].date), hour: ps[1].hour, minute: ps[1].minute, duration: ps[1].duration }])}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: '1px dashed #5b4fcf', color: '#5b4fcf', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                  + Add Part 3
+                </button>
+              )}
+              {seriesParts.length === 3 && (
+                <button type="button" onClick={() => setSeriesParts(ps => ps.slice(0, 2))}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: '1px solid #cc0000', color: '#cc0000', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                  − Remove Part 3
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Duration + Price */}
+          <div style={{ display: 'grid', gridTemplateColumns: sessionType === 'single' ? '1fr 1fr' : '1fr', gap: 16 }}>
+            {sessionType === 'single' && (
+              <div>
+                <label style={labelStyle}>Duration (minutes)</label>
+                <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
+                  {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label style={labelStyle}>Price per seat (₹)</label>
               <input type="number" style={inputStyle} value={form.price} onChange={e => set('price', Number(e.target.value))} min="0" />
