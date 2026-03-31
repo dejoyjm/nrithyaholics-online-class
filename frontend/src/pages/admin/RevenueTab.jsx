@@ -24,6 +24,13 @@ export default function RevenueTab({ choreographers, sessions }) {
   const [simGatewayPct2, setSimGatewayPct2] = useState(3)
   const [simResult2, setSimResult2] = useState(null)
 
+  // Payout section
+  const [payouts, setPayouts] = useState([])
+  const [loadingPayouts, setLoadingPayouts] = useState(true)
+  const [payoutChoreoFilter, setPayoutChoreoFilter] = useState('')
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState('pending')
+  const [expandedChoreos, setExpandedChoreos] = useState({})
+
   // Booking audit
   const [allBookings, setAllBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
@@ -33,6 +40,7 @@ export default function RevenueTab({ choreographers, sessions }) {
   const [filterDateTo, setFilterDateTo] = useState('')
 
   useEffect(() => { fetchPolicies() }, [])
+  useEffect(() => { fetchPayouts() }, [])
   useEffect(() => { fetchAuditBookings(filterDateFrom, filterDateTo) }, [filterDateFrom, filterDateTo])
 
   async function fetchPolicies() {
@@ -99,6 +107,77 @@ export default function RevenueTab({ choreographers, sessions }) {
     console.log('[audit fetch]', { fromDate, toDate, count: enriched.length })
     setAllBookings(enriched)
     setLoadingBookings(false)
+  }
+
+  async function fetchPayouts() {
+    setLoadingPayouts(true)
+    const { data: sessionsData } = await supabase
+      .from('sessions')
+      .select('*')
+      .in('status', ['confirmed', 'completed'])
+      .order('scheduled_at', { ascending: false })
+    if (!sessionsData || sessionsData.length === 0) { setPayouts([]); setLoadingPayouts(false); return }
+    const sessionIds = sessionsData.map(s => s.id)
+    const { data: bookingsData } = await supabase
+      .from('bookings')
+      .select('*')
+      .in('session_id', sessionIds)
+      .eq('status', 'confirmed')
+      .gt('choreo_share', 0)
+    if (!bookingsData || bookingsData.length === 0) { setPayouts([]); setLoadingPayouts(false); return }
+    const choreoIds = [...new Set(sessionsData.map(s => s.choreographer_id).filter(Boolean))]
+    const { data: profilesData } = await supabase.from('profiles').select('*').in('id', choreoIds)
+    const profileMap = Object.fromEntries((profilesData || []).map(p => [p.id, p]))
+    const sessionMap = Object.fromEntries(sessionsData.map(s => [s.id, s]))
+    const sessionGroups = {}
+    bookingsData.forEach(b => {
+      if (!sessionGroups[b.session_id]) sessionGroups[b.session_id] = { session: sessionMap[b.session_id], bookings: [] }
+      sessionGroups[b.session_id].bookings.push(b)
+    })
+    const rows = Object.values(sessionGroups)
+      .filter(({ session }) => session)
+      .map(({ session, bookings }) => {
+        const choreo = profileMap[session.choreographer_id]
+        const totalShare = bookings.reduce((sum, b) => sum + (b.choreo_share || 0), 0)
+        const settledAts = bookings.map(b => b.choreo_share_settled_at).filter(Boolean)
+        const settledAt = settledAts.length === bookings.length && settledAts.length > 0
+          ? [...settledAts].sort().at(-1) : null
+        return {
+          sessionId: session.id, sessionTitle: session.title,
+          sessionDate: session.scheduled_at, sessionStatus: session.status,
+          choreoId: session.choreographer_id,
+          choreoName: choreo?.full_name || 'Unknown', choreoAvatar: choreo?.avatar_url || null,
+          totalShare, bookingCount: bookings.length, settledAt,
+        }
+      })
+    rows.sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate))
+    setPayouts(rows)
+    setLoadingPayouts(false)
+  }
+
+  async function markSettled(row) {
+    if (!window.confirm(`Mark ₹${row.totalShare.toLocaleString('en-IN')} payout to ${row.choreoName} for "${row.sessionTitle}" as settled?`)) return
+    const { data: authData } = await supabase.auth.getSession()
+    const adminId = authData?.session?.user?.id || null
+    await supabase.from('bookings')
+      .update({ choreo_share_settled_at: new Date().toISOString(), choreo_share_settled_by: adminId })
+      .eq('session_id', row.sessionId).eq('status', 'confirmed')
+    fetchPayouts()
+  }
+
+  async function markSettledAll(choreoId, choreoName) {
+    const pendingRows = payouts.filter(r => r.choreoId === choreoId && !r.settledAt)
+    if (pendingRows.length === 0) return
+    const total = pendingRows.reduce((sum, r) => sum + r.totalShare, 0)
+    if (!window.confirm(`Mark all pending payouts (₹${total.toLocaleString('en-IN')}) to ${choreoName} as settled? Covers ${pendingRows.length} session(s).`)) return
+    const { data: authData } = await supabase.auth.getSession()
+    const adminId = authData?.session?.user?.id || null
+    for (const row of pendingRows) {
+      await supabase.from('bookings')
+        .update({ choreo_share_settled_at: new Date().toISOString(), choreo_share_settled_by: adminId })
+        .eq('session_id', row.sessionId).eq('status', 'confirmed')
+    }
+    fetchPayouts()
   }
 
   async function handleSavePolicy(form, slabs) {
@@ -195,6 +274,192 @@ export default function RevenueTab({ choreographers, sessions }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+      {/* SECTION 0: Choreographer Payouts */}
+      {(() => {
+        const choreoSummaryMap = {}
+        payouts.forEach(row => {
+          if (!choreoSummaryMap[row.choreoId]) {
+            choreoSummaryMap[row.choreoId] = { choreoId: row.choreoId, choreoName: row.choreoName, choreoAvatar: row.choreoAvatar, sessionCount: 0, pendingAmount: 0, settledAmount: 0 }
+          }
+          choreoSummaryMap[row.choreoId].sessionCount += 1
+          if (row.settledAt) choreoSummaryMap[row.choreoId].settledAmount += row.totalShare
+          else choreoSummaryMap[row.choreoId].pendingAmount += row.totalShare
+        })
+        const choreoSummaryList = Object.values(choreoSummaryMap).sort((a, b) => b.pendingAmount - a.pendingAmount)
+        const payoutChoreosForFilter = choreoSummaryList.map(c => ({ id: c.choreoId, name: c.choreoName }))
+        const filteredPayouts = payouts.filter(row => {
+          if (payoutChoreoFilter && row.choreoId !== payoutChoreoFilter) return false
+          if (payoutStatusFilter === 'pending' && row.settledAt) return false
+          if (payoutStatusFilter === 'settled' && !row.settledAt) return false
+          return true
+        })
+        function exportPayoutsCSV() {
+          if (filteredPayouts.length === 0) return
+          const rows = [['Choreographer', 'Session', 'Date', 'Bookings', 'Choreo Share', 'Status', 'Settled At', 'Settled By']]
+          filteredPayouts.forEach(row => rows.push([
+            row.choreoName, row.sessionTitle,
+            new Date(row.sessionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+            row.bookingCount, row.totalShare,
+            row.settledAt ? 'Settled' : 'Pending',
+            row.settledAt ? new Date(row.settledAt).toLocaleDateString('en-IN') : '', '',
+          ]))
+          const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+          const blob = new Blob([csv], { type: 'text/csv' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a'); a.href = url; a.download = `nrh-payouts-${new Date().toISOString().split('T')[0]}.csv`; a.click()
+          URL.revokeObjectURL(url)
+        }
+        const thP = { padding: '10px 12px', textAlign: 'left', fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '2px solid #f0ebe6', whiteSpace: 'nowrap' }
+        const tdP = { padding: '10px 12px', fontSize: 13, color: '#0f0c0c', borderBottom: '1px solid #f8f4f0' }
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0 }}>💸 Choreographer Payouts</h3>
+              <button onClick={exportPayoutsCSV} disabled={filteredPayouts.length === 0}
+                style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: filteredPayouts.length === 0 ? 'not-allowed' : 'pointer', color: '#5a4e47', opacity: filteredPayouts.length === 0 ? 0.5 : 1 }}>
+                📥 Export CSV
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={payoutChoreoFilter} onChange={e => setPayoutChoreoFilter(e.target.value)}
+                style={{ border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'white' }}>
+                <option value="">All Choreographers</option>
+                {payoutChoreosForFilter.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <div style={{ display: 'flex', gap: 4, background: '#f0ebe6', borderRadius: 8, padding: 3 }}>
+                {['all', 'pending', 'settled'].map(s => (
+                  <button key={s} onClick={() => setPayoutStatusFilter(s)}
+                    style={{ background: payoutStatusFilter === s ? 'white' : 'transparent', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: payoutStatusFilter === s ? '#0f0c0c' : '#7a6e65', boxShadow: payoutStatusFilter === s ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <span style={{ fontSize: 13, color: '#7a6e65' }}>{loadingPayouts ? 'Loading...' : `${filteredPayouts.length} session${filteredPayouts.length !== 1 ? 's' : ''}`}</span>
+            </div>
+            {loadingPayouts ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#7a6e65' }}>Loading payouts...</div>
+            ) : payouts.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#7a6e65', background: '#faf7f2', borderRadius: 12, border: '1px solid #e2dbd4' }}>
+                No sessions with choreo_share found. Confirmed bookings with choreo_share &gt; 0 will appear here.
+              </div>
+            ) : (
+              <>
+                {/* Per-choreographer summary strips */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+                  {choreoSummaryList.filter(c => !payoutChoreoFilter || c.choreoId === payoutChoreoFilter).map(choreo => {
+                    const isExpanded = !!expandedChoreos[choreo.choreoId]
+                    const choreoRows = filteredPayouts.filter(r => r.choreoId === choreo.choreoId)
+                    return (
+                      <div key={choreo.choreoId}>
+                        <div onClick={() => setExpandedChoreos(e => ({ ...e, [choreo.choreoId]: !e[choreo.choreoId] }))}
+                          style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: isExpanded ? '12px 12px 0 0' : 12, padding: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e2dbd4', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#7a6e65', fontWeight: 700 }}>
+                            {choreo.choreoAvatar ? <img src={choreo.choreoAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (choreo.choreoName?.[0] || '?')}
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#0f0c0c', flex: 1, minWidth: 120 }}>{choreo.choreoName}</div>
+                          <div style={{ fontSize: 13, color: '#7a6e65', whiteSpace: 'nowrap' }}>{choreo.sessionCount} session{choreo.sessionCount !== 1 ? 's' : ''}</div>
+                          {choreo.pendingAmount > 0 && <div style={{ fontSize: 13, fontWeight: 700, color: '#e8a020', whiteSpace: 'nowrap' }}>₹{choreo.pendingAmount.toLocaleString('en-IN')} pending</div>}
+                          {choreo.settledAmount > 0 && <div style={{ fontSize: 13, color: '#1a7a3c', whiteSpace: 'nowrap' }}>₹{choreo.settledAmount.toLocaleString('en-IN')} settled</div>}
+                          {choreo.pendingAmount > 0 && (
+                            <button onClick={e => { e.stopPropagation(); markSettledAll(choreo.choreoId, choreo.choreoName) }}
+                              style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              Settle All Pending →
+                            </button>
+                          )}
+                          <span style={{ color: '#7a6e65', fontSize: 12 }}>{isExpanded ? '▲' : '▼'}</span>
+                        </div>
+                        {isExpanded && choreoRows.length > 0 && (
+                          <div style={{ border: '1px solid #e2dbd4', borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                              <tbody>
+                                {choreoRows.map(row => (
+                                  <tr key={row.sessionId} style={{ background: 'white', borderBottom: '1px solid #f8f4f0' }}>
+                                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#0f0c0c' }}>{row.sessionTitle}</td>
+                                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#7a6e65', whiteSpace: 'nowrap' }}>
+                                      {new Date(row.sessionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
+                                    </td>
+                                    <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 700, color: '#0f0c0c', whiteSpace: 'nowrap' }}>₹{row.totalShare.toLocaleString('en-IN')}</td>
+                                    <td style={{ padding: '10px 12px' }}>
+                                      {row.settledAt
+                                        ? <span style={{ background: '#e6f4ec', color: '#1a7a3c', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>✓ Settled</span>
+                                        : <span style={{ background: '#fff8e6', color: '#e8a020', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>⏳ Pending</span>}
+                                    </td>
+                                    <td style={{ padding: '10px 12px' }}>
+                                      {row.settledAt
+                                        ? <span style={{ fontSize: 11, color: '#a09890' }}>{new Date(row.settledAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                        : <button onClick={() => markSettled(row)} style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Mark Settled</button>}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {isExpanded && choreoRows.length === 0 && (
+                          <div style={{ border: '1px solid #e2dbd4', borderTop: 'none', borderRadius: '0 0 12px 12px', padding: 16, textAlign: 'center', color: '#7a6e65', fontSize: 13, background: 'white' }}>
+                            No sessions match current filters
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* Main table */}
+                {filteredPayouts.length === 0 ? (
+                  <div style={{ padding: 32, textAlign: 'center', color: '#7a6e65', background: '#faf7f2', borderRadius: 12, border: '1px solid #e2dbd4' }}>No sessions match the current filters</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: 12, overflow: 'hidden', border: '1px solid #e2dbd4' }}>
+                      <thead>
+                        <tr style={{ background: '#faf7f2' }}>
+                          <th style={thP}>Choreographer</th>
+                          <th style={thP}>Session</th>
+                          <th style={thP}>Date</th>
+                          <th style={{ ...thP, textAlign: 'right' }}>Bookings</th>
+                          <th style={{ ...thP, textAlign: 'right' }}>Choreo Share</th>
+                          <th style={thP}>Status</th>
+                          <th style={thP}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredPayouts.map(row => (
+                          <tr key={row.sessionId}>
+                            <td style={tdP}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#e2dbd4', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#7a6e65', fontWeight: 700 }}>
+                                  {row.choreoAvatar ? <img src={row.choreoAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (row.choreoName?.[0] || '?')}
+                                </div>
+                                <span>{row.choreoName}</span>
+                              </div>
+                            </td>
+                            <td style={tdP}>{row.sessionTitle}</td>
+                            <td style={{ ...tdP, whiteSpace: 'nowrap', color: '#7a6e65' }}>
+                              {new Date(row.sessionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
+                            </td>
+                            <td style={{ ...tdP, textAlign: 'right' }}>{row.bookingCount}</td>
+                            <td style={{ ...tdP, textAlign: 'right', fontWeight: 700 }}>₹{row.totalShare.toLocaleString('en-IN')}</td>
+                            <td style={tdP}>
+                              {row.settledAt
+                                ? <span style={{ background: '#e6f4ec', color: '#1a7a3c', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>✓ Settled</span>
+                                : <span style={{ background: '#fff8e6', color: '#e8a020', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>⏳ Pending</span>}
+                            </td>
+                            <td style={tdP}>
+                              {row.settledAt
+                                ? <span style={{ fontSize: 11, color: '#a09890' }}>{new Date(row.settledAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                : <button onClick={() => markSettled(row)} style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Mark Settled</button>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {/* SECTION A: Policy Management */}
       <div>
