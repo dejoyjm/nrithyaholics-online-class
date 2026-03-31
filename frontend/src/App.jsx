@@ -403,6 +403,10 @@ export default function App() {
       autoOpenTest={autoOpenTest}
       cameFromEmail={cameFromEmail}
       forceIST={forceIST}
+      onJoinClass={(sessionId, sessionData) => {
+        setCurrentClassroom({ sessionId, sessionData })
+        window.location.hash = '#/classroom/' + sessionId
+      }}
     />
   )
 
