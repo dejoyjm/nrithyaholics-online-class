@@ -18,6 +18,7 @@ import RecordingBanner from './RecordingBanner'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const MUSIC_BOT_URL = import.meta.env.VITE_MUSIC_BOT_URL
 
 const WARN_BEFORE_SECS = 10 * 60   // 10 minutes
 const CRITICAL_BEFORE_SECS = 5 * 60 // 5 minutes
@@ -288,7 +289,7 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
   const [banner, setBanner] = useState(null)
 
   // ── Week 2: layout state ─────────────────────────────────────
-  const [viewMode, setViewMode] = useState('class')  // 'class' | 'self'
+  const [viewMode, setViewMode] = useState('class')  // 'class' | 'gallery' | 'self'
   const [mirrored, setMirrored] = useState(true)
 
   // ── Week 3: recording state ───────────────────────────────────
@@ -297,6 +298,14 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
   const [performanceMode, setPerformanceMode]       = useState(false)
   const [performanceCountdown, setPerformanceCountdown] = useState(null) // null | 3 | 2 | 1
   const [perfRecordingId, setPerfRecordingId]       = useState(null)
+
+  // ── Week 4: music bot state ───────────────────────────────────
+  const [musicBotStatus, setMusicBotStatus] = useState(null) // null | 'starting' | 'playing' | 'paused' | 'stopped'
+  const [musicBotId, setMusicBotId]         = useState(null)
+  const [musicPosition, setMusicPosition]   = useState(0)
+  const [musicDuration, setMusicDuration]   = useState(0)
+  const [musicVolume, setMusicVolume]       = useState(70)
+  const [overlayPos, setOverlayPos]         = useState({ x: null, y: null })
 
   const joinedRef           = useRef(false)
   const countdownRef        = useRef(null)
@@ -322,8 +331,8 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
     ...guestPeers.filter(p => !p.isLocal),
   ]
 
-  // Self-view overlay: remote guests only (local is the full-screen video)
-  const overlayPeers = guestPeers.filter(p => !p.isLocal)
+  // Self-view overlay: all remote peers (host + guests), local is the full-screen video
+  const overlayPeers = peers.filter(p => !p.isLocal)
 
   // Screen share PiP
   const hasScreenShare    = !!(screenSharePeer && screenShareTrack?.enabled)
@@ -457,6 +466,26 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
     })
   }, [isHost, isConnected]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Auto-stop music when session ends ────────────────────────
+  useEffect(() => {
+    if (status === 'left' && musicBotId) {
+      handleStopMusic()
+    }
+  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Music position polling (every 2s while playing) ──────────
+  useEffect(() => {
+    if (musicBotStatus !== 'playing') return
+    const interval = setInterval(async () => {
+      const result = await callMusicControl('status')
+      if (result && !result.error) {
+        setMusicPosition(result.currentTime || 0)
+        setMusicDuration(result.duration || 0)
+      }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [musicBotStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Token fetch ───────────────────────────────────────────────
   async function fetchToken() {
     setStatus('fetching')
@@ -524,16 +553,109 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
     setStatus('left')
   }
 
+  // ── Music bot helpers ─────────────────────────────────────────
+  async function getMusicAuthToken() {
+    const { data: { session: authSession } } = await supabase.auth.getSession()
+    return authSession?.access_token
+  }
+
+  async function callMusicControl(action, value) {
+    const token = await getMusicAuthToken()
+    const res = await fetch(`${MUSIC_BOT_URL}/music-bot-control`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ session_id: sessionId, action, value }),
+    })
+    return res.json()
+  }
+
+  async function handleStartMusic() {
+    setMusicBotStatus('starting')
+    try {
+      const token = await getMusicAuthToken()
+      const res = await fetch(`${MUSIC_BOT_URL}/start-music-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+      const data = await res.json()
+      if (data.bot_id) {
+        setMusicBotId(data.bot_id)
+        setMusicBotStatus('playing')
+      }
+    } catch (err) {
+      console.error('Failed to start music bot:', err)
+      setMusicBotStatus(null)
+    }
+  }
+
+  async function handlePauseMusic() {
+    await callMusicControl('pause')
+    setMusicBotStatus('paused')
+  }
+
+  async function handleResumeMusic() {
+    await callMusicControl('resume')
+    setMusicBotStatus('playing')
+  }
+
+  async function handleSeekMusic(seconds) {
+    await callMusicControl('seek', seconds)
+    setMusicPosition(seconds)
+  }
+
+  async function handleVolumeMusic(vol) {
+    await callMusicControl('volume', vol)
+    setMusicVolume(vol)
+  }
+
+  async function handleStopMusic() {
+    try {
+      const token = await getMusicAuthToken()
+      await fetch(`${MUSIC_BOT_URL}/stop-music-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+    } catch (err) {
+      console.error('Failed to stop music bot:', err)
+    }
+    setMusicBotStatus('stopped')
+    setMusicBotId(null)
+  }
+
+  async function handleForceReset() {
+    if (!window.confirm('Reset the music bot? This will stop it and clear all state.')) return
+    try {
+      const token = await getMusicAuthToken()
+      await fetch(`${MUSIC_BOT_URL}/stop-music-bot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+    } catch (err) {
+      console.error('Force reset error:', err)
+    }
+    await new Promise(r => setTimeout(r, 2000))
+    setMusicBotStatus(null)
+    setMusicBotId(null)
+    setMusicPosition(0)
+    setMusicDuration(0)
+    setMusicVolume(70)
+  }
+
   // ── Recording helpers ─────────────────────────────────────────
+  // recordingId may be null (100ms sometimes omits it in start response).
+  // Always call the edge function — it looks up the active recording by room_id server-side.
   async function pauseRecording() {
-    if (!recordingId) return
-    const data = await callRecordingControl('pause', { recording_id: recordingId })
+    const opts = recordingId ? { recording_id: recordingId } : {}
+    const data = await callRecordingControl('pause', opts)
     if (data.success) setRecordingState('paused')
   }
 
   async function resumeRecording() {
-    if (!recordingId) return
-    const data = await callRecordingControl('resume', { recording_id: recordingId })
+    const opts = recordingId ? { recording_id: recordingId } : {}
+    const data = await callRecordingControl('resume', opts)
     if (data.success) setRecordingState('recording')
   }
 
@@ -670,10 +792,30 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
               ))}
             </div>
           )
-          : isHost && viewMode === 'self'
+          : viewMode === 'gallery'
           // ════════════════════════════════════════════════
-          // SELF-VIEW MODE (host only)
-          // Full-screen local video + draggable guest overlay
+          // GALLERY MODE — equal grid of all peers
+          // ════════════════════════════════════════════════
+          ? (
+            <div style={{
+              flex: 1,
+              display: 'grid',
+              gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 160 : 240}px, 1fr))`,
+              gap: 8,
+              padding: 8,
+              overflow: 'auto',
+              alignContent: 'start',
+            }}>
+              {peers.map(peer => (
+                <div key={peer.id} style={{ aspectRatio: '16/9', borderRadius: 10, overflow: 'hidden' }}>
+                  <PeerTile peer={peer} mirrored={mirrored} />
+                </div>
+              ))}
+            </div>
+          )
+          : viewMode === 'self'
+          // ════════════════════════════════════════════════
+          // SELF-VIEW MODE — full-screen local video + draggable remote overlay
           // ════════════════════════════════════════════════
           ? (
             <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#0a0808' }}>
@@ -729,7 +871,7 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
                   overflowY: 'auto',
                 }}>
                   <div style={{ fontSize: 10, color: '#7a6e65', textAlign: 'center', fontWeight: 700, letterSpacing: 0.5, paddingBottom: 2 }}>
-                    GUESTS ({overlayPeers.length})
+                    PARTICIPANTS ({overlayPeers.length})
                   </div>
                   {overlayPeers.length === 0 ? (
                     <div style={{ width: stripTileW, padding: '10px 8px', textAlign: 'center', color: '#7a6e65', fontSize: 12 }}>
@@ -826,6 +968,26 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
           )
       )}
 
+      {/* ── Music bot overlay — host only ────────────────── */}
+      {isHost && isConnected && (
+        <MusicControls
+          session={session}
+          botStatus={musicBotStatus}
+          position={musicPosition}
+          duration={musicDuration}
+          volume={musicVolume}
+          onStart={handleStartMusic}
+          onPause={handlePauseMusic}
+          onResume={handleResumeMusic}
+          onSeek={handleSeekMusic}
+          onVolume={handleVolumeMusic}
+          onStop={handleStopMusic}
+          onReset={handleForceReset}
+          pos={overlayPos}
+          onDrag={setOverlayPos}
+        />
+      )}
+
       {/* ── Controls bar ────────────────────────────────── */}
       {isConnected && (
         <Controls
@@ -874,6 +1036,255 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
         @keyframes nhFlash { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         @keyframes nhPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
       `}</style>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MusicControls — floating draggable overlay (host only)
+// Copied verbatim from ClassroomPage.jsx, fetch calls use MUSIC_BOT_URL
+// ─────────────────────────────────────────────────────────────────
+
+function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, onReset, pos, onDrag }) {
+  const [expanded, setExpanded] = useState(true)
+  const overlayRef = useRef(null)
+
+  function fmtTime(secs) {
+    if (!secs || isNaN(secs)) return '0:00'
+    const m = Math.floor(secs / 60)
+    const s = Math.floor(secs % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  const progressPct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0
+  const title = session?.music_track_title || 'Music'
+  const truncTitle = title.length > 26 ? title.slice(0, 26) + '…' : title
+
+  const posStyle = pos.x !== null
+    ? { position: 'absolute', left: pos.x, top: pos.y, transform: 'none' }
+    : { position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)' }
+
+  function handleDragHandleDown(e) {
+    e.preventDefault()
+    const el = overlayRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const startX = e.touches ? e.touches[0].clientX : e.clientX
+    const startY = e.touches ? e.touches[0].clientY : e.clientY
+    const originX = rect.left
+    const originY = rect.top
+    function onMove(ev) {
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX
+      const cy = ev.touches ? ev.touches[0].clientY : ev.clientY
+      onDrag({ x: originX + (cx - startX), y: originY + (cy - startY) })
+    }
+    function onEnd() {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onEnd)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onEnd)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onEnd)
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onEnd)
+  }
+
+  function handlePillDown(e) {
+    const el = overlayRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const startX = e.touches ? e.touches[0].clientX : e.clientX
+    const startY = e.touches ? e.touches[0].clientY : e.clientY
+    const originX = rect.left
+    const originY = rect.top
+    let moved = false
+    function onMove(ev) {
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX
+      const cy = ev.touches ? ev.touches[0].clientY : ev.clientY
+      if (!moved && (Math.abs(cx - startX) > 5 || Math.abs(cy - startY) > 5)) moved = true
+      if (moved) onDrag({ x: originX + (cx - startX), y: originY + (cy - startY) })
+    }
+    function onEnd() {
+      if (!moved) setExpanded(true)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onEnd)
+      document.removeEventListener('touchmove', onMove)
+      document.removeEventListener('touchend', onEnd)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onEnd)
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onEnd)
+  }
+
+  function handleProgressClick(e) {
+    if (!duration) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    onSeek(Math.floor(pct * duration))
+  }
+
+  // ── Collapsed pill ──────────────────────────────────────────
+  if (!expanded) {
+    return (
+      <div
+        ref={overlayRef}
+        onMouseDown={handlePillDown}
+        onTouchStart={handlePillDown}
+        style={{
+          ...posStyle,
+          zIndex: 50, background: 'rgba(15,12,12,0.92)', border: '1px solid rgba(200,67,10,0.4)',
+          borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 6,
+          color: '#faf7f2', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+          userSelect: 'none',
+        }}
+      >
+        🎵 {truncTitle} · {fmtTime(position)}
+        {botStatus === 'playing' && (
+          <span style={{ color: '#22c55e', fontSize: 10, fontWeight: 700 }}>● LIVE</span>
+        )}
+      </div>
+    )
+  }
+
+  // ── Expanded full controls ───────────────────────────────────
+  return (
+    <div
+      ref={overlayRef}
+      style={{
+        ...posStyle,
+        zIndex: 50, background: 'rgba(15,12,12,0.92)',
+        borderRadius: 12, border: '1px solid rgba(200,67,10,0.4)',
+        minWidth: 300, maxWidth: 360, userSelect: 'none',
+      }}
+    >
+      {/* Drag handle strip */}
+      <div
+        onMouseDown={handleDragHandleDown}
+        onTouchStart={handleDragHandleDown}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 0 2px', cursor: 'grab', color: '#4a3e3e', fontSize: 14, letterSpacing: 3 }}
+      >
+        ⠿⠿⠿
+      </div>
+
+      {/* Content area */}
+      <div style={{ padding: '4px 16px 14px' }}>
+
+        {/* Header: title + collapse */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#faf7f2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 240 }}>
+            🎵 {truncTitle}
+          </div>
+          <button
+            onClick={() => setExpanded(false)}
+            style={{ background: 'none', border: 'none', color: '#a09890', fontSize: 14, cursor: 'pointer', padding: '0 0 0 8px', lineHeight: 1 }}
+            title="Collapse to pill"
+          >✕</button>
+        </div>
+
+        {/* Not started / stopped */}
+        {(!botStatus || botStatus === 'stopped') && (
+          <button
+            onClick={onStart}
+            style={{ width: '100%', background: '#c8430a', border: 'none', borderRadius: 8, padding: '10px', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+          >
+            ▶ Start Music
+          </button>
+        )}
+
+        {/* Starting */}
+        {botStatus === 'starting' && (
+          <div style={{ textAlign: 'center', color: '#a09890', fontSize: 13, padding: '8px 0' }}>
+            ⏳ Starting music...
+          </div>
+        )}
+
+        {/* Force reset — always visible in expanded view */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button
+            onClick={onReset}
+            style={{ background: 'none', border: 'none', color: '#6b5050', fontSize: 10, cursor: 'pointer', padding: '2px 0' }}
+            title="Force stop bot and reset UI"
+          >⚠️ Reset bot</button>
+        </div>
+
+        {/* Playing / paused */}
+        {(botStatus === 'playing' || botStatus === 'paused') && (
+          <>
+            {/* Progress bar */}
+            <div
+              onClick={handleProgressClick}
+              style={{ height: 6, background: '#3a2e2e', borderRadius: 3, marginBottom: 4, cursor: 'pointer' }}
+            >
+              <div style={{ height: '100%', width: `${progressPct}%`, background: '#c8430a', borderRadius: 3, transition: 'width 0.5s linear' }} />
+            </div>
+            {/* Time labels */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#7a6e65', marginBottom: 10 }}>
+              <span>{fmtTime(position)}</span>
+              <span>{fmtTime(duration)}</span>
+            </div>
+
+            {/* Skip + transport controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10, justifyContent: 'center' }}>
+              <button
+                onClick={() => onSeek(Math.max(0, position - 30))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Back 30s"
+              >⏮ 30</button>
+              <button
+                onClick={() => onSeek(Math.max(0, position - 15))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Back 15s"
+              >⏪ 15</button>
+              {botStatus === 'playing' ? (
+                <button
+                  onClick={onPause}
+                  style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 8, padding: '8px 16px', color: '#faf7f2', fontSize: 16, cursor: 'pointer' }}
+                >⏸</button>
+              ) : (
+                <button
+                  onClick={onResume}
+                  style={{ background: '#c8430a', border: 'none', borderRadius: 8, padding: '8px 16px', color: 'white', fontSize: 16, cursor: 'pointer' }}
+                >▶</button>
+              )}
+              <button
+                onClick={() => onSeek(Math.min(duration || 0, position + 15))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Forward 15s"
+              >15 ⏩</button>
+              <button
+                onClick={() => onSeek(Math.min(duration || 0, position + 30))}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '6px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer' }}
+                title="Forward 30s"
+              >30 ⏭</button>
+            </div>
+
+            {/* Volume + status + stop */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {botStatus === 'playing' ? (
+                <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, background: 'rgba(34,197,94,0.1)', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>🔴 LIVE</span>
+              ) : (
+                <span style={{ fontSize: 10, color: '#a09890', flexShrink: 0 }}>⏸</span>
+              )}
+              <span style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>🔊</span>
+              <input
+                type="range" min="0" max="100" value={volume}
+                onChange={e => onVolume(Number(e.target.value))}
+                onMouseDown={e => e.stopPropagation()}
+                style={{ flex: 1, accentColor: '#c8430a', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 11, color: '#7a6e65', width: 28, textAlign: 'right', flexShrink: 0 }}>{volume}%</span>
+              <button
+                onClick={onStop}
+                style={{ background: '#2a2020', border: '1px solid #3a2e2e', borderRadius: 6, padding: '5px 8px', color: '#a09890', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+                title="Stop music"
+              >■</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

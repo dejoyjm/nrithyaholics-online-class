@@ -14,6 +14,13 @@ const btnBase = {
   flexShrink: 0,
 }
 
+// View mode cycles: class → gallery → self → class
+function nextViewMode(current) {
+  if (current === 'class')   return 'gallery'
+  if (current === 'gallery') return 'self'
+  return 'class'
+}
+
 export default function Controls({
   isHost,
   onLeave,
@@ -72,20 +79,18 @@ export default function Controls({
         <span>{isLocalVideoEnabled ? 'Stop Video' : 'Start Video'}</span>
       </button>
 
-      {/* Host-only: view mode toggle */}
-      {isHost && (
-        <button
-          onClick={() => setViewMode(viewMode === 'class' ? 'self' : 'class')}
-          title={viewMode === 'class' ? 'See yourself full screen' : 'Return to class view'}
-          style={{
-            ...btnBase,
-            background: viewMode === 'self' ? '#c8430a' : '#2a2a2a',
-          }}
-        >
-          {viewMode === 'class' ? '🪞' : '👥'}
-          <span>{viewMode === 'class' ? 'See Myself' : 'See Class'}</span>
-        </button>
-      )}
+      {/* View mode toggle — all participants, 3-mode cycle */}
+      <button
+        onClick={() => setViewMode(nextViewMode(viewMode))}
+        title="Switch view"
+        style={{
+          ...btnBase,
+          background: viewMode !== 'class' ? '#c8430a' : '#2a2a2a',
+        }}
+      >
+        {viewMode === 'class' ? '👥' : viewMode === 'gallery' ? '⊞' : '🪞'}
+        <span>{viewMode === 'class' ? 'See Class' : viewMode === 'gallery' ? 'Gallery' : 'See Myself'}</span>
+      </button>
 
       {/* Host-only: mirror toggle */}
       {isHost && (
@@ -139,19 +144,29 @@ export default function Controls({
 
       <div style={{ flex: 1 }} />
 
-      {/* Leave / End */}
+      {/* Leave / End — host gets both buttons */}
       {isHost ? (
-        <button
-          onClick={onEnd}
-          style={{
-            ...btnBase,
-            background: '#450a0a',
-            border: '1px solid #7f1d1d',
-            color: '#fca5a5',
-          }}
-        >
-          End Session
-        </button>
+        <>
+          <button
+            onClick={onLeave}
+            style={{ ...btnBase, background: '#2a2a2a', border: '1px solid #3a3a3a' }}
+            title="Leave the room (room stays open)"
+          >
+            Leave
+          </button>
+          <button
+            onClick={onEnd}
+            style={{
+              ...btnBase,
+              background: '#450a0a',
+              border: '1px solid #7f1d1d',
+              color: '#fca5a5',
+            }}
+            title="End session for everyone"
+          >
+            End Session
+          </button>
+        </>
       ) : (
         <button
           onClick={onLeave}
