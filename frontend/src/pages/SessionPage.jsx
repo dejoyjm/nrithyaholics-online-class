@@ -522,26 +522,28 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const sessionDetailsCard = (
     <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #e2dbd4' }}>
       <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 }}>Session Details</div>
-      {/* Date & Time — timezone-aware */}
-      <div style={{ display: 'flex', gap: 16, padding: '12px 0', borderBottom: '1px solid #f0ebe6' }}>
-        <span style={{ fontSize: 18 }}>📅</span>
-        <div>
-          <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 2 }}>Date & Time</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>
-            {isIST() ? formatDate(session.scheduled_at) : formatClassTime(session.scheduled_at, forceIST)}
-          </div>
-          {!isIST() && (
-            <div style={{ fontSize: 12, color: '#7a6e65', marginTop: 2 }}>
-              {forceIST
-                ? `Your local time: ${formatClassTime(session.scheduled_at, false)} ${getTimezoneCode()}`
-                : `India time: ${formatClassTime(session.scheduled_at, true)} IST`
-              }
+      {/* Date & Time — timezone-aware; hidden for series (Workshop Schedule block shows this) */}
+      {session.session_type !== 'series' && (
+        <div style={{ display: 'flex', gap: 16, padding: '12px 0', borderBottom: '1px solid #f0ebe6' }}>
+          <span style={{ fontSize: 18 }}>📅</span>
+          <div>
+            <div style={{ fontSize: 12, color: '#7a6e65', marginBottom: 2 }}>Date & Time</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0f0c0c' }}>
+              {isIST() ? formatDate(session.scheduled_at) : formatClassTime(session.scheduled_at, forceIST)}
             </div>
-          )}
+            {!isIST() && (
+              <div style={{ fontSize: 12, color: '#7a6e65', marginTop: 2 }}>
+                {forceIST
+                  ? `Your local time: ${formatClassTime(session.scheduled_at, false)} ${getTimezoneCode()}`
+                  : `India time: ${formatClassTime(session.scheduled_at, true)} IST`
+                }
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {[
-        ['⏱️', 'Duration', `${session.duration_minutes} minutes`],
+        ...(session.session_type !== 'series' ? [['⏱️', 'Duration', `${session.duration_minutes} minutes`]] : []),
         ['👥', 'Seats available', `${totalSeats - (session.bookings_count || 0)} of ${totalSeats}`],
         ['📊', 'Level', session.skill_level?.replace(/_/g, ' ')],
       ].map(([icon, label, value]) => (
