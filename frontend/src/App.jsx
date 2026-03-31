@@ -11,6 +11,7 @@ import ProfilePage from './pages/ProfilePage'
 import SuspendedPage from './pages/SuspendedPage'
 import ChoreoProfilePage from './pages/ChoreoProfilePage'
 import ClassroomPage from './pages/ClassroomPage'
+import SDKClassroom from './pages/SDKClassroom'
 import SetupTestModal from './pages/SetupTestModal'
 import ProfileCompletePrompt from './components/ProfileCompletePrompt'
 import MusicBotPage from './pages/MusicBotPage'
@@ -346,10 +347,9 @@ export default function App() {
   )
 
   if (currentClassroom) return (
-    <ClassroomPage
+    <SDKClassroom
       sessionId={currentClassroom.sessionId}
       sessionData={currentClassroom.sessionData}
-      user={user} profile={profile}
       onLeave={() => navigateTo('#/')}
     />
   )

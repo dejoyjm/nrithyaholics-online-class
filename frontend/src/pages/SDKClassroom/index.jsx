@@ -82,6 +82,37 @@ function TooEarlyScreen({ session, countdown, onLeave }) {
   )
 }
 
+function BetweenPartsScreen({ session, nextPartNumber, countdown, onLeave }) {
+  const completedPart = nextPartNumber != null ? nextPartNumber - 1 : null
+  return (
+    <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
+      {session?.cover_photo_url && (
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${session.cover_photo_url})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.06 }} />
+      )}
+      <div style={{ position: 'relative', textAlign: 'center', maxWidth: 420 }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>🎉</div>
+        <div style={{ fontFamily: 'Georgia, serif', fontSize: 24, fontWeight: 800, color: '#faf7f2', marginBottom: 8 }}>
+          {completedPart != null ? `Part ${completedPart} Complete` : 'Part Complete'}
+        </div>
+        <div style={{ fontSize: 14, color: '#a09890', marginBottom: 24, lineHeight: 1.6 }}>
+          {nextPartNumber != null ? `Part ${nextPartNumber} starts in` : 'Next part starts in'}
+        </div>
+        {countdown && (
+          <div style={{ fontSize: 48, fontWeight: 800, color: '#c8430a', fontFamily: 'Georgia, serif', marginBottom: 8, letterSpacing: 2 }}>
+            {countdown}
+          </div>
+        )}
+        <div style={{ fontSize: 13, color: '#7a6e65', marginBottom: 32 }}>
+          You'll be let back in automatically when the window opens
+        </div>
+        <button onClick={onLeave} style={{ background: 'transparent', border: '1px solid #3a2e2e', color: '#a09890', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
+          ← Back to session
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function EndedScreen({ sessionId, onLeave }) {
   return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}>
@@ -246,6 +277,7 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
   const [errorMsg, setErrorMsg]       = useState('')
   const [opensAt, setOpensAt]         = useState(null)
   const [countdown, setCountdown]     = useState('')
+  const [nextPartNumber, setNextPartNumber] = useState(null)
   const [roomToken, setRoomToken]     = useState(null)
   const [userRole, setUserRole]       = useState(null)
   const [userName, setUserName]       = useState('')
@@ -310,16 +342,18 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
     }
   }, [])
 
-  // ── Countdown timer for too_early state ──────────────────────
+  // ── Countdown timer for too_early / between_parts ────────────
   useEffect(() => {
-    if (status !== 'too_early' || !opensAt) return
+    if ((status !== 'too_early' && status !== 'between_parts') || !opensAt) return
     clearInterval(countdownRef.current)
     countdownRef.current = setInterval(() => {
       const secsLeft = Math.max(0, opensAt - Math.floor(Date.now() / 1000))
       if (secsLeft === 0) { clearInterval(countdownRef.current); fetchToken(); return }
-      const m = Math.floor(secsLeft / 60)
-      const s = secsLeft % 60
-      setCountdown(`${m}:${s.toString().padStart(2, '0')}`)
+      const hrs  = Math.floor(secsLeft / 3600)
+      const mins = Math.floor((secsLeft % 3600) / 60)
+      const secs = secsLeft % 60
+      if (hrs > 0) setCountdown(`${hrs}h ${mins}m ${secs}s`)
+      else setCountdown(`${mins}:${secs.toString().padStart(2, '0')}`)
     }, 1000)
     return () => clearInterval(countdownRef.current)
   }, [status, opensAt])
@@ -450,6 +484,7 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
       const data = await res.json()
 
       if (data.error === 'too_early')     { setOpensAt(data.opens_at); setStatus('too_early'); return }
+      if (data.error === 'between_parts') { setNextPartNumber(data.next_part); setOpensAt(data.opens_at); setStatus('between_parts'); return }
       if (data.error === 'session_ended') { setStatus('ended'); return }
       if (data.error === 'already_joined') {
         setStatus('error')
@@ -458,6 +493,7 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
       }
       if (!res.ok || !data.token) { setStatus('error'); setErrorMsg(data.error || 'Could not get room access. Please try again.'); return }
 
+      console.log('SDKClassroom: token received, joining room', { role: data.role, room_id: data.room_id })
       setRoomToken(data.token)
       setUserName(data.user_name)
       setUserRole(data.role)
@@ -528,9 +564,10 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
   }
 
   // ── Status screens ────────────────────────────────────────────
-  if (status === 'fetching')  return <FetchingScreen session={session} />
-  if (status === 'too_early') return <TooEarlyScreen session={session} countdown={countdown} onLeave={onLeave} />
-  if (status === 'ended')     return <EndedScreen sessionId={sessionId} onLeave={onLeave} />
+  if (status === 'fetching')      return <FetchingScreen session={session} />
+  if (status === 'too_early')    return <TooEarlyScreen session={session} countdown={countdown} onLeave={onLeave} />
+  if (status === 'between_parts') return <BetweenPartsScreen session={session} nextPartNumber={nextPartNumber} countdown={countdown} onLeave={onLeave} />
+  if (status === 'ended')        return <EndedScreen sessionId={sessionId} onLeave={onLeave} />
   if (status === 'error')     return <ErrorScreen errorMsg={errorMsg} onLeave={onLeave} onRetry={fetchToken} />
   if (status === 'left')      return <LeftScreen sessionId={sessionId} onLeave={onLeave} />
 
