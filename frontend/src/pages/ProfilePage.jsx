@@ -55,7 +55,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
     const [{ data: ownedData }, authSession] = await Promise.all([
       supabase
         .from('bookings')
-        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers)')
+        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers, session_type, series_parts)')
         .eq('booked_by', user.id)
         .eq('status', 'confirmed')
         .order('created_at', { ascending: false }),
@@ -141,7 +141,14 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
 
   const isStillActive = (s) => {
     if (!s) return false
-    const sessionEnd = new Date(s.scheduled_at).getTime() + (s.duration_minutes || 60) * 60 * 1000
+    let sessionEnd
+    if (s.session_type === 'series' && Array.isArray(s.series_parts) && s.series_parts.length > 0) {
+      const sorted = [...s.series_parts].sort((a, b) => new Date(a.start) - new Date(b.start))
+      const last = sorted[sorted.length - 1]
+      sessionEnd = new Date(last.start).getTime() + (last.duration_minutes || 60) * 60 * 1000
+    } else {
+      sessionEnd = new Date(s.scheduled_at).getTime() + (s.duration_minutes || 60) * 60 * 1000
+    }
     const graceMs = (s.guest_grace_minutes_override ?? platformConfig?.guest_grace_minutes ?? 15) * 60 * 1000
     return (sessionEnd + graceMs) > Date.now()
   }
@@ -495,7 +502,19 @@ async function callResendInvite(guestBookingId, newEmail) {
         <div style={{ width: 4, height: 44, borderRadius: 2, background: color, flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c', marginBottom: 2 }}>{session.title}</div>
-          <div style={{ fontSize: 12, color: '#7a6e65' }}>📅 {fmt(session.scheduled_at)} · {session.duration_minutes} mins</div>
+          {session.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length > 0
+            ? <div style={{ fontSize: 12, color: '#7a6e65' }}>
+                {[...session.series_parts]
+                  .sort((a, b) => new Date(a.start) - new Date(b.start))
+                  .map((part, idx) => {
+                    const d = new Date(part.start)
+                    const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })
+                    const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
+                    return <div key={idx}>Part {idx + 1}: {label} · {time}</div>
+                  })}
+              </div>
+            : <div style={{ fontSize: 12, color: '#7a6e65' }}>📅 {fmt(session.scheduled_at)} · {session.duration_minutes} mins</div>
+          }
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
           {price > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: '#0f0c0c' }}>₹{price}</div>}
