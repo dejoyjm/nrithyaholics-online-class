@@ -38,9 +38,6 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
     setApplications(appsRes.data || [])
     setUsers(usersRes.data || [])
     setSessions(sessionsRes.data || [])
-    console.log('[fetchAll] bookingsRes data count:', bookingsRes.data?.length,
-      'error:', bookingsRes.error?.message,
-      'sample:', bookingsRes.data?.[0])
     setAllBookings(bookingsRes.data || [])
     const counts = {}
     waitlistRes.data?.forEach(w => { counts[w.session_id] = (counts[w.session_id] || 0) + 1 })

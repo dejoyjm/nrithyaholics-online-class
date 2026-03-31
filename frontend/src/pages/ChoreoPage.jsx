@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
 import { isIST, getTimezoneCode, toISTPreview } from '../utils/timezone'
+import { canJoinNow } from '../utils/sessionTime'
 import { resolvePolicy, calculateSessionSettlement } from '../utils/revenue'
 
 // ── Time picker helpers ──────────────────────────────────────
@@ -35,15 +36,10 @@ function toLocalDateString(utcStr) {
 
 const statusColor = { draft: '#7a6e65', open: '#e8a020', confirmed: '#1a7a3c', full: '#5b4fcf', cancelled: '#cc0000', completed: '#333' }
 
-// Choreo entry window driven entirely by platform_config host settings
+// Choreo entry window — delegates to sessionTime.js canJoinNow (isHost=true)
 function canChoreoStartNow(session, platformConfig) {
   if (['cancelled', 'completed'].includes(session.status)) return false
-  const start = new Date(session.scheduled_at).getTime()
-  const end = start + (session.duration_minutes || 60) * 60 * 1000
-  const now = Date.now()
-  const preJoinMs = (session.host_pre_join_minutes_override ?? platformConfig?.host_pre_join_minutes ?? 15) * 60 * 1000
-  const graceMs   = (session.host_grace_minutes_override    ?? platformConfig?.host_grace_minutes    ?? 30) * 60 * 1000
-  return now >= start - preJoinMs && now <= end + graceMs
+  return canJoinNow(session, platformConfig, true)
 }
 
 export default function ChoreoPage({ user, profile, platformConfig, onLogout, onSwitchToLearning, onProfileClick, onStartClass }) {

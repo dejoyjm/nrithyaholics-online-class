@@ -248,6 +248,28 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const [seriesParts, setSeriesParts] = useState(() => {
+    if (session.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length >= 2) {
+      return [...session.series_parts].sort((a, b) => new Date(a.start) - new Date(b.start)).map(p => {
+        const parsed = parseAdminTime(p.start)
+        return { part: p.part, date: toLocalDateString(p.start), hour: parsed.hour, minute: parsed.minute, duration: p.duration_minutes || 60 }
+      })
+    }
+    return []
+  })
+  function addOneDay(dateStr) {
+    if (!dateStr) return ''
+    const d = new Date(dateStr + 'T12:00:00')
+    d.setDate(d.getDate() + 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  }
+  function buildPartISO(part) {
+    const timeStr = `${String(part.hour).padStart(2,'0')}:${part.minute}:00`
+    return new Date(`${part.date}T${timeStr}`).toISOString()
+  }
+  function updatePart(idx, key, value) {
+    setSeriesParts(ps => ps.map((p, i) => i === idx ? { ...p, [key]: value } : p))
+  }
   const [coverPath] = useState(() => `hero/${session.id}_${Date.now()}.jpg`)
   const [thumbnailPath] = useState(() => `card/${session.id}_${Date.now()}.jpg`)
 
@@ -255,31 +277,65 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
   const labelStyle = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
 
   async function handleSave() {
-    if (!form.title || !form.date || form.hour === '' || !form.minute) { alert('Title, date and time required'); return }
-    setSaving(true)
-    const timeStr = `${String(form.hour).padStart(2,'0')}:${form.minute}:00`
-    const scheduledAt = new Date(`${form.date}T${timeStr}`).toISOString()
-    const { error } = await supabase.from('sessions').update({
-      title: form.title,
-      description: form.description,
-      scheduled_at: scheduledAt,
-      duration_minutes: Number(form.duration),
-      price_tiers: [{ seats: form.max_seats, price: form.price }],
-      max_seats: Number(form.max_seats),
-      min_seats: Number(form.min_seats),
-      status: form.status,
-      age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
-      choreo_reference_url: form.choreo_reference_url.trim() || null,
-      cover_photo_url: form.cover_photo_url.trim() || null,
-      cover_photo_focal_x: form.cover_photo_url.trim() ? form.cover_photo_focal_x : null,
-      cover_photo_focal_y: form.cover_photo_url.trim() ? form.cover_photo_focal_y : null,
-      card_thumbnail_url: form.card_thumbnail_url.trim() || null,
-      card_thumbnail_focal_x: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_x : null,
-      card_thumbnail_focal_y: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_y : null,
-    }).eq('id', session.id)
-    if (error) alert(error.message)
-    else onSaved()
-    setSaving(false)
+    if (!form.title) { alert('Title required'); return }
+    if (session.session_type === 'series') {
+      if (seriesParts.some(p => !p.date)) { alert('Please set a date for all parts before saving.'); return }
+      for (let i = 1; i < seriesParts.length; i++) {
+        if (new Date(buildPartISO(seriesParts[i])) <= new Date(buildPartISO(seriesParts[i - 1]))) {
+          alert('Part dates must be in order (earliest first).'); return
+        }
+      }
+      setSaving(true)
+      const seriesPartsPayload = seriesParts.map(p => ({ part: p.part, start: buildPartISO(p), duration_minutes: p.duration }))
+      const { error } = await supabase.from('sessions').update({
+        title: form.title,
+        description: form.description,
+        scheduled_at: seriesPartsPayload[0].start,
+        duration_minutes: seriesParts[0].duration,
+        series_parts: seriesPartsPayload,
+        price_tiers: [{ seats: form.max_seats, price: form.price }],
+        max_seats: Number(form.max_seats),
+        min_seats: Number(form.min_seats),
+        status: form.status,
+        age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
+        choreo_reference_url: form.choreo_reference_url.trim() || null,
+        cover_photo_url: form.cover_photo_url.trim() || null,
+        cover_photo_focal_x: form.cover_photo_url.trim() ? form.cover_photo_focal_x : null,
+        cover_photo_focal_y: form.cover_photo_url.trim() ? form.cover_photo_focal_y : null,
+        card_thumbnail_url: form.card_thumbnail_url.trim() || null,
+        card_thumbnail_focal_x: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_x : null,
+        card_thumbnail_focal_y: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_y : null,
+      }).eq('id', session.id)
+      if (error) alert(error.message)
+      else onSaved()
+      setSaving(false)
+    } else {
+      if (!form.date || form.hour === '' || !form.minute) { alert('Title, date and time required'); return }
+      setSaving(true)
+      const timeStr = `${String(form.hour).padStart(2,'0')}:${form.minute}:00`
+      const scheduledAt = new Date(`${form.date}T${timeStr}`).toISOString()
+      const { error } = await supabase.from('sessions').update({
+        title: form.title,
+        description: form.description,
+        scheduled_at: scheduledAt,
+        duration_minutes: Number(form.duration),
+        price_tiers: [{ seats: form.max_seats, price: form.price }],
+        max_seats: Number(form.max_seats),
+        min_seats: Number(form.min_seats),
+        status: form.status,
+        age_groups: form.age_groups.length > 0 ? form.age_groups : ['All Ages'],
+        choreo_reference_url: form.choreo_reference_url.trim() || null,
+        cover_photo_url: form.cover_photo_url.trim() || null,
+        cover_photo_focal_x: form.cover_photo_url.trim() ? form.cover_photo_focal_x : null,
+        cover_photo_focal_y: form.cover_photo_url.trim() ? form.cover_photo_focal_y : null,
+        card_thumbnail_url: form.card_thumbnail_url.trim() || null,
+        card_thumbnail_focal_x: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_x : null,
+        card_thumbnail_focal_y: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_y : null,
+      }).eq('id', session.id)
+      if (error) alert(error.message)
+      else onSaved()
+      setSaving(false)
+    }
   }
 
   return (
@@ -319,34 +375,47 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
             <label style={labelStyle}>Description</label>
             <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div>
-              <label style={labelStyle}>Date</label>
-              <input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+          {session.session_type !== 'series' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <label style={labelStyle}>Date</label>
+                <input style={inputStyle} type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+              </div>
+              <div>
+                <label style={labelStyle}>Start Time</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <select style={inputStyle} value={form.hour} onChange={e => set('hour', Number(e.target.value))}>
+                    {ADMIN_HOURS.map(h => (
+                      <option key={h} value={h}>{fmtAdminHour(h)}</option>
+                    ))}
+                  </select>
+                  <select style={inputStyle} value={form.minute} onChange={e => set('minute', e.target.value)}>
+                    {ADMIN_MINUTES.map(m => (
+                      <option key={m} value={m}>:{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>Start Time</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <select style={inputStyle} value={form.hour} onChange={e => set('hour', Number(e.target.value))}>
-                  {ADMIN_HOURS.map(h => (
-                    <option key={h} value={h}>{fmtAdminHour(h)}</option>
-                  ))}
+          )}
+          {session.session_type !== 'series' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <label style={labelStyle}>Duration (mins)</label>
+                <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
+                  {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
                 </select>
-                <select style={inputStyle} value={form.minute} onChange={e => set('minute', e.target.value)}>
-                  {ADMIN_MINUTES.map(m => (
-                    <option key={m} value={m}>:{m}</option>
+              </div>
+              <div>
+                <label style={labelStyle}>Status</label>
+                <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
+                  {['draft','open','confirmed','cancelled','completed'].map(s => (
+                    <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
                   ))}
                 </select>
               </div>
             </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div>
-              <label style={labelStyle}>Duration (mins)</label>
-              <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
-                {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
-              </select>
-            </div>
+          ) : (
             <div>
               <label style={labelStyle}>Status</label>
               <select style={inputStyle} value={form.status} onChange={e => set('status', e.target.value)}>
@@ -355,16 +424,44 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
                 ))}
               </select>
             </div>
-          </div>
-          {session.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length > 0 && (
-            <div style={{ background: '#fff8e6', border: '1px solid #f0c040', borderRadius: 8, padding: 12, fontSize: 13 }}>
-              <div style={{ fontWeight: 700, color: '#7a5a00', marginBottom: 8 }}>Workshop Series: {session.series_parts.length} parts</div>
-              {[...session.series_parts].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()).map((p, idx) => (
-                <div key={p.part} style={{ color: '#5a4e47', marginBottom: idx < session.series_parts.length - 1 ? 6 : 0 }}>
-                  <strong>Part {p.part}</strong> — {new Date(p.start).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })} · {new Date(p.start).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })} ({p.duration_minutes} min)
+          )}
+          {session.session_type === 'series' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label style={labelStyle}>Workshop Parts</label>
+              {seriesParts.map((part, idx) => (
+                <div key={part.part} style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 10, padding: 14, marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#5b4fcf', marginBottom: 8 }}>Part {part.part}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr 0.9fr', gap: 8 }}>
+                    <input type="date" style={inputStyle} value={part.date}
+                      onChange={e => updatePart(idx, 'date', e.target.value)} />
+                    <select style={inputStyle} value={part.hour} onChange={e => updatePart(idx, 'hour', Number(e.target.value))}>
+                      {ADMIN_HOURS.map(h => (
+                        <option key={h} value={h}>{fmtAdminHour(h)}</option>
+                      ))}
+                    </select>
+                    <select style={inputStyle} value={part.minute} onChange={e => updatePart(idx, 'minute', e.target.value)}>
+                      {ADMIN_MINUTES.map(m => (
+                        <option key={m} value={m}>:{m}</option>
+                      ))}
+                    </select>
+                    <select style={inputStyle} value={part.duration} onChange={e => updatePart(idx, 'duration', Number(e.target.value))}>
+                      {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                    </select>
+                  </div>
                 </div>
               ))}
-              <div style={{ fontSize: 12, color: '#a09890', marginTop: 10 }}>To edit series dates, ask the choreographer to update via their dashboard.</div>
+              {seriesParts.length === 2 && (
+                <button type="button" onClick={() => setSeriesParts(ps => [...ps, { part: 3, date: addOneDay(ps[1].date), hour: ps[1].hour, minute: ps[1].minute, duration: ps[1].duration }])}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: '1px dashed #5b4fcf', color: '#5b4fcf', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                  + Add Part 3
+                </button>
+              )}
+              {seriesParts.length === 3 && (
+                <button type="button" onClick={() => setSeriesParts(ps => ps.slice(0, 2))}
+                  style={{ alignSelf: 'flex-start', background: 'none', border: '1px solid #cc0000', color: '#cc0000', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                  − Remove Part 3
+                </button>
+              )}
             </div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
