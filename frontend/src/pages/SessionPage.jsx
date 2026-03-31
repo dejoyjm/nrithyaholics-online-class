@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import ClassroomPage from './ClassroomPage'
 import SetupTestModal from './SetupTestModal'
 import { isIST, getTimezoneCode, formatClassTime } from '../utils/timezone'
 import { resolvePolicy, calculateGatewayFee } from '../utils/revenue'
@@ -56,7 +55,7 @@ async function callVerifyPayment(params, token) {
   return res.json()
 }
 
-export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail, onChoreoClick, forceIST }) {
+export default function SessionPage({ sessionId, user, profile, onBack, onLoginClick, razorpayReturn, platformConfig, autoOpenTest, cameFromEmail, onChoreoClick, forceIST, onJoinClass }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [booking, setBooking] = useState(false)
@@ -68,7 +67,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
   const [verifying, setVerifying] = useState(false)
-  const [showClassroom, setShowClassroom] = useState(false)
   const [showSetupTest, setShowSetupTest] = useState(false)
   const [onWaitlist, setOnWaitlist] = useState(false)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
@@ -375,18 +373,6 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   // Who can see the join/start button — only within the time window
   const canEnterClass = canJoinNow && session.status !== 'cancelled' && (isChoreo || alreadyBooked || booked)
 
-  // Show classroom
-  if (showClassroom && session) {
-    return (
-      <ClassroomPage
-        sessionId={sessionId}
-        sessionData={session}
-        user={user}
-        profile={profile}
-        onLeave={() => setShowClassroom(false)}
-      />
-    )
-  }
 
   // Verifying state (redirect-back)
   if (verifying) return (
@@ -584,7 +570,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             </div>
           )}
           <button
-            onClick={() => setShowClassroom(true)}
+            onClick={() => onJoinClass?.(sessionId, session)}
             style={{ width: '100%', background: '#22c55e', color: 'white', border: 'none', borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
           >
             🎬 {isChoreo ? 'Start Class' : 'Join Class Now'}
