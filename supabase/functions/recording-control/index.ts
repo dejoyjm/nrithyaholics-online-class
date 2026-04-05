@@ -61,37 +61,34 @@ serve(async (req) => {
 
     switch (action) {
       case 'start': {
-        // Step A — generate a peer auth token for Beam to join our app as host
-        const tokenRes = await fetch('https://api.100ms.live/v2/auth-token', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${mgmtToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            room_id: roomId,
-            role: 'host',
-            user_id: 'beam-recorder',
-            token_validity_hours: 24,
-          }),
-        })
-        const tokenData = await tokenRes.json().catch(() => ({}))
-        console.log('[recording] auth-token:', tokenRes.status, JSON.stringify(tokenData))
+        const now = Math.floor(Date.now() / 1000)
+        const beamTokenKey = await crypto.subtle.importKey(
+          'raw', new TextEncoder().encode(HMS_APP_SECRET),
+          { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+        )
+        const beamToken = await create({ alg: 'HS256', typ: 'JWT' }, {
+          access_key: HMS_ACCESS_KEY,
+          type: 'app',
+          version: 2,
+          room_id: roomId,
+          user_id: 'beam-recorder',
+          role: 'recorder',
+          iat: now,
+          exp: now + 24 * 60 * 60,
+          nbf: now,
+          jti: crypto.randomUUID(),
+        }, beamTokenKey)
 
-        if (!tokenRes.ok || !tokenData.token) {
-          return respond({ success: false, error: 'beam token failed: ' + JSON.stringify(tokenData) })
-        }
+        const meetingUrl = `https://online.nrithyaholics.in/#/recorder?room_id=${roomId}&auth_token=${beamToken}`
 
-        // Step B — build meeting URL pointing to our RecorderPage
-        const meetingUrl = `https://online.nrithyaholics.in/#/recorder?room_id=${roomId}&auth_token=${tokenData.token}`
-        console.log('[recording] meeting_url:', meetingUrl)
-
-        // Step C — start Beam with our URL and portrait resolution
-        apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/start`
         body = {
           meeting_url: meetingUrl,
           resolution: { width: 720, height: 1280 },
         }
+
+        console.log('[recording] beam token generated, meeting_url:', meetingUrl)
+
+        apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/start`
         break
       }
       case 'stop':
