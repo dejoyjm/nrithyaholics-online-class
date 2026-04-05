@@ -60,10 +60,40 @@ serve(async (req) => {
     let body: Record<string, unknown> | undefined
 
     switch (action) {
-      case 'start':
+      case 'start': {
+        // Step A — generate a peer auth token for Beam to join our app as host
+        const tokenRes = await fetch('https://api.100ms.live/v2/auth-token', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${mgmtToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            room_id: roomId,
+            role: 'host',
+            user_id: 'beam-recorder',
+            token_validity_hours: 24,
+          }),
+        })
+        const tokenData = await tokenRes.json().catch(() => ({}))
+        console.log('[recording] auth-token:', tokenRes.status, JSON.stringify(tokenData))
+
+        if (!tokenRes.ok || !tokenData.token) {
+          return respond({ success: false, error: 'beam token failed: ' + JSON.stringify(tokenData) })
+        }
+
+        // Step B — build meeting URL pointing to our RecorderPage
+        const meetingUrl = `https://online.nrithyaholics.in/#/recorder?room_id=${roomId}&auth_token=${tokenData.token}`
+        console.log('[recording] meeting_url:', meetingUrl)
+
+        // Step C — start Beam with our URL and portrait resolution
         apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/start`
-        body = {}
+        body = {
+          meeting_url: meetingUrl,
+          resolution: { width: 720, height: 1280 },
+        }
         break
+      }
       case 'stop':
         apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/stop`
         break
@@ -89,8 +119,7 @@ serve(async (req) => {
     })
 
     const hmsData = await hmsRes.json().catch(() => ({}))
-    console.log(`HMS raw response status: ${hmsRes.status}`)
-    console.log(`HMS response body:`, JSON.stringify(hmsData))
+    console.log('[recording] HMS response:', hmsRes.status, JSON.stringify(hmsData))
 
     if (!hmsRes.ok) {
       console.error(`recording-control [${action}] error:`, JSON.stringify(hmsData))

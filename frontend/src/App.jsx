@@ -15,6 +15,7 @@ import SDKClassroom from './pages/SDKClassroom'
 import SetupTestModal from './pages/SetupTestModal'
 import ProfileCompletePrompt from './components/ProfileCompletePrompt'
 import MusicBotPage from './pages/MusicBotPage'
+import RecorderPage from './pages/RecorderPage'
 
 // ── Hash helpers (module-level, no state dependency) ─────────────────────────
 
@@ -316,6 +317,10 @@ export default function App() {
   // Music bot page — headless Puppeteer page, bypasses all auth/session logic.
   // URL: https://online.nrithyaholics.in/?token=XXX&track_url=YYY#/music-bot
   if (window.location.hash.startsWith('#/music-bot')) return <MusicBotPage />
+
+  // Recorder page — headless Beam page for SFU recording, bypasses all auth/session logic.
+  // URL: https://online.nrithyaholics.in/#/recorder?room_id=XXX&auth_token=YYY
+  if (window.location.hash.startsWith('#/recorder')) return <RecorderPage />
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
