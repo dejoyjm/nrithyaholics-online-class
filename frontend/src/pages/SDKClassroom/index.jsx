@@ -307,6 +307,11 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   const [overlayPos, setOverlayPos]         = useState({ x: null, y: null })
   const [hoveredPeerId, setHoveredPeerId]   = useState(null)
 
+  // ── Tab audio state ───────────────────────────────────────────
+  const [tabAudioStream, setTabAudioStream] = useState(null)
+  const [tabAudioTrack, setTabAudioTrack]   = useState(null)
+  const [tabAudioSharing, setTabAudioSharing] = useState(false)
+
   const joinedRef           = useRef(false)
   const countdownRef        = useRef(null)
   const endTimerRef         = useRef(null)
@@ -557,6 +562,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   async function handleLeave() {
     clearTimeout(endTimerRef.current)
     clearInterval(bannerTimerRef.current)
+    if (tabAudioSharing) await handleStopTabAudio()
     try { await hmsActions.leave() } catch { /* leave can throw if already disconnected */ }
     sessionStorage.setItem(`nrh_left_${sessionId}`, Date.now().toString())
     setStatus('left')
@@ -565,6 +571,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   async function handleEndSession() {
     clearTimeout(endTimerRef.current)
     clearInterval(bannerTimerRef.current)
+    if (tabAudioSharing) await handleStopTabAudio()
     try { await callRecordingControl('stop') } catch { /* ignore */ }
     if (perfRecordingId) {
       try { await callRecordingControl('stop', { recording_id: perfRecordingId }) } catch { /* ignore */ }
@@ -652,6 +659,40 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     }
     setMusicBotStatus('stopped')
     setMusicBotId(null)
+  }
+
+  // ── Tab audio helpers ─────────────────────────────────────────
+  async function handleStartTabAudio() {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false })
+      const audioTrack = stream.getAudioTracks()[0]
+      if (!audioTrack) {
+        alert('No audio track found. Make sure to select a tab and enable "Share tab audio".')
+        return
+      }
+      await hmsActions.addTrack(audioTrack, 'audio')
+      setTabAudioStream(stream)
+      setTabAudioTrack(audioTrack)
+      setTabAudioSharing(true)
+      audioTrack.onended = () => handleStopTabAudio()
+    } catch (err) {
+      if (err.name !== 'NotAllowedError') {
+        console.error('Tab audio error:', err)
+      }
+    }
+  }
+
+  async function handleStopTabAudio() {
+    if (tabAudioTrack) {
+      try { await hmsActions.removeTrack(tabAudioTrack.id) } catch {}
+      tabAudioTrack.stop()
+    }
+    if (tabAudioStream) {
+      tabAudioStream.getTracks().forEach(t => t.stop())
+    }
+    setTabAudioStream(null)
+    setTabAudioTrack(null)
+    setTabAudioSharing(false)
   }
 
   async function handleForceReset() {
@@ -1053,6 +1094,47 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
           pos={overlayPos}
           onDrag={setOverlayPos}
         />
+      )}
+
+      {/* ── Tab audio overlay — host + desktop only ──────── */}
+      {isHost && isConnected && !isMobile && typeof navigator.mediaDevices?.getDisplayMedia === 'function' && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          right: 16,
+          background: 'rgba(15,12,12,0.92)',
+          border: '1px solid rgba(200,67,10,0.4)',
+          borderRadius: 12,
+          padding: '10px 16px',
+          zIndex: 100,
+          minWidth: 220,
+        }}>
+          {tabAudioSharing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626', display: 'inline-block', animation: 'nhPulse 1.5s infinite', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#fca5a5' }}>Tab Audio Live</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#7a6e65' }}>Students can hear your tab audio</div>
+              <button
+                onClick={handleStopTabAudio}
+                style={{ fontSize: 12, padding: '5px 12px', background: '#450a0a', color: '#fca5a5', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600, alignSelf: 'flex-start' }}
+              >
+                ⏹ Stop Sharing
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button
+                onClick={handleStartTabAudio}
+                style={{ fontSize: 12, padding: '6px 12px', background: '#1a1410', color: '#faf7f2', border: '1px solid rgba(200,67,10,0.5)', borderRadius: 6, cursor: 'pointer', fontWeight: 600, alignSelf: 'flex-start' }}
+              >
+                🎵 Share Tab Audio
+              </button>
+              <div style={{ fontSize: 11, color: '#7a6e65' }}>Desktop only — share audio from any browser tab</div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Controls bar ────────────────────────────────── */}
