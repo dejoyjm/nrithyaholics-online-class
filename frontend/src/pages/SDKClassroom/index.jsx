@@ -548,7 +548,8 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   async function handleEndSession() {
     clearTimeout(endTimerRef.current)
     clearInterval(bannerTimerRef.current)
-    try { await hmsActions.endRoom(false, 'Session ended by host') } catch { /* endRoom throws if room already ended */ }
+    try { await callRecordingControl('stop') } catch { /* ignore */ }
+    try { await hmsActions.endRoom(false, 'Session ended by host') } catch { }
     sessionStorage.setItem(`nrh_left_${sessionId}`, Date.now().toString())
     setStatus('left')
   }
