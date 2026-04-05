@@ -305,6 +305,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   const [musicDuration, setMusicDuration]   = useState(0)
   const [musicVolume, setMusicVolume]       = useState(70)
   const [overlayPos, setOverlayPos]         = useState({ x: null, y: null })
+  const [hoveredPeerId, setHoveredPeerId]   = useState(null)
 
   const joinedRef           = useRef(false)
   const countdownRef        = useRef(null)
@@ -839,8 +840,21 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
                 alignContent: 'start',
               }}>
                 {peers.map(peer => (
-                  <div key={peer.id} style={{ aspectRatio: '9/16', borderRadius: 10, overflow: 'hidden' }}>
+                  <div
+                    key={peer.id}
+                    style={{ aspectRatio: '9/16', borderRadius: 10, overflow: 'hidden', position: 'relative' }}
+                    onMouseEnter={() => setHoveredPeerId(peer.id)}
+                    onMouseLeave={() => setHoveredPeerId(null)}
+                  >
                     <PeerTile peer={peer} mirrored={mirrored} />
+                    {isHost && !peer.isLocal && hoveredPeerId === peer.id && (
+                      <button
+                        onClick={() => hmsActions.removePeer(peer.id, 'Removed by host')}
+                        style={{ position: 'absolute', top: 8, right: 8, fontSize: 11, padding: '2px 6px', background: '#450a0a', color: '#fca5a5', border: 'none', borderRadius: 4, cursor: 'pointer', zIndex: 10 }}
+                      >
+                        ❌
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -912,8 +926,28 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
                     </div>
                   ) : (
                     overlayPeers.map(peer => (
-                      <div key={peer.id} style={{ width: stripTileW, height: stripTileH, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
-                        <PeerTile peer={peer} />
+                      <div key={peer.id} style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+                        <div style={{ width: stripTileW, height: stripTileH, borderRadius: 8, overflow: 'hidden' }}>
+                          <PeerTile peer={peer} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingInline: 2 }}>
+                          <div style={{ overflow: 'hidden' }}>
+                            <div style={{ fontSize: 11, color: '#faf7f2', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: stripTileW - 40 }}>
+                              {peer.name}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#7a6e65' }}>
+                              {peer.roleName}
+                            </div>
+                          </div>
+                          {isHost && !peer.isLocal && (
+                            <button
+                              onClick={() => hmsActions.removePeer(peer.id, 'Removed by host')}
+                              style={{ fontSize: 11, padding: '2px 6px', background: '#450a0a', color: '#fca5a5', border: 'none', borderRadius: 4, cursor: 'pointer', marginLeft: 6, flexShrink: 0 }}
+                            >
+                              ❌
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
