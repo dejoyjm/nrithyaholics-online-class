@@ -1,15 +1,98 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   HMSRoomProvider,
   useHMSActions,
   useHMSStore,
   selectRemotePeers,
   selectRoomState,
+  selectVideoTrackByPeerID,
   HMSRoomState,
 } from '@100mslive/react-sdk'
-import PeerTile from './SDKClassroom/PeerTile'
 
-function RecorderInner({ roomId, authToken }) {
+// ── Single peer tile with direct video attachment ─────────────────────────────
+
+function RecorderPeerTile({ peer }) {
+  const hmsActions  = useHMSActions()
+  const videoTrack  = useHMSStore(selectVideoTrackByPeerID(peer.id))
+  const videoRef    = useRef(null)
+  const hasVideo    = !!(videoTrack?.enabled && videoTrack?.id)
+
+  console.log('[recorder] rendering peer:', peer.name, peer.roleName,
+    'videoTrack:', peer.videoTrack)
+
+  useEffect(() => {
+    if (!videoTrack?.id || !videoRef.current) return
+    hmsActions.attachVideo(videoTrack.id, videoRef.current)
+    return () => {
+      hmsActions.detachVideo(videoTrack.id, videoRef.current).catch(() => {})
+    }
+  }, [videoTrack?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const initials = peer.name
+    ? peer.name.trim().slice(0, 2).toUpperCase()
+    : '?'
+
+  return (
+    <div style={{
+      position: 'relative',
+      background: '#111',
+      overflow: 'hidden',
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          display: hasVideo ? 'block' : 'none',
+        }}
+      />
+
+      {!hasVideo && (
+        <div style={{
+          fontSize: 48,
+          fontWeight: 700,
+          color: '#a09890',
+          fontFamily: 'Georgia, serif',
+          zIndex: 1,
+        }}>
+          {initials}
+        </div>
+      )}
+
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: '16px 8px 6px',
+        background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
+        fontSize: 11,
+        color: '#faf7f2',
+        zIndex: 2,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}>
+        {peer.name}
+      </div>
+    </div>
+  )
+}
+
+// ── Inner component (inside HMSRoomProvider) ──────────────────────────────────
+
+function RecorderInner({ authToken }) {
   const hmsActions  = useHMSActions()
   const remotePeers = useHMSStore(selectRemotePeers)
   const roomState   = useHMSStore(selectRoomState)
@@ -47,12 +130,14 @@ function RecorderInner({ roomId, authToken }) {
     }}>
       {remotePeers.map(peer => (
         <div key={peer.id} style={{ aspectRatio: '9/16', overflow: 'hidden' }}>
-          <PeerTile peer={peer} mirrored={false} />
+          <RecorderPeerTile peer={peer} />
         </div>
       ))}
     </div>
   )
 }
+
+// ── Page entry point ──────────────────────────────────────────────────────────
 
 export default function RecorderPage() {
   const params    = new URLSearchParams(window.location.hash.split('?')[1] || '')
@@ -69,7 +154,7 @@ export default function RecorderPage() {
 
   return (
     <HMSRoomProvider>
-      <RecorderInner roomId={roomId} authToken={authToken} />
+      <RecorderInner authToken={authToken} />
     </HMSRoomProvider>
   )
 }
