@@ -466,6 +466,22 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     })
   }, [isHost, isConnected]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Restore music bot state on host rejoin ────────────────────
+  useEffect(() => {
+    if (!isHost || !isConnected) return
+    supabase
+      .from('sessions')
+      .select('music_bot_id, music_bot_status')
+      .eq('id', sessionId)
+      .single()
+      .then(({ data }) => {
+        if (data?.music_bot_status === 'playing' || data?.music_bot_status === 'starting') {
+          setMusicBotId(data.music_bot_id)
+          setMusicBotStatus(data.music_bot_status)
+        }
+      })
+  }, [isHost, isConnected]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Auto-stop music when session ends ────────────────────────
   useEffect(() => {
     if (status === 'left' && musicBotId) {
@@ -577,6 +593,15 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     setMusicBotStatus('starting')
     try {
       const token = await getMusicAuthToken()
+      // Stop any existing bot first — prevents double bot if host rejoins
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/stop-music-bot`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ session_id: sessionId }),
+        })
+      } catch { /* ignore — bot may not exist */ }
+      // Now start fresh
       const res = await fetch(`${SUPABASE_URL}/functions/v1/start-music-bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
