@@ -79,7 +79,7 @@ serve(async (req) => {
           jti: crypto.randomUUID(),
         }, beamTokenKey)
 
-        const meetingUrl = `https://online.nrithyaholics.in/#/recorder?room_id=${roomId}&auth_token=${beamToken}`
+        const meetingUrl = `https://dejoy-videoconf-406.app.100ms.live/meeting/${roomId}?skip_preview=true&auth_token=${beamToken}`
 
         body = {
           meeting_url: meetingUrl,
