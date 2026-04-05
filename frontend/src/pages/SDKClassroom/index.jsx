@@ -450,6 +450,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
 
   // ── Auto-start recording when host connects ───────────────────
   useEffect(() => {
+    console.log('[recording-debug] effect ran:', { isHost, isConnected, started: recordingStartedRef.current })
     if (!isHost || !isConnected || recordingStartedRef.current) return
     recordingStartedRef.current = true
     callRecordingControl('start').then(data => {
