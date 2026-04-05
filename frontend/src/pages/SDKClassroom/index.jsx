@@ -453,7 +453,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     console.log('[recording-debug] effect ran:', { isHost, isConnected, started: recordingStartedRef.current })
     if (!isHost || !isConnected || recordingStartedRef.current) return
     recordingStartedRef.current = true
-    callRecordingControl('start').then(data => {
+    callRecordingControl('start', { recorder_role: 'recorder-host' }).then(data => {
       if (data.success) {
         // Normal path: start succeeded, recording_id returned
         setRecordingId(data.recording_id)   // may be null if 100ms omits it
@@ -549,6 +549,9 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     clearTimeout(endTimerRef.current)
     clearInterval(bannerTimerRef.current)
     try { await callRecordingControl('stop') } catch { /* ignore */ }
+    if (perfRecordingId) {
+      try { await callRecordingControl('stop', { recording_id: perfRecordingId }) } catch { /* ignore */ }
+    }
     try { await hmsActions.endRoom(false, 'Session ended by host') } catch { }
     sessionStorage.setItem(`nrh_left_${sessionId}`, Date.now().toString())
     setStatus('left')
@@ -669,7 +672,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
         clearInterval(timer)
         setPerformanceCountdown(null)
         setPerformanceMode(true)
-        callRecordingControl('start', { recording_type: 'performance' }).then(data => {
+        callRecordingControl('start', { recorder_role: 'recorder-all' }).then(data => {
           if (data.recording_id) setPerfRecordingId(data.recording_id)
         })
       } else {

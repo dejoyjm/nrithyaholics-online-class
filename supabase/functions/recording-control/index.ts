@@ -35,7 +35,7 @@ serve(async (req) => {
   )
 
   try {
-    const { session_id, action, recording_id } = await req.json()
+    const { session_id, action, recording_id, recorder_role } = await req.json()
 
     if (!session_id || !action) {
       return respond({ success: false, error: 'session_id and action required' })
@@ -61,6 +61,9 @@ serve(async (req) => {
 
     switch (action) {
       case 'start': {
+        const recorderRole = recorder_role || 'recorder-host'
+        console.log('[recording] using recorder role:', recorderRole)
+
         const now = Math.floor(Date.now() / 1000)
         const beamTokenKey = await crypto.subtle.importKey(
           'raw', new TextEncoder().encode(HMS_APP_SECRET),
@@ -72,7 +75,7 @@ serve(async (req) => {
           version: 2,
           room_id: roomId,
           user_id: 'beam-recorder',
-          role: 'recorder',
+          role: recorderRole,
           iat: now,
           exp: now + 24 * 60 * 60,
           nbf: now,
