@@ -19,6 +19,7 @@ import RecordingBanner from './RecordingBanner'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const MUSIC_BOT_URL = import.meta.env.VITE_MUSIC_BOT_URL
+  || 'https://music-bot-server-production.up.railway.app'
 
 const WARN_BEFORE_SECS = 10 * 60   // 10 minutes
 const CRITICAL_BEFORE_SECS = 5 * 60 // 5 minutes
@@ -289,7 +290,7 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
   const [banner, setBanner] = useState(null)
 
   // ── Week 2: layout state ─────────────────────────────────────
-  const [viewMode, setViewMode] = useState('class')  // 'class' | 'gallery' | 'self'
+  const [viewMode, setViewMode] = useState('self')  // 'class' | 'gallery' | 'self'
   const [mirrored, setMirrored] = useState(true)
 
   // ── Week 3: recording state ───────────────────────────────────
@@ -375,8 +376,8 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
       authToken: roomToken,
       userName,
       settings: {
-        isAudioMuted: userRole === 'guest',
-        isVideoMuted: userRole === 'guest',
+        isAudioMuted: true,
+        isVideoMuted: false,
       },
     }).catch((err) => {
       console.error('HMS join error:', err)
@@ -796,23 +797,27 @@ function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
           // ════════════════════════════════════════════════
           // GALLERY MODE — equal grid of all peers
           // ════════════════════════════════════════════════
-          ? (
-            <div style={{
-              flex: 1,
-              display: 'grid',
-              gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 160 : 240}px, 1fr))`,
-              gap: 8,
-              padding: 8,
-              overflow: 'auto',
-              alignContent: 'start',
-            }}>
-              {peers.map(peer => (
-                <div key={peer.id} style={{ aspectRatio: '16/9', borderRadius: 10, overflow: 'hidden' }}>
-                  <PeerTile peer={peer} mirrored={mirrored} />
-                </div>
-              ))}
-            </div>
-          )
+          ? (() => {
+            const n = peers.length
+            const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3
+            return (
+              <div style={{
+                flex: 1,
+                display: 'grid',
+                gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                gap: 8,
+                padding: 8,
+                overflow: 'auto',
+                alignContent: 'start',
+              }}>
+                {peers.map(peer => (
+                  <div key={peer.id} style={{ aspectRatio: '9/16', borderRadius: 10, overflow: 'hidden' }}>
+                    <PeerTile peer={peer} mirrored={mirrored} />
+                  </div>
+                ))}
+              </div>
+            )
+          })()
           : viewMode === 'self'
           // ════════════════════════════════════════════════
           // SELF-VIEW MODE — full-screen local video + draggable remote overlay
