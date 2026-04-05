@@ -664,21 +664,28 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   // ── Tab audio helpers ─────────────────────────────────────────
   async function handleStartTabAudio() {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false })
+      // video: true is required by spec — browser rejects if false
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      // Discard video track immediately — we only want audio
+      stream.getVideoTracks().forEach(t => t.stop())
+
       const audioTrack = stream.getAudioTracks()[0]
       if (!audioTrack) {
-        alert('No audio track found. Make sure to select a tab and enable "Share tab audio".')
+        alert("No audio track found. Please select a browser tab and make sure to check 'Share tab audio' in the picker.")
         return
       }
+      // Publish to 100ms room as auxiliary audio track
       await hmsActions.addTrack(audioTrack, 'audio')
       setTabAudioStream(stream)
       setTabAudioTrack(audioTrack)
       setTabAudioSharing(true)
+      // Auto-stop if user clicks Stop in browser native UI
       audioTrack.onended = () => handleStopTabAudio()
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
         console.error('Tab audio error:', err)
       }
+      // NotAllowedError = user cancelled picker, ignore silently
     }
   }
 
@@ -1097,7 +1104,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
       )}
 
       {/* ── Tab audio overlay — host + desktop only ──────── */}
-      {isHost && isConnected && !isMobile && typeof navigator.mediaDevices?.getDisplayMedia === 'function' && (
+      {isHost && isConnected && typeof navigator.mediaDevices?.getDisplayMedia === 'function' && (
         <div style={{
           position: 'absolute',
           top: 60,
@@ -1131,7 +1138,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
               >
                 🎵 Share Tab Audio
               </button>
-              <div style={{ fontSize: 11, color: '#7a6e65' }}>Desktop only — share audio from any browser tab</div>
+              <div style={{ fontSize: 11, color: '#7a6e65' }}>Select a browser tab → check 'Share tab audio' in the picker</div>
             </div>
           )}
         </div>
