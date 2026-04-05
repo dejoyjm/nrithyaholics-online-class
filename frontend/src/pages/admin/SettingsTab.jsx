@@ -5,6 +5,8 @@ export default function SettingsTab({ onConfigSaved }) {
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [savingMode, setSavingMode] = useState(false)
+  const [savedMode, setSavedMode] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { fetchConfig() }, [])
@@ -21,6 +23,7 @@ export default function SettingsTab({ onConfigSaved }) {
         guest_pre_join_minutes: data.guest_pre_join_minutes,
         host_grace_minutes:     data.host_grace_minutes,
         guest_grace_minutes:    data.guest_grace_minutes,
+        classroom_mode:         data.classroom_mode || 'prebuilt',
       })
     }
     setLoading(false)
@@ -29,14 +32,29 @@ export default function SettingsTab({ onConfigSaved }) {
   async function handleSave() {
     setSaving(true)
     setSaved(false)
+    const { host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes } = form
     const { error } = await supabase
       .from('platform_config')
-      .update({ ...form, updated_at: new Date().toISOString() })
+      .update({ host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes, updated_at: new Date().toISOString() })
       .eq('id', 1)
     setSaving(false)
     if (error) { alert(error.message); return }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
+    if (onConfigSaved) onConfigSaved(form)
+  }
+
+  async function handleSaveMode() {
+    setSavingMode(true)
+    setSavedMode(false)
+    const { error } = await supabase
+      .from('platform_config')
+      .update({ classroom_mode: form.classroom_mode, updated_at: new Date().toISOString() })
+      .eq('id', 1)
+    setSavingMode(false)
+    if (error) { alert(error.message); return }
+    setSavedMode(true)
+    setTimeout(() => setSavedMode(false), 3000)
     if (onConfigSaved) onConfigSaved(form)
   }
 
@@ -105,6 +123,46 @@ export default function SettingsTab({ onConfigSaved }) {
         style={{ background: saved ? '#1a7a3c' : '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
         {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Settings'}
       </button>
+
+      {/* ── Classroom Mode ─────────────────────────────────────── */}
+      <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', marginTop: 28, marginBottom: 20 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#0f0c0c', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16 }}>
+          🖥 Classroom Mode
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+          <button
+            onClick={() => setForm(f => ({ ...f, classroom_mode: 'prebuilt' }))}
+            style={{
+              padding: '10px 20px', borderRadius: 20, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              background: form.classroom_mode === 'prebuilt' ? '#0f0c0c' : '#faf7f2',
+              color:      form.classroom_mode === 'prebuilt' ? 'white'   : '#5a4e47',
+              border:     form.classroom_mode === 'prebuilt' ? '1px solid #0f0c0c' : '1px solid #e2dbd4',
+            }}
+          >
+            🎞 Prebuilt (100ms)
+          </button>
+          <button
+            onClick={() => setForm(f => ({ ...f, classroom_mode: 'sdk' }))}
+            style={{
+              padding: '10px 20px', borderRadius: 20, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+              background: form.classroom_mode === 'sdk' ? '#0f0c0c' : '#faf7f2',
+              color:      form.classroom_mode === 'sdk' ? 'white'   : '#5a4e47',
+              border:     form.classroom_mode === 'sdk' ? '1px solid #0f0c0c' : '1px solid #e2dbd4',
+            }}
+          >
+            ⚡ Custom SDK
+          </button>
+        </div>
+        <div style={{ fontSize: 13, color: form.classroom_mode === 'sdk' ? '#22c55e' : '#7a6e65', marginBottom: 20 }}>
+          {form.classroom_mode === 'sdk'
+            ? 'NrithyaHolics custom classroom. Full control.'
+            : '100ms hosted UI. Stable, no customisation.'}
+        </div>
+        <button onClick={handleSaveMode} disabled={savingMode}
+          style={{ background: savedMode ? '#1a7a3c' : '#0f0c0c', color: 'white', border: 'none', borderRadius: 10, padding: '12px 28px', fontSize: 14, fontWeight: 700, cursor: savingMode ? 'not-allowed' : 'pointer', opacity: savingMode ? 0.7 : 1 }}>
+          {savedMode ? '✓ Saved!' : savingMode ? 'Saving...' : 'Save Classroom Mode'}
+        </button>
+      </div>
     </div>
   )
 }

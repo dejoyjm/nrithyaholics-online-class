@@ -255,7 +255,7 @@ function HostPlaceholder() {
 // Inner component — must be a child of HMSRoomProvider
 // ─────────────────────────────────────────────────────────────────
 
-function SDKClassroomInner({ sessionId, sessionData, onLeave }) {
+function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   // ── HMS store selectors ──────────────────────────────────────
   const hmsActions        = useHMSActions()
   const peers             = useHMSStore(selectPeers)

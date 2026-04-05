@@ -198,7 +198,7 @@ export default function App() {
   useEffect(() => {
     supabase
       .from('platform_config')
-      .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes')
+      .select('host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes, classroom_mode')
       .eq('id', 1)
       .single()
       .then(({ data }) => { if (data) setPlatformConfig(data) })
@@ -346,13 +346,30 @@ export default function App() {
     />
   )
 
-  if (currentClassroom) return (
-    <SDKClassroom
-      sessionId={currentClassroom.sessionId}
-      sessionData={currentClassroom.sessionData}
-      onLeave={() => navigateTo('#/')}
-    />
-  )
+  if (currentClassroom) {
+    const effectiveMode = currentClassroom.sessionData?.classroom_mode_override
+      || platformConfig?.classroom_mode
+      || 'prebuilt'
+    if (effectiveMode === 'sdk') return (
+      <SDKClassroom
+        sessionId={currentClassroom.sessionId}
+        session={currentClassroom.sessionData}
+        platformConfig={platformConfig}
+        userRole={profile?.role}
+        userName={profile?.full_name || user?.email}
+        onLeave={() => navigateTo('#/')}
+      />
+    )
+    return (
+      <ClassroomPage
+        sessionId={currentClassroom.sessionId}
+        sessionData={currentClassroom.sessionData}
+        user={user}
+        profile={profile}
+        onLeave={() => navigateTo('#/')}
+      />
+    )
+  }
 
   if (user && profile?.role === 'choreographer' && profile?.choreographer_approved && mode === 'teaching') return (
     <ChoreoPage
