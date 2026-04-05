@@ -18,8 +18,6 @@ import RecordingBanner from './RecordingBanner'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-const MUSIC_BOT_URL = import.meta.env.VITE_MUSIC_BOT_URL
-  || 'https://music-bot-server-production.up.railway.app'
 
 const WARN_BEFORE_SECS = 10 * 60   // 10 minutes
 const CRITICAL_BEFORE_SECS = 5 * 60 // 5 minutes
@@ -562,7 +560,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
 
   async function callMusicControl(action, value) {
     const token = await getMusicAuthToken()
-    const res = await fetch(`${MUSIC_BOT_URL}/music-bot-control`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/music-bot-control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ session_id: sessionId, action, value }),
@@ -574,7 +572,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     setMusicBotStatus('starting')
     try {
       const token = await getMusicAuthToken()
-      const res = await fetch(`${MUSIC_BOT_URL}/start-music-bot`, {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/start-music-bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ session_id: sessionId }),
@@ -613,7 +611,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   async function handleStopMusic() {
     try {
       const token = await getMusicAuthToken()
-      await fetch(`${MUSIC_BOT_URL}/stop-music-bot`, {
+      await fetch(`${SUPABASE_URL}/functions/v1/stop-music-bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ session_id: sessionId }),
@@ -629,7 +627,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     if (!window.confirm('Reset the music bot? This will stop it and clear all state.')) return
     try {
       const token = await getMusicAuthToken()
-      await fetch(`${MUSIC_BOT_URL}/stop-music-bot`, {
+      await fetch(`${SUPABASE_URL}/functions/v1/stop-music-bot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ session_id: sessionId }),
@@ -1047,7 +1045,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
 
 // ─────────────────────────────────────────────────────────────────
 // MusicControls — floating draggable overlay (host only)
-// Copied verbatim from ClassroomPage.jsx, fetch calls use MUSIC_BOT_URL
+// Copied verbatim from ClassroomPage.jsx, fetch calls use Supabase edge functions
 // ─────────────────────────────────────────────────────────────────
 
 function MusicControls({ session, botStatus, position, duration, volume, onStart, onPause, onResume, onSeek, onVolume, onStop, onReset, pos, onDrag }) {
