@@ -60,20 +60,53 @@ serve(async (req) => {
     let body: Record<string, unknown> | undefined
 
     switch (action) {
-      case 'start':
+      case 'start': {
+        // Step A — generate a peer token for Beam so it joins the same session
+        let beamToken: string | null = null
+        try {
+          const tokenRes = await fetch('https://api.100ms.live/v2/auth-token', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${mgmtToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              room_id: roomId,
+              role: 'host',
+              user_id: 'beam-recorder',
+              token_validity_hours: 2,
+            }),
+          })
+          const tokenData = await tokenRes.json().catch(() => ({}))
+          if (tokenRes.ok && tokenData.token) {
+            beamToken = tokenData.token
+          } else {
+            console.error('beam auth-token failed, falling back to no-token URL:', JSON.stringify(tokenData))
+          }
+        } catch (tokenErr) {
+          console.error('beam auth-token fetch error, falling back:', tokenErr)
+        }
+
+        // Step B — build meeting_url with token if available
+        const meetingUrl = beamToken
+          ? `${HMS_MEETING_BASE}/${roomId}?skip_preview=true&auth_token=${beamToken}`
+          : `${HMS_MEETING_BASE}/${roomId}?skip_preview=true`
+
+        // Step C — pass to Beam start
         apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/start`
-        body = { meeting_url: `${HMS_MEETING_BASE}/${roomId}?skip_preview=true` }
+        body = { meeting_url: meetingUrl }
         break
+      }
       case 'stop':
         apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/stop`
         break
       case 'pause':
-        if (!recording_id) return respond({ success: false, error: 'recording_id required for pause' })
-        apiUrl = `https://api.100ms.live/v2/recordings/${recording_id}/pause`
+        apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/pause`
+        body = undefined
         break
       case 'resume':
-        if (!recording_id) return respond({ success: false, error: 'recording_id required for resume' })
-        apiUrl = `https://api.100ms.live/v2/recordings/${recording_id}/resume`
+        apiUrl = `https://api.100ms.live/v2/recordings/room/${roomId}/resume`
+        body = undefined
         break
       default:
         return respond({ success: false, error: `Unknown action: ${action}` })
