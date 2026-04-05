@@ -312,6 +312,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   const [tabAudioTrack, setTabAudioTrack]   = useState(null)
   const [tabAudioSharing, setTabAudioSharing] = useState(false)
   const [tabAudioCollapsed, setTabAudioCollapsed] = useState(false)
+  const [tabAudioIdleCollapsed, setTabAudioIdleCollapsed] = useState(false)
 
   const joinedRef           = useRef(false)
   const countdownRef        = useRef(null)
@@ -680,6 +681,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
       setTabAudioStream(stream)
       setTabAudioTrack(audioTrack)
       setTabAudioSharing(true)
+      setTabAudioIdleCollapsed(false)
       // Auto-stop if user clicks Stop in browser native UI
       audioTrack.onended = () => handleStopTabAudio()
     } catch (err) {
@@ -1132,17 +1134,17 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
             </button>
           </div>
         ) : (
-          // ── Expanded card ───────────────────────────────
+          // ── Expanded card (or idle collapsed pill) ───────
           <div style={{
             position: 'absolute',
             top: 60,
             right: 16,
             background: 'rgba(15,12,12,0.92)',
             border: '1px solid rgba(200,67,10,0.4)',
-            borderRadius: 12,
-            padding: '10px 16px',
+            borderRadius: !tabAudioSharing && tabAudioIdleCollapsed ? 20 : 12,
+            padding: !tabAudioSharing && tabAudioIdleCollapsed ? '6px 10px' : '10px 16px',
             zIndex: 100,
-            minWidth: 220,
+            minWidth: !tabAudioSharing && tabAudioIdleCollapsed ? 'unset' : 220,
           }}>
             {tabAudioSharing ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1166,14 +1168,34 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
                   ⏹ Stop Sharing
                 </button>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            ) : tabAudioIdleCollapsed ? (
+              // ── Idle collapsed pill ───────────────────────
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 13 }}>🎵</span>
                 <button
-                  onClick={handleStartTabAudio}
-                  style={{ fontSize: 12, padding: '6px 12px', background: '#1a1410', color: '#faf7f2', border: '1px solid rgba(200,67,10,0.5)', borderRadius: 6, cursor: 'pointer', fontWeight: 600, alignSelf: 'flex-start' }}
+                  onClick={() => setTabAudioIdleCollapsed(false)}
+                  style={{ fontSize: 12, background: 'transparent', border: 'none', color: '#a09890', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
                 >
-                  🎵 Share Tab Audio
+                  ⌃
                 </button>
+              </div>
+            ) : (
+              // ── Idle expanded card ────────────────────────
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <button
+                    onClick={handleStartTabAudio}
+                    style={{ fontSize: 12, padding: '6px 12px', background: '#1a1410', color: '#faf7f2', border: '1px solid rgba(200,67,10,0.5)', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    🎵 Share Tab Audio
+                  </button>
+                  <button
+                    onClick={() => setTabAudioIdleCollapsed(true)}
+                    style={{ fontSize: 13, background: 'transparent', border: 'none', color: '#a09890', cursor: 'pointer', padding: '0 2px', lineHeight: 1, marginLeft: 8 }}
+                  >
+                    —
+                  </button>
+                </div>
                 <div style={{ fontSize: 11, color: '#7a6e65' }}>Select a browser tab → check 'Share tab audio' in the picker</div>
               </div>
             )}

@@ -294,10 +294,19 @@ export default function App() {
   // Re-registers when auth changes so the handler sees current user/profile.
 
   useEffect(() => {
-    const handler = () => applyHashState(window.location.hash, user, profile)
+    const handler = () => {
+      const { page, id } = parseHash(window.location.hash)
+      // Skip applyHashState only when URL already matches the active
+      // classroom — this is the programmatic hash set from onJoinClass.
+      // Allows browser Back button to still work from classroom.
+      if (currentClassroom && page === 'classroom' && id === currentClassroom.sessionId) {
+        return
+      }
+      applyHashState(window.location.hash, user, profile)
+    }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [user, profile]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, profile, currentClassroom]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Logout ────────────────────────────────────────────────────────────────
 
