@@ -17,8 +17,7 @@ function RecorderPeerTile({ peer }) {
   const videoRef    = useRef(null)
   const hasVideo    = !!(videoTrack?.enabled && videoTrack?.id)
 
-  console.log('[recorder] rendering peer:', peer.name, peer.roleName,
-    'videoTrack:', peer.videoTrack)
+  console.log('[recorder] peer:', peer.name, 'videoTrack:', videoTrack?.id, 'enabled:', videoTrack?.enabled)
 
   useEffect(() => {
     if (!videoTrack?.id || !videoRef.current) return
@@ -96,14 +95,19 @@ function RecorderInner({ authToken }) {
   const hmsActions  = useHMSActions()
   const remotePeers = useHMSStore(selectRemotePeers)
   const roomState   = useHMSStore(selectRoomState)
+  const joinedRef   = useRef(false)
 
   useEffect(() => {
     if (!authToken) return
+    if (joinedRef.current) return
+    joinedRef.current = true
     hmsActions.join({
       authToken,
       userName: 'Beam Recorder',
       settings: { isAudioMuted: true, isVideoMuted: true },
-    })
+    }).then(() => {
+      console.log('[recorder] joined room')
+    }).catch(() => {})
     return () => {
       hmsActions.leave().catch(() => {})
     }
