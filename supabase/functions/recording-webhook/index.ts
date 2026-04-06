@@ -8,10 +8,10 @@ serve(async (req) => {
 
   const body = await req.json().catch(() => null)
 
-  // Fix 1: Log the full raw payload before any parsing
+  // Log the full raw payload before any parsing
   console.log('[webhook] raw payload:', JSON.stringify(body))
 
-  // Ignore everything except recording success events
+  // Only process recording success events; return 200 immediately for all others
   if (!body || body.type !== 'beam.recording.success') {
     return new Response(JSON.stringify({ received: true }), {
       status: 200,
@@ -19,15 +19,11 @@ serve(async (req) => {
     })
   }
 
-  const duration     = body.duration
-  const file_size    = body.size
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
 
-  // Fix 2: Look up session using flat body.room_id
   const { data: session } = await supabase
     .from('sessions')
     .select('id')
@@ -42,20 +38,16 @@ serve(async (req) => {
     })
   }
 
-  // Fix 3: Construct r2_url from R2 public base URL, not the s3:// internal path
-  const filename = body.location?.split('/').slice(3).join('/')
-  const r2_url = `https://nrh-recordings.ada4a12feb79f496f48ad0e80a913617.r2.cloudflarestorage.com/${filename}`
-
   const { data: insertData } = await supabase.from('recordings').insert({
     session_id: session.id,
-    r2_url,
-    duration_seconds: duration,
-    file_size_bytes: file_size,
-    recorder_role: 'recorder-host',
+    r2_url:           body.data?.location ?? null,
+    duration_seconds: body.data?.duration ?? null,
+    file_size_bytes:  body.data?.size ?? null,
+    recorder_role:    null,
   }).select('id').single()
 
-  // Fix 4: Updated log line
-  console.log('[webhook] recording saved:', insertData?.id, 'session:', session?.id, 'url:', r2_url)
+  console.log('[webhook] recording saved:', insertData?.id,
+    'session:', session?.id, 'duration:', body.data?.duration)
 
   return new Response(JSON.stringify({ received: true }), {
     status: 200,
