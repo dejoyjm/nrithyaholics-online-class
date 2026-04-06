@@ -319,6 +319,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   const endTimerRef         = useRef(null)
   const bannerTimerRef      = useRef(null)
   const recordingStartedRef = useRef(false)
+  const audioContextRef     = useRef(null)
 
   const session = sessionData
   const isHost  = userRole === 'host'
@@ -664,44 +665,63 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   // ── Tab audio helpers ─────────────────────────────────────────
   async function handleStartTabAudio() {
     try {
-      // video: true is required by spec — browser rejects if false
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-      // Discard video track immediately — we only want audio
-      stream.getVideoTracks().forEach(t => t.stop())
-
-      const audioTrack = stream.getAudioTracks()[0]
-      if (!audioTrack) {
-        alert("No audio track found. Please select a browser tab and make sure to check 'Share tab audio' in the picker.")
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true, audio: true
+      })
+      const tabTrack = displayStream.getAudioTracks()[0]
+      if (!tabTrack) {
+        displayStream.getTracks().forEach(t => t.stop())
+        alert("No tab audio found. Select a browser tab and check 'Share tab audio'.")
         return
       }
-      // Publish to 100ms room as auxiliary audio track
-      await hmsActions.addTrack(audioTrack, 'audio')
-      setTabAudioStream(stream)
-      setTabAudioTrack(audioTrack)
+      // Stop video track AFTER confirming audio exists
+      displayStream.getVideoTracks().forEach(t => t.stop())
+
+      // Get a fresh mic track for mixing
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const micTrack = micStream.getAudioTracks()[0]
+
+      // Build Web Audio mixing graph
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      audioContextRef.current = audioCtx
+      const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]))
+      const tabSource = audioCtx.createMediaStreamSource(new MediaStream([tabTrack]))
+      const destination = audioCtx.createMediaStreamDestination()
+      micSource.connect(destination)
+      tabSource.connect(destination)
+
+      // Replace HMS published track with mixed output
+      const mixedTrack = destination.stream.getAudioTracks()[0]
+      await hmsActions.replaceAudioTrack(mixedTrack)
+      console.log('[tab-audio] mixing started — mic + tab audio via Web Audio API')
+
+      setTabAudioStream(displayStream)
+      setTabAudioTrack(tabTrack)
       setTabAudioSharing(true)
       setTabAudioIdleCollapsed(false)
-      // Auto-stop if user clicks Stop in browser native UI
-      audioTrack.onended = () => handleStopTabAudio()
+
+      // Auto-stop when user clicks Stop in browser native UI
+      tabTrack.onended = () => handleStopTabAudio()
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
-        console.error('Tab audio error:', err)
+        console.error('[tab-audio] error:', err)
       }
-      // NotAllowedError = user cancelled picker, ignore silently
     }
   }
 
   async function handleStopTabAudio() {
-    if (tabAudioTrack) {
-      try { await hmsActions.removeTrack(tabAudioTrack.id) } catch {}
-      tabAudioTrack.stop()
+    try { await hmsActions.replaceAudioTrack(null) } catch {}
+    if (audioContextRef.current) {
+      audioContextRef.current.close()
+      audioContextRef.current = null
     }
-    if (tabAudioStream) {
-      tabAudioStream.getTracks().forEach(t => t.stop())
-    }
+    if (tabAudioTrack) tabAudioTrack.stop()
+    if (tabAudioStream) tabAudioStream.getTracks().forEach(t => t.stop())
     setTabAudioStream(null)
     setTabAudioTrack(null)
     setTabAudioSharing(false)
     setTabAudioCollapsed(false)
+    console.log('[tab-audio] stopped, mic restored')
   }
 
   async function handleForceReset() {
