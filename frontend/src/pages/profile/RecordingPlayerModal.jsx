@@ -51,7 +51,7 @@ export default function RecordingPlayerModal({ recording, session, onClose, supa
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
     >
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 800, position: 'relative' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 800, position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', maxHeight: '90vh' }}>
         <button
           onClick={onClose}
           style={{ position: 'absolute', top: -44, right: 0, background: 'none', border: 'none', color: 'white', fontSize: 16, fontWeight: 700, cursor: 'pointer', padding: '4px 8px' }}
@@ -75,7 +75,7 @@ export default function RecordingPlayerModal({ recording, session, onClose, supa
           <video
             controls
             autoPlay
-            style={{ width: '100%', maxWidth: 800, borderRadius: 8, background: '#000', display: 'block' }}
+            style={{ height: '80vh', width: 'auto', maxWidth: '100%', objectFit: 'contain', borderRadius: 8, background: '#000', display: 'block' }}
             src={url}
           />
         )}
