@@ -320,6 +320,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   const bannerTimerRef      = useRef(null)
   const recordingStartedRef = useRef(false)
   const audioContextRef     = useRef(null)
+  const originalMicTrackRef = useRef(null)
 
   const session = sessionData
   const isHost  = userRole === 'host'
@@ -674,14 +675,14 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
         alert("No tab audio found. Select a browser tab and check 'Share tab audio'.")
         return
       }
-      // Stop video track AFTER confirming audio exists
       displayStream.getVideoTracks().forEach(t => t.stop())
 
-      // Get a fresh mic track for mixing
+      // Get fresh mic track for mixing
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const micTrack = micStream.getAudioTracks()[0]
+      originalMicTrackRef.current = micTrack
 
-      // Build Web Audio mixing graph
+      // Build Web Audio mixing graph: mic + tab → single mixed output
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
       audioContextRef.current = audioCtx
       const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]))
@@ -689,39 +690,53 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
       const destination = audioCtx.createMediaStreamDestination()
       micSource.connect(destination)
       tabSource.connect(destination)
-
-      // Replace HMS published track with mixed output
       const mixedTrack = destination.stream.getAudioTracks()[0]
-      await hmsActions.replaceAudioTrack(mixedTrack)
-      console.log('[tab-audio] mixing started — mic + tab audio via Web Audio API')
+
+      // Replace track directly on the WebRTC publish sender
+      const pc = window.__hms?.sdk?.transport?.publishConnection
+      if (!pc) throw new Error('HMS publish connection not accessible')
+      const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio')
+      if (!audioSender) throw new Error('No audio sender found')
+      await audioSender.replaceTrack(mixedTrack)
 
       setTabAudioStream(displayStream)
       setTabAudioTrack(tabTrack)
       setTabAudioSharing(true)
       setTabAudioIdleCollapsed(false)
+      console.log('[tab-audio] mixing started via RTCRtpSender.replaceTrack')
 
-      // Auto-stop when user clicks Stop in browser native UI
       tabTrack.onended = () => handleStopTabAudio()
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
         console.error('[tab-audio] error:', err)
+        alert('Tab audio failed: ' + err.message)
       }
     }
   }
 
   async function handleStopTabAudio() {
-    try { await hmsActions.replaceAudioTrack(null) } catch {}
+    try {
+      // Restore original mic track on the sender
+      const pc = window.__hms?.sdk?.transport?.publishConnection
+      if (pc && originalMicTrackRef.current) {
+        const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio')
+        if (audioSender) await audioSender.replaceTrack(originalMicTrackRef.current)
+      }
+    } catch (e) {
+      console.warn('[tab-audio] restore mic failed:', e)
+    }
     if (audioContextRef.current) {
       audioContextRef.current.close()
       audioContextRef.current = null
     }
     if (tabAudioTrack) tabAudioTrack.stop()
     if (tabAudioStream) tabAudioStream.getTracks().forEach(t => t.stop())
+    originalMicTrackRef.current = null
     setTabAudioStream(null)
     setTabAudioTrack(null)
     setTabAudioSharing(false)
     setTabAudioCollapsed(false)
-    console.log('[tab-audio] stopped, mic restored')
+    console.log('[tab-audio] stopped, original mic restored via RTCRtpSender')
   }
 
   async function handleForceReset() {
