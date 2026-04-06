@@ -4,6 +4,7 @@ import BookingsTab from './admin/BookingsTab'
 import UsersTab from './admin/UsersTab'
 import SessionsTab from './admin/SessionsTab'
 import RevenueTab from './admin/RevenueTab'
+import RecordingsTab from './admin/RecordingsTab'
 import SettingsTab from './admin/SettingsTab'
 
 export default function AdminPage({ user, onLogout, onConfigChange }) {
@@ -106,6 +107,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
           <button style={tabStyle('sessions')} onClick={() => setTab('sessions')}>Sessions</button>
           <button style={tabStyle('bookings')} onClick={() => setTab('bookings')}>📊 Bookings</button>
           <button style={tabStyle('revenue')} onClick={() => setTab('revenue')}>💰 Revenue</button>
+          <button style={tabStyle('recordings')} onClick={() => setTab('recordings')}>🎬 Recordings</button>
           <button style={tabStyle('settings')} onClick={() => setTab('settings')}>⚙️ Settings</button>
         </div>
 
@@ -144,6 +146,12 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
                 choreographers={users.filter(u => u.role === 'choreographer' && u.choreographer_approved)}
                 sessions={sessions}
               />
+            </div>
+          )}
+
+          {tab === 'recordings' && (
+            <div style={{ padding: 32 }}>
+              <RecordingsTab />
             </div>
           )}
 
