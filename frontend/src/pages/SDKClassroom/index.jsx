@@ -3,10 +3,12 @@ import {
   HMSRoomProvider,
   useHMSActions,
   useHMSStore,
+  useHMSVanillaStore,
   useVideo,
   selectPeers,
   selectLocalPeer,
   selectIsConnectedToRoom,
+  selectIsLocalAudioEnabled,
   selectPeerScreenSharing,
   selectScreenShareByPeerID,
   selectVideoTrackByPeerID,
@@ -256,6 +258,7 @@ function HostPlaceholder() {
 function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   // ── HMS store selectors ──────────────────────────────────────
   const hmsActions        = useHMSActions()
+  const hmsStore          = useHMSVanillaStore()
   const peers             = useHMSStore(selectPeers)
   const localPeer         = useHMSStore(selectLocalPeer)
   const isConnected       = useHMSStore(selectIsConnectedToRoom)
@@ -692,17 +695,14 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
       tabSource.connect(destination)
       const mixedTrack = destination.stream.getAudioTracks()[0]
 
-      window.__debugTabTrack = tabTrack
-      window.__debugMicTrack = micTrack
-      window.__debugMixedTrack = mixedTrack
-      window.__debugAudioCtx = audioCtx
-
       // Replace track directly on the WebRTC publish sender
       const pc = window.__hms?.sdk?.transport?.publishConnection
       if (!pc) throw new Error('HMS publish connection not accessible')
       const audioSender = pc.getSenders().find(s => s.track?.kind === 'audio')
       if (!audioSender) throw new Error('No audio sender found')
       await audioSender.replaceTrack(mixedTrack)
+      const isAudioEnabled = hmsStore.getState(selectIsLocalAudioEnabled)
+      mixedTrack.enabled = isAudioEnabled !== false
 
       setTabAudioStream(displayStream)
       setTabAudioTrack(tabTrack)
