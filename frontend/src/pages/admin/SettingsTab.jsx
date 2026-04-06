@@ -181,6 +181,10 @@ export default function SettingsTab({ onConfigSaved }) {
             onChange={e => setForm(f => ({ ...f, recording_access_days: Math.max(1, Math.min(365, parseInt(e.target.value) || 30)) }))}
           />
         </div>
+        <button onClick={handleSave} disabled={saving}
+          style={{ background: saved ? '#1a7a3c' : '#0f0c0c', color: 'white', border: 'none', borderRadius: 10, padding: '12px 28px', fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, marginTop: 16 }}>
+          {saved ? '✓ Saved!' : saving ? 'Saving...' : 'Save Recording Access'}
+        </button>
       </div>
     </div>
   )
