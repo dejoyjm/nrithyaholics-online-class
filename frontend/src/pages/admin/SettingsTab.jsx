@@ -24,6 +24,7 @@ export default function SettingsTab({ onConfigSaved }) {
         host_grace_minutes:     data.host_grace_minutes,
         guest_grace_minutes:    data.guest_grace_minutes,
         classroom_mode:         data.classroom_mode || 'prebuilt',
+        recording_access_days:  data.recording_access_days ?? 30,
       })
     }
     setLoading(false)
@@ -32,10 +33,10 @@ export default function SettingsTab({ onConfigSaved }) {
   async function handleSave() {
     setSaving(true)
     setSaved(false)
-    const { host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes } = form
+    const { host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes, recording_access_days } = form
     const { error } = await supabase
       .from('platform_config')
-      .update({ host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes, updated_at: new Date().toISOString() })
+      .update({ host_pre_join_minutes, guest_pre_join_minutes, host_grace_minutes, guest_grace_minutes, recording_access_days, updated_at: new Date().toISOString() })
       .eq('id', 1)
     setSaving(false)
     if (error) { alert(error.message); return }
@@ -162,6 +163,24 @@ export default function SettingsTab({ onConfigSaved }) {
           style={{ background: savedMode ? '#1a7a3c' : '#0f0c0c', color: 'white', border: 'none', borderRadius: 10, padding: '12px 28px', fontSize: 14, fontWeight: 700, cursor: savingMode ? 'not-allowed' : 'pointer', opacity: savingMode ? 0.7 : 1 }}>
           {savedMode ? '✓ Saved!' : savingMode ? 'Saving...' : 'Save Classroom Mode'}
         </button>
+      </div>
+
+      {/* ── Recording Access ─────────────────────────────────────── */}
+      <div style={{ background: 'white', borderRadius: 16, padding: 28, border: '1px solid #e2dbd4', marginTop: 20 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#0f0c0c', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 16 }}>
+          🎬 Recording Access
+        </div>
+        <div style={{ maxWidth: 260 }}>
+          <label style={labelStyle}>Days students can access recording after class</label>
+          <input
+            style={inputStyle}
+            type="number"
+            min="1"
+            max="365"
+            value={form.recording_access_days}
+            onChange={e => setForm(f => ({ ...f, recording_access_days: Math.max(1, Math.min(365, parseInt(e.target.value) || 30)) }))}
+          />
+        </div>
       </div>
     </div>
   )

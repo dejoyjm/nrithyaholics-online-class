@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
 import { canJoinNow as computeCanJoin } from '../utils/sessionTime'
+import useRecordings from './profile/useRecordings'
+import RecordingPlayerModal from './profile/RecordingPlayerModal'
 
 const STYLES = ['Bollywood', 'Bharatanatyam', 'Contemporary', 'Hip Hop', 'Kathak', 'Folk', 'Jazz', 'Fusion']
 const LANGUAGES = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Marathi', 'Punjabi', 'Bengali', 'Gujarati']
@@ -32,6 +34,9 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   const isChoreo = profile?.role === 'choreographer'
   const isApprovedChoreo = isChoreo && profile?.choreographer_approved
   const isPending = isChoreo && !profile?.choreographer_approved
+
+  const [activeRecording, setActiveRecording] = useState(null)
+  const [authToken, setAuthToken] = useState(null)
 
   const parseLanguages = (val) => {
     if (!val) return []
@@ -100,6 +105,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
       console.error('[ProfilePage] edge function error:', e)
       setBookings(ownedBookings)
     }
+    setAuthToken(authSession?.access_token)
     setLoadingBookings(false)
   }
 
@@ -155,6 +161,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   const upcoming = bookings.filter(b => isStillActive(b.sessions))
   const past = bookings.filter(b => !isStillActive(b.sessions))
   const initials = (form.full_name || user.email || '?')[0].toUpperCase()
+  const { recordingsBySessionId } = useRecordings(bookings, supabase)
 
   const inputStyle = {
     width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4',
@@ -442,13 +449,13 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
                 {upcoming.length > 0 && (
                   <div style={{ marginBottom: 28 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>UPCOMING ({upcoming.length})</div>
-                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} onJoinClass={onJoinClass} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} />)}
+                    {upcoming.map(b => <BookingRow key={b.id} booking={b} isUpcoming onSessionClick={onSessionClick} onJoinClass={onJoinClass} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} recordingsBySessionId={recordingsBySessionId} setActiveRecording={setActiveRecording} />)}
                   </div>
                 )}
                 {past.length > 0 && (
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>PAST ({past.length})</div>
-                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} />)}
+                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} recordingsBySessionId={recordingsBySessionId} setActiveRecording={setActiveRecording} />)}
                   </div>
                 )}
               </div>
@@ -457,11 +464,21 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
         )}
 
       </div>
+      {activeRecording && (
+        <RecordingPlayerModal
+          recording={activeRecording.recording}
+          session={activeRecording.session}
+          onClose={() => setActiveRecording(null)}
+          supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
+          supabaseAnonKey={import.meta.env.VITE_SUPABASE_ANON_KEY}
+          authToken={authToken}
+        />
+      )}
     </div>
   )
 }
 
-function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig, guestBookings, user, onGuestRefresh }) {
+function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig, guestBookings, user, onGuestRefresh, recordingsBySessionId, setActiveRecording }) {
 const [editingGuest, setEditingGuest] = useState(null) // { id, email }
 const [sendingGuest, setSendingGuest] = useState(null) // guest booking id being acted on
 const session = booking.sessions
@@ -474,6 +491,14 @@ const sessionStart = new Date(session.scheduled_at).getTime()
 const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
 // Learners are always guests on ProfilePage
 const canJoin = computeCanJoin(session, platformConfig, false)
+const recording = recordingsBySessionId?.[booking.session_id]
+const recordingAccessible = (() => {
+  if (!recording) return false
+  const accessDays = platformConfig?.recording_access_days ?? 30
+  const expiry = new Date(session.scheduled_at)
+  expiry.setDate(expiry.getDate() + accessDays)
+  return new Date() <= expiry
+})()
 
 async function callResendInvite(guestBookingId, newEmail) {
   setSendingGuest(guestBookingId)
@@ -528,6 +553,13 @@ async function callResendInvite(guestBookingId, newEmail) {
           onClick={() => onJoinClass ? onJoinClass(booking.session_id, booking.sessions) : onSessionClick(booking.session_id)}
           style={{ marginTop: 10, marginLeft: 18, background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           🎬 Join Class Now
+        </button>
+      )}
+      {recordingAccessible && (
+        <button
+          onClick={() => setActiveRecording({ recording, session })}
+          style={{ marginTop: 10, marginLeft: 18, background: '#1a3a2a', color: '#86efac', border: '1px solid #22c55e', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+          ▶ Watch Recording
         </button>
       )}
       {guestBookings && guestBookings.length > 0 && (
