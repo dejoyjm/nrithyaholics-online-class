@@ -75,6 +75,8 @@ export default function RecordingPlayerModal({ recording, session, onClose, supa
           <video
             controls
             autoPlay
+            controlsList="nodownload"
+            onContextMenu={e => e.preventDefault()}
             style={{ height: '80vh', width: 'auto', maxWidth: '100%', objectFit: 'contain', borderRadius: 8, background: '#000', display: 'block' }}
             src={url}
           />
