@@ -22,7 +22,7 @@ function cleanInstagram(val) {
   return val.replace('@', '').trim()
 }
 
-export default function ProfilePage({ user, profile, platformConfig, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick, onJoinClass }) {
+export default function ProfilePage({ user, profile, platformConfig, onBack, onApplyToTeach, onSwitchToTeaching, onSessionClick, onJoinClass, onPractice }) {
   const [bookings, setBookings] = useState([])
   const [loadingBookings, setLoadingBookings] = useState(true)
   const [guestBookingsMap, setGuestBookingsMap] = useState({})
@@ -455,7 +455,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
                 {past.length > 0 && (
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>PAST ({past.length})</div>
-                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} recordingsBySessionId={recordingsBySessionId} setActiveRecording={setActiveRecording} />)}
+                    {past.map(b => <BookingRow key={b.id} booking={b} platformConfig={platformConfig} guestBookings={guestBookingsMap[b.id] || []} user={user} onGuestRefresh={fetchBookings} recordingsBySessionId={recordingsBySessionId} setActiveRecording={setActiveRecording} onPractice={onPractice} />)}
                   </div>
                 )}
               </div>
@@ -478,7 +478,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
   )
 }
 
-function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig, guestBookings, user, onGuestRefresh, recordingsBySessionId, setActiveRecording }) {
+function BookingRow({ booking, isUpcoming, onSessionClick, onJoinClass, platformConfig, guestBookings, user, onGuestRefresh, recordingsBySessionId, setActiveRecording, onPractice }) {
 const [editingGuest, setEditingGuest] = useState(null) // { id, email }
 const [sendingGuest, setSendingGuest] = useState(null) // guest booking id being acted on
 const session = booking.sessions
@@ -560,6 +560,13 @@ async function callResendInvite(guestBookingId, newEmail) {
           onClick={() => setActiveRecording({ recording, session })}
           style={{ marginTop: 10, marginLeft: 18, background: '#1a3a2a', color: '#86efac', border: '1px solid #22c55e', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           ▶ Watch Recording
+        </button>
+      )}
+      {!isUpcoming && session?.status === 'completed' && onPractice && (
+        <button
+          onClick={() => onPractice(booking.session_id, booking.id)}
+          style={{ marginTop: 10, marginLeft: 10, background: '#1a1a3a', color: '#a78bfa', border: '1px solid #7c3aed', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+          🎯 Practice
         </button>
       )}
       {guestBookings && guestBookings.length > 0 && (

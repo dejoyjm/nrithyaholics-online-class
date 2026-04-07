@@ -16,6 +16,7 @@ import SetupTestModal from './pages/SetupTestModal'
 import ProfileCompletePrompt from './components/ProfileCompletePrompt'
 import MusicBotPage from './pages/MusicBotPage'
 import RecorderPage from './pages/RecorderPage'
+import PracticePage from './pages/PracticePage'
 
 // ── Hash helpers (module-level, no state dependency) ─────────────────────────
 
@@ -45,6 +46,9 @@ export default function App() {
   const [showQuickSetupModal, setShowQuickSetupModal] = useState(false)
   const [showProfilePrompt, setShowProfilePrompt] = useState(false)
   const [forceIST, setForceIST] = useState(false)
+  const [showPractice, setShowPractice] = useState(false)
+  const [practiceSessionId, setPracticeSessionId] = useState(null)
+  const [practiceBookingId, setPracticeBookingId] = useState(null)
 
   // Track whether URL search params handled navigation (takes priority over hash)
   const urlParamsHandled = useRef(false)
@@ -400,6 +404,21 @@ export default function App() {
     />
   )
 
+  if (showPractice && practiceSessionId) return (
+    <PracticePage
+      user={user}
+      sessionId={practiceSessionId}
+      bookingId={practiceBookingId}
+      platformConfig={platformConfig}
+      onBack={() => {
+        setShowPractice(false)
+        setPracticeSessionId(null)
+        setPracticeBookingId(null)
+        setShowProfile(true)
+      }}
+    />
+  )
+
   if (showProfile) return (
     <ProfilePage
       user={user} profile={profile} platformConfig={platformConfig}
@@ -411,6 +430,12 @@ export default function App() {
         setCurrentClassroom({ sessionId, sessionData })
         window.location.hash = '#/classroom/' + sessionId
         setShowProfile(false)
+      }}
+      onPractice={(sid, bid) => {
+        setPracticeSessionId(sid)
+        setPracticeBookingId(bid)
+        setShowProfile(false)
+        setShowPractice(true)
       }}
     />
   )
