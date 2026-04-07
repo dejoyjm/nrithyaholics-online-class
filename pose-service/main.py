@@ -14,6 +14,83 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 
+def get_song_offset_seconds(video_url: str, mp3_url: str) -> float:
+    """
+    Find where in the mp3 the video's audio starts.
+    Uses chromaprint fingerprinting + sliding window cross-correlation.
+    Returns offset in seconds. Returns 0.0 on any failure.
+    """
+    try:
+        import acoustid
+
+        # Download video to temp file
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+            video_path = f.name
+        with httpx.Client(timeout=120) as client:
+            r = client.get(video_url)
+            r.raise_for_status()
+            with open(video_path, 'wb') as f:
+                f.write(r.content)
+
+        # Download mp3 to temp file
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
+            mp3_path = f.name
+        with httpx.Client(timeout=60) as client:
+            r = client.get(mp3_url)
+            r.raise_for_status()
+            with open(mp3_path, 'wb') as f:
+                f.write(r.content)
+
+        # Extract audio from video as wav
+        wav_path = video_path + '.wav'
+        os.system(
+            f'ffmpeg -i {video_path} -ar 11025 -ac 1 '
+            f'-f wav {wav_path} -y -loglevel quiet'
+        )
+
+        # Fingerprint both files using chromaprint via acoustid
+        vid_duration, vid_fp = acoustid.fingerprint_file(wav_path)
+        mp3_duration, mp3_fp = acoustid.fingerprint_file(mp3_path)
+
+        # Decode to raw integer arrays
+        import chromaprint
+        vid_raw, _ = chromaprint.decode_fingerprint(vid_fp)
+        mp3_raw, _ = chromaprint.decode_fingerprint(mp3_fp)
+
+        # Sliding window: find position in mp3 that best matches video audio
+        # Each fingerprint frame = ~0.5 seconds
+        best_offset = 0
+        best_score = -1
+        search_limit = min(len(mp3_raw), len(mp3_raw) - len(vid_raw) + 1)
+        step = 4  # check every 2 seconds
+
+        for i in range(0, max(1, search_limit), step):
+            overlap = min(len(vid_raw), len(mp3_raw) - i)
+            if overlap < 8:
+                break
+            # Count matching bits using XOR (fewer differing bits = better match)
+            matches = sum(
+                bin(a ^ b).count('0')
+                for a, b in zip(vid_raw[:overlap], mp3_raw[i:i+overlap])
+            )
+            score = matches / (overlap * 32)  # 32 bits per int
+            if score > best_score:
+                best_score = score
+                best_offset = i * 0.5
+
+        print(f'[fingerprint] ref video starts at {best_offset:.1f}s in song '
+              f'(confidence {best_score:.3f})')
+        return best_offset
+
+    except Exception as e:
+        print(f'[fingerprint] failed, defaulting to 0.0s: {e}')
+        return 0.0
+    finally:
+        for path in [video_path, wav_path, mp3_path]:
+            try: os.unlink(path)
+            except: pass
+
+
 def verify(secret: str = ""):
     if secret != POSE_SERVICE_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -98,6 +175,9 @@ class ScoreRequest(BaseModel):
     session_id: str
     recording_id: str = ""
     student_recording_id: str = ""
+    music_url: str = ""
+    reference_video_url: str = ""
+    student_music_offset_ms: int = 0
 
 @app.get("/health")
 def health():
@@ -213,7 +293,6 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
     verify(x_secret)
     import mediapipe as mp
     import cv2
-    from dtaidistance import dtw
 
     start = time.time()
 
@@ -227,6 +306,15 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         np.array([v for kp in frame["kp"] for v in (kp["x"], kp["y"], kp["z"])])
         for frame in ref_data["frames"]
     ]
+
+    # Music-anchored alignment
+    ref_offset_s = 0.0
+    student_offset_s = req.student_music_offset_ms / 1000.0
+
+    if req.music_url and req.reference_video_url:
+        ref_offset_s = get_song_offset_seconds(
+            req.reference_video_url, req.music_url
+        )
 
     # Extract student poses
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
@@ -266,18 +354,31 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
     if not ref_vectors or not student_vectors:
         raise HTTPException(status_code=422, detail="Could not extract poses")
 
-    # DTW alignment
-    ref_norms = np.array([np.linalg.norm(v) for v in ref_vectors])
-    stu_norms = np.array([np.linalg.norm(v) for v in student_vectors])
-    _, paths = dtw.warping_paths(ref_norms, stu_norms)
-    best_path = dtw.best_path(paths)
+    # Trim ref_vectors to start at the song position
+    fps_ref = 30
+    ref_start_frame = int(ref_offset_s * fps_ref)
+    ref_vectors = ref_vectors[ref_start_frame:] if ref_start_frame < len(ref_vectors) else ref_vectors
 
-    # Cosine similarity per aligned frame pair
     def cosine_sim(a, b):
         n = np.linalg.norm(a) * np.linalg.norm(b)
         return float(np.dot(a, b) / n) if n > 0 else 0.0
 
-    frame_scores = [cosine_sim(ref_vectors[i], student_vectors[j]) for i, j in best_path]
+    # If music_url provided, align by song time (no DTW)
+    # Otherwise fall back to DTW
+    if req.music_url and req.reference_video_url:
+        # Direct frame-by-frame scoring at matching song positions
+        min_len = min(len(ref_vectors), len(student_vectors))
+        frame_scores = [cosine_sim(ref_vectors[i], student_vectors[i])
+                        for i in range(min_len)]
+    else:
+        # DTW fallback (no music)
+        from dtaidistance import dtw
+        ref_norms = np.array([np.linalg.norm(v) for v in ref_vectors])
+        stu_norms = np.array([np.linalg.norm(v) for v in student_vectors])
+        _, paths = dtw.warping_paths(ref_norms, stu_norms)
+        best_path = dtw.best_path(paths)
+        frame_scores = [cosine_sim(ref_vectors[i], student_vectors[j])
+                        for i, j in best_path]
     overall = int(np.mean(frame_scores) * 100)
 
     # Per-second timeline
