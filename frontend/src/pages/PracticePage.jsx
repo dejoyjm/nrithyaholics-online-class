@@ -2,29 +2,37 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 export default function PracticePage({ user, sessionId, bookingId, onBack, platformConfig }) {
-  // ── Reference video ───────────────────────────────────────────────────────
-  const [refVideoUrl, setRefVideoUrl]     = useState(null)
-  const [refLoading, setRefLoading]       = useState(true)
-  const [refError, setRefError]           = useState(null)
+  // ── Phase ─────────────────────────────────────────────────────────────────
+  // 'loading' | 'ready' | 'countdown' | 'recording' | 'saving' | 'saved' | 'error'
+  const [phase, setPhase]               = useState('loading')
+  const [countdown, setCountdown]       = useState(5)
+  const [saveError, setSaveError]       = useState(null)
 
-  // ── Camera / recording ────────────────────────────────────────────────────
-  const [stream, setStream]               = useState(null)
-  const [camError, setCamError]           = useState(null)
-  const [recording, setRecording]         = useState(false)
-  const [elapsed, setElapsed]             = useState(0)
-  const [saveStatus, setSaveStatus]       = useState(null) // null | 'saving' | 'saved' | 'error'
-  const mediaRecorderRef                  = useRef(null)
-  const chunksRef                         = useRef([])
-  const elapsedRef                        = useRef(null)
-  const cameraVideoRef                    = useRef(null)
+  // ── Reference video ───────────────────────────────────────────────────────
+  const [refVideoUrl, setRefVideoUrl]   = useState(null)
+  const [refLoading, setRefLoading]     = useState(true)
+  const [refError, setRefError]         = useState(null)
+
+  // ── Camera ────────────────────────────────────────────────────────────────
+  const [stream, setStream]             = useState(null)
+  const [camError, setCamError]         = useState(null)
 
   // ── Music ─────────────────────────────────────────────────────────────────
-  const [musicUrl, setMusicUrl]           = useState(null)
-  const [musicTitle, setMusicTitle]       = useState(null)
-  const [musicPlaying, setMusicPlaying]   = useState(false)
-  const audioRef                          = useRef(null)
+  const [musicUrl, setMusicUrl]         = useState(null)
+  const [musicTitle, setMusicTitle]     = useState(null)
+  const [musicProgress, setMusicProgress] = useState(0)
+  const [musicDuration, setMusicDuration] = useState(0)
 
-  // ── Fetch choreographer recording ─────────────────────────────────────────
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const cameraVideoRef    = useRef(null)
+  const refVideoRef       = useRef(null)
+  const audioRef          = useRef(null)
+  const mediaRecorderRef  = useRef(null)
+  const chunksRef         = useRef([])
+  const countdownRef      = useRef(null)
+  const progressRef       = useRef(null)
+
+  // ── Fetch choreographer reference video ───────────────────────────────────
   useEffect(() => {
     async function loadRefVideo() {
       setRefLoading(true)
@@ -84,7 +92,7 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     loadMusic()
   }, [sessionId])
 
-  // ── Camera setup ─────────────────────────────────────────────────────────
+  // ── Camera setup ──────────────────────────────────────────────────────────
   useEffect(() => {
     async function startCamera() {
       try {
@@ -95,9 +103,6 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
       }
     }
     startCamera()
-    return () => {
-      // cleanup on unmount
-    }
   }, [])
 
   useEffect(() => {
@@ -109,35 +114,30 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     }
   }, [stream])
 
-  // ── Elapsed timer ─────────────────────────────────────────────────────────
+  // ── Transition to 'ready' when both data loads and camera are done ────────
   useEffect(() => {
-    if (recording) {
-      setElapsed(0)
-      elapsedRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
-    } else {
-      clearInterval(elapsedRef.current)
+    if (!refLoading && phase === 'loading') {
+      setPhase('ready')
     }
-    return () => clearInterval(elapsedRef.current)
-  }, [recording])
+  }, [refLoading])
 
-  function fmtElapsed(secs) {
-    const m = Math.floor(secs / 60)
-    const s = secs % 60
-    return `${m}:${String(s).padStart(2, '0')}`
-  }
+  // ── Music progress tracking during recording ──────────────────────────────
+  useEffect(() => {
+    if (phase === 'recording') {
+      progressRef.current = setInterval(() => {
+        const audio = audioRef.current
+        if (audio && audio.duration) {
+          setMusicProgress(audio.currentTime / audio.duration)
+          setMusicDuration(audio.duration)
+        }
+      }, 500)
+    } else {
+      clearInterval(progressRef.current)
+    }
+    return () => clearInterval(progressRef.current)
+  }, [phase])
 
-  // ── Recording controls ────────────────────────────────────────────────────
-  function startRecording() {
-    if (!stream) return
-    chunksRef.current = []
-    const mr = new MediaRecorder(stream, { mimeType: getSupportedMimeType() })
-    mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-    mr.start(1000)
-    mediaRecorderRef.current = mr
-    setRecording(true)
-    setSaveStatus(null)
-  }
-
+  // ── Helpers ───────────────────────────────────────────────────────────────
   function getSupportedMimeType() {
     const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
     for (const t of types) {
@@ -146,26 +146,82 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     return ''
   }
 
+  function fmtTime(secs) {
+    if (!secs || isNaN(secs)) return '0:00'
+    const m = Math.floor(secs / 60)
+    const s = Math.floor(secs % 60)
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
+
+  // ── Start practice: countdown → beginRecording ────────────────────────────
+  function startPractice() {
+    setPhase('countdown')
+    setCountdown(5)
+    let c = 5
+    countdownRef.current = setInterval(() => {
+      c -= 1
+      setCountdown(c)
+      if (c <= 0) {
+        clearInterval(countdownRef.current)
+        beginRecording()
+      }
+    }, 1000)
+  }
+
+  function beginRecording() {
+    if (!stream) return
+    chunksRef.current = []
+    const mr = new MediaRecorder(stream, { mimeType: getSupportedMimeType() })
+    mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+    mr.start(1000)
+    mediaRecorderRef.current = mr
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      audioRef.current.play()
+      audioRef.current.onended = () => stopAndSave()
+    }
+    if (refVideoRef.current) {
+      refVideoRef.current.currentTime = 0
+      refVideoRef.current.play()
+    }
+
+    setMusicProgress(0)
+    setPhase('recording')
+  }
+
+  function emergencyStop() {
+    clearInterval(countdownRef.current)
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.onended = null
+    }
+    if (refVideoRef.current) {
+      refVideoRef.current.pause()
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      stopAndSave()
+    } else {
+      setPhase('ready')
+    }
+  }
+
   async function stopAndSave() {
-    if (!mediaRecorderRef.current) return
-    mediaRecorderRef.current.stop()
-    setRecording(false)
+    const mr = mediaRecorderRef.current
+    if (!mr || mr.state === 'inactive') return
+    mr.stop()
+    setPhase('saving')
 
-    // Wait for final chunks
-    await new Promise(resolve => {
-      mediaRecorderRef.current.onstop = resolve
-    })
+    await new Promise(resolve => { mr.onstop = resolve })
 
-    const mimeType = mediaRecorderRef.current.mimeType || 'video/webm'
+    const mimeType = mr.mimeType || 'video/webm'
     const blob = new Blob(chunksRef.current, { type: mimeType })
     chunksRef.current = []
 
-    setSaveStatus('saving')
     try {
       const { data: { session: authSession } } = await supabase.auth.getSession()
       const token = authSession?.access_token
 
-      // 1. Get presigned upload URL
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-student-video`,
         {
@@ -176,122 +232,156 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
-            session_id:  sessionId,
-            booking_id:  bookingId,
-            file_size:   blob.size,
-            mime_type:   mimeType,
+            session_id:            sessionId,
+            booking_id:            bookingId,
+            file_size:             blob.size,
+            mime_type:             mimeType,
+            music_start_offset_ms: 0,
           }),
         }
       )
       const { upload_url, error: fnError } = await res.json()
       if (!res.ok || !upload_url) throw new Error(fnError || 'Failed to get upload URL')
+      console.log('[PracticePage] upload_url domain:', new URL(upload_url).hostname)
 
-      // 2. PUT blob directly to R2
       const putRes = await fetch(upload_url, {
         method: 'PUT',
         body: blob,
         headers: { 'Content-Type': mimeType },
       })
+      console.log('[PracticePage] R2 PUT status:', putRes.status, putRes.statusText)
       if (!putRes.ok) throw new Error('Upload failed')
 
-      setSaveStatus('saved')
+      setPhase('saved')
     } catch (e) {
       console.error('[PracticePage] save error:', e)
-      setSaveStatus('error')
+      setSaveError(e.message || 'Upload failed')
+      setPhase('error')
     }
   }
 
-  // ── Music controls ────────────────────────────────────────────────────────
-  function toggleMusic() {
-    if (!audioRef.current) return
-    if (musicPlaying) {
-      audioRef.current.pause()
-      setMusicPlaying(false)
-    } else {
-      audioRef.current.play()
-      setMusicPlaying(true)
-    }
-  }
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const isActive = phase === 'countdown' || phase === 'recording'
+  const canStart = !refLoading && !!stream && !!musicUrl && phase === 'ready'
 
-  // ── Styles ────────────────────────────────────────────────────────────────
-  const panelStyle = {
-    flex: 1, minWidth: 0,
-    background: 'white', borderRadius: 16,
-    border: '1px solid #e2dbd4', overflow: 'hidden',
-    display: 'flex', flexDirection: 'column',
-  }
-  const panelHeadStyle = {
-    padding: '14px 20px',
-    background: '#0f0c0c',
-    color: '#faf7f2',
-    fontSize: 13, fontWeight: 700,
-    display: 'flex', alignItems: 'center', gap: 8,
-  }
-  const panelBodyStyle = {
-    flex: 1, display: 'flex', alignItems: 'center',
-    justifyContent: 'center', padding: 16,
-    background: '#0a0808',
-    minHeight: 280,
-  }
+  const musicCurrentSecs = musicDuration * musicProgress
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: '#faf7f2', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: '#0a0808', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+
+      {/* ── Emergency stop ── */}
+      {isActive && (
+        <button
+          onClick={emergencyStop}
+          style={{
+            position: 'fixed', top: 14, right: 16, zIndex: 1000,
+            background: '#2a0a0a', color: '#ef4444',
+            border: '1px solid #ef4444', borderRadius: 8,
+            padding: '7px 16px', fontSize: 13, fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          ■ Stop
+        </button>
+      )}
 
       {/* ── Nav ── */}
       <nav style={{
         background: '#0f0c0c', padding: '0 24px', height: 56,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexShrink: 0,
+        flexShrink: 0, borderBottom: '1px solid #1a1616',
       }}>
         <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, fontWeight: 900, color: '#faf7f2' }}>
           Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
           <span style={{ fontSize: 13, fontWeight: 400, color: '#9a8e85', marginLeft: 12 }}>Practice Room</span>
         </div>
-        <button onClick={onBack} style={{
-          background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
-          color: '#faf7f2', padding: '7px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13,
-        }}>← Back</button>
+        <button
+          onClick={onBack}
+          disabled={isActive}
+          style={{
+            background: 'transparent', border: '1px solid rgba(250,247,242,0.3)',
+            color: '#faf7f2', padding: '7px 18px', borderRadius: 8,
+            cursor: isActive ? 'not-allowed' : 'pointer', fontSize: 13,
+            opacity: isActive ? 0.4 : 1,
+          }}
+        >
+          ← Back
+        </button>
       </nav>
 
       {/* ── Main panels ── */}
-      <div style={{
-        flex: 1, display: 'flex', gap: 16, padding: 20,
-        flexWrap: 'wrap',
-        alignItems: 'stretch',
-      }}>
+      <div style={{ flex: 1, display: 'flex', gap: 16, padding: 20, flexWrap: 'wrap', alignItems: 'stretch' }}>
 
-        {/* Left — Reference */}
-        <div style={panelStyle}>
-          <div style={panelHeadStyle}>
+        {/* Left — Choreographer Reference */}
+        <div style={{
+          flex: 1, minWidth: 0,
+          background: '#0f0c0c', borderRadius: 16,
+          border: '1px solid #1a1616', overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{
+            padding: '14px 20px', background: '#0f0c0c',
+            color: '#faf7f2', fontSize: 13, fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: 8,
+            borderBottom: '1px solid #1a1616',
+          }}>
             <span style={{ color: '#c8430a' }}>▶</span> Choreographer Reference
           </div>
-          <div style={{ padding: '8px 20px 4px', background: '#0f0c0c' }}>
-            <span style={{ fontSize: 11, color: '#9a8e85', fontWeight: 600, letterSpacing: 0.5 }}>
-              Reference — watch before dancing
-            </span>
-          </div>
-          <div style={panelBodyStyle}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, minHeight: 280 }}>
             {refLoading ? (
               <div style={{ color: '#9a8e85', fontSize: 14 }}>Loading reference video...</div>
             ) : refError ? (
               <div style={{ color: '#9a8e85', fontSize: 14, textAlign: 'center', padding: '0 20px' }}>{refError}</div>
             ) : (
               <video
+                ref={refVideoRef}
                 src={refVideoUrl}
-                controls
-                style={{ width: '100%', maxHeight: 400, borderRadius: 8, background: '#000' }}
-                preload="metadata"
+                preload="auto"
+                playsInline
+                style={{
+                  width: '100%', maxHeight: 400, borderRadius: 8, background: '#000',
+                  pointerEvents: 'none',
+                }}
               />
             )}
           </div>
         </div>
 
         {/* Right — Your Recording */}
-        <div style={panelStyle}>
-          <div style={panelHeadStyle}>
+        <div style={{
+          flex: 1, minWidth: 0, position: 'relative',
+          background: '#0f0c0c', borderRadius: 16,
+          border: '1px solid #1a1616', overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{
+            padding: '14px 20px', background: '#0f0c0c',
+            color: '#faf7f2', fontSize: 13, fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: 8,
+            borderBottom: '1px solid #1a1616',
+          }}>
             <span>📹</span> Your Recording
+            {/* REC indicator */}
+            {phase === 'recording' && (
+              <span style={{
+                marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+                color: '#ef4444', fontSize: 12, fontWeight: 700,
+              }}>
+                <span style={{
+                  display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                  background: '#ef4444',
+                  animation: 'nrh-pulse 1.2s ease-in-out infinite',
+                }} />
+                REC
+              </span>
+            )}
           </div>
-          <div style={panelBodyStyle}>
+
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 16, minHeight: 280, position: 'relative',
+          }}>
             {camError ? (
               <div style={{ color: '#ef4444', fontSize: 14, textAlign: 'center', padding: '0 20px' }}>{camError}</div>
             ) : (
@@ -301,118 +391,115 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
                 muted
                 playsInline
                 style={{
-                  width: '100%', maxHeight: 400, borderRadius: 8,
-                  background: '#000',
-                  transform: 'scaleX(-1)', // mirror
+                  width: '100%', maxHeight: 400, borderRadius: 8, background: '#000',
+                  transform: 'scaleX(-1)',
                 }}
               />
             )}
-          </div>
-          <div style={{
-            padding: '16px 20px',
-            borderTop: '1px solid #1a1616',
-            background: '#0f0c0c',
-            display: 'flex', flexDirection: 'column', gap: 12,
-          }}>
-            {/* Recording indicator */}
-            {recording && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+            {/* Countdown overlay */}
+            {phase === 'countdown' && (
+              <div style={{
+                position: 'absolute', inset: 0,
+                background: 'rgba(0,0,0,0.72)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 8,
+              }}>
                 <span style={{
-                  display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
-                  background: '#ef4444',
-                  animation: 'nrh-pulse 1.2s ease-in-out infinite',
-                }} />
-                <span style={{ color: '#ef4444', fontSize: 13, fontWeight: 700 }}>Recording</span>
-                <span style={{ color: '#9a8e85', fontSize: 13, marginLeft: 4 }}>{fmtElapsed(elapsed)}</span>
-              </div>
-            )}
-
-            {/* Buttons */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {!recording ? (
-                <button
-                  onClick={startRecording}
-                  disabled={!stream || saveStatus === 'saving'}
-                  style={{
-                    background: stream ? '#c8430a' : '#3a3330',
-                    color: 'white', border: 'none', borderRadius: 8,
-                    padding: '10px 20px', fontSize: 14, fontWeight: 700,
-                    cursor: stream ? 'pointer' : 'not-allowed',
-                    opacity: !stream || saveStatus === 'saving' ? 0.6 : 1,
-                  }}
-                >
-                  ▶ Start Recording
-                </button>
-              ) : (
-                <button
-                  onClick={stopAndSave}
-                  style={{
-                    background: '#1a3a2a', color: '#86efac',
-                    border: '1px solid #22c55e', borderRadius: 8,
-                    padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                  }}
-                >
-                  ■ Stop & Save
-                </button>
-              )}
-            </div>
-
-            {/* Save status */}
-            {saveStatus === 'saving' && (
-              <div style={{ fontSize: 13, color: '#9a8e85' }}>Uploading your recording...</div>
-            )}
-            {saveStatus === 'saved' && (
-              <div style={{
-                fontSize: 14, fontWeight: 600, color: '#22c55e',
-                background: '#0d2016', borderRadius: 8, padding: '10px 14px',
-              }}>
-                ✅ Saved! Your coach will review your recording.
-              </div>
-            )}
-            {saveStatus === 'error' && (
-              <div style={{
-                fontSize: 13, color: '#ef4444',
-                background: '#2a0a0a', borderRadius: 8, padding: '10px 14px',
-              }}>
-                Upload failed. Please try again.
+                  fontSize: 96, fontWeight: 900, color: '#faf7f2',
+                  lineHeight: 1, fontFamily: 'Georgia, serif',
+                  textShadow: '0 4px 32px rgba(200,67,10,0.6)',
+                }}>
+                  {countdown}
+                </span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Music player ── */}
+      {/* ── Music bar ── */}
       {musicUrl && (
         <div style={{
-          flexShrink: 0, margin: '0 20px 20px',
+          flexShrink: 0, margin: '0 20px 16px',
           background: '#0f0c0c', borderRadius: 12,
-          padding: '14px 20px',
+          padding: '12px 20px',
           display: 'flex', alignItems: 'center', gap: 16,
           border: '1px solid #2a2420',
         }}>
-          <button
-            onClick={toggleMusic}
-            style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: musicPlaying ? '#c8430a' : '#3a3330',
-              color: 'white', border: 'none', cursor: 'pointer',
-              fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            {musicPlaying ? '⏸' : '▶'}
-          </button>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: '#7a6e65', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>Class Music</div>
-            <div style={{ fontSize: 14, color: '#faf7f2', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              🎵 {musicTitle}
-            </div>
+          <div style={{ fontSize: 13, color: '#faf7f2', fontWeight: 600, flexShrink: 0, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            🎵 {musicTitle}
           </div>
-          <audio
-            ref={audioRef}
-            src={musicUrl}
-            onEnded={() => setMusicPlaying(false)}
-          />
+          <div style={{ flex: 1, height: 4, background: '#2a2420', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', background: '#c8430a', borderRadius: 2,
+              width: `${musicProgress * 100}%`,
+              transition: 'width 0.5s linear',
+            }} />
+          </div>
+          <div style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>
+            {fmtTime(musicCurrentSecs)} / {fmtTime(musicDuration)}
+          </div>
+          <audio ref={audioRef} src={musicUrl} />
+        </div>
+      )}
+
+      {/* ── Center overlay: Start Practice / status ── */}
+      {(phase === 'ready' || phase === 'saving' || phase === 'saved' || phase === 'error') && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 900,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.55)',
+          pointerEvents: phase === 'ready' ? 'auto' : 'none',
+        }}>
+          {phase === 'ready' && (
+            <button
+              onClick={startPractice}
+              disabled={!canStart}
+              style={{
+                background: canStart ? '#c8430a' : '#3a3330',
+                color: 'white', border: 'none', borderRadius: 16,
+                padding: '18px 48px', fontSize: 22, fontWeight: 800,
+                cursor: canStart ? 'pointer' : 'not-allowed',
+                opacity: canStart ? 1 : 0.5,
+                boxShadow: canStart ? '0 8px 32px rgba(200,67,10,0.4)' : 'none',
+                pointerEvents: 'auto',
+              }}
+            >
+              ▶ Start Practice
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Bottom status bar ── */}
+      {(phase === 'saving' || phase === 'saved' || phase === 'error') && (
+        <div style={{
+          flexShrink: 0, margin: '0 20px 20px',
+          padding: '14px 20px', borderRadius: 12,
+          background: phase === 'saved' ? '#0d2016' : phase === 'error' ? '#2a0a0a' : '#1a1616',
+          border: `1px solid ${phase === 'saved' ? '#22c55e' : phase === 'error' ? '#ef4444' : '#2a2420'}`,
+          fontSize: 14, fontWeight: 600,
+          color: phase === 'saved' ? '#22c55e' : phase === 'error' ? '#ef4444' : '#9a8e85',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          {phase === 'saving' && <span>Uploading your recording...</span>}
+          {phase === 'saved'  && <span>✅ Saved! Your coach will review your recording.</span>}
+          {phase === 'error'  && (
+            <>
+              <span>Upload failed: {saveError}</span>
+              <button
+                onClick={() => setPhase('ready')}
+                style={{
+                  marginLeft: 'auto', background: 'transparent', border: '1px solid #ef4444',
+                  color: '#ef4444', borderRadius: 6, padding: '4px 12px', fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Try again
+              </button>
+            </>
+          )}
         </div>
       )}
 
