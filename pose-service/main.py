@@ -292,7 +292,7 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
     if SUPABASE_URL and student_rec_id:
         try:
             with httpx.Client(timeout=30) as client:
-                client.post(
+                resp = client.post(
                     f"{SUPABASE_URL}/functions/v1/update-score",
                     json={
                         "session_id": req.session_id,
@@ -305,6 +305,7 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
                         "x-internal-secret": INTERNAL_SECRET,
                     },
                 )
+                print(f"[score-student] update-score status: {resp.status_code} body: {resp.text}")
         except Exception as e:
             print(f"[score-student] update-score callback error: {e}")
 
