@@ -137,6 +137,12 @@ serve(async (req) => {
     .single()
   if (!studentRec) return json({ error: 'student recording not found' }, 404)
 
+  const { data: sessionData } = await supabase
+    .from('sessions')
+    .select('music_track_url')
+    .eq('id', session_id)
+    .single()
+
   // 3. Presign both URLs
   const accountId   = Deno.env.get('R2_ACCOUNT_ID')!
   const accessKeyId = Deno.env.get('R2_ACCESS_KEY_ID')!
@@ -180,6 +186,13 @@ serve(async (req) => {
   const poseServiceUrl = Deno.env.get('POSE_SERVICE_URL')!
   const poseSecret     = Deno.env.get('POSE_SERVICE_SECRET') ?? ''
 
+  const refBase    = refRec.r2_url.split('?')[0]
+  const refUrlObj  = new URL(refBase)
+  const refKey     = refUrlObj.pathname.slice(1)
+  const referenceVideoUrl = await presignR2Get(
+    accountId, accessKeyId, secretKey, bucket, refKey, 3600,
+  )
+
   EdgeRuntime.waitUntil(
     fetch(`${poseServiceUrl}/score-student`, {
       method: 'POST',
@@ -193,6 +206,9 @@ serve(async (req) => {
         session_id,
         recording_id,
         student_recording_id:    recording_id,
+        music_url:               sessionData?.music_track_url || '',
+        reference_video_url:     referenceVideoUrl,
+        student_music_offset_ms: 0,
       }),
     })
       .then(r => r.json().catch(() => ({})))
