@@ -168,6 +168,16 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
     writer.release()
     os.unlink(tmp_path)
 
+    # Re-encode skeleton video to H.264 for browser compatibility
+    import subprocess
+    h264_path = skel_path.replace(".mp4", "_h264.mp4")
+    subprocess.run([
+        "ffmpeg", "-y", "-i", skel_path,
+        "-vcodec", "libx264", "-crf", "28",
+        "-preset", "fast", h264_path
+    ], check=True)
+    os.unlink(skel_path)
+
     # Upload keypoints JSON to R2
     pose_key = f"pose-data/{req.recording_id}_keypoints.json"
     keypoints_bytes = json.dumps({"frames": frames}).encode()
@@ -175,10 +185,10 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
 
     # Upload skeleton video to R2
     skel_key = f"pose-data/{req.recording_id}_skeleton.mp4"
-    with open(skel_path, "rb") as f:
+    with open(h264_path, "rb") as f:
         skel_bytes = f.read()
     upload_to_r2(skel_key, skel_bytes, "video/mp4")
-    os.unlink(skel_path)
+    os.unlink(h264_path)
 
     # Update recordings table
     update_recording(req.recording_id, {
