@@ -126,7 +126,7 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
 
     # Skeleton video writer
     skel_path = tmp_path.replace(".mp4", "_skeleton.mp4")
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(skel_path, fourcc, fps, (width, height))
 
     frames = []
