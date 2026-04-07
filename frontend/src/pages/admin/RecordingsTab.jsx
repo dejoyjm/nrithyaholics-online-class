@@ -436,11 +436,19 @@ export default function RecordingsTab() {
   const [loading, setLoading] = useState(true)
 
   async function fetchRecordings() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('recordings')
       .select('*, sessions(title, scheduled_at), dance_scores(overall_score, status, timeline_data, created_at, reference_recording_id)')
       .order('created_at', { ascending: false })
+    if (error) console.error('[RecordingsTab] fetch error:', error.message, error.details, error.hint)
     setRecordings(data || [])
+    if (!data || data.length === 0) {
+      const { data: simple, error: simpleErr } = await supabase
+        .from('recordings')
+        .select('id, recorder_type, created_at')
+        .limit(3)
+      console.log('[RecordingsTab] simple query result:', simple?.length, simpleErr?.message)
+    }
     setLoading(false)
   }
 
