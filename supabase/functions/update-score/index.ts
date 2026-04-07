@@ -18,11 +18,7 @@ serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 })
 
   const incomingSecret = req.headers.get('x-internal-secret')
-  const expectedSecret = Deno.env.get('INTERNAL_SECRET') ?? ''
-  console.log('[update-score] incoming length:', incomingSecret?.length,
-              'expected length:', expectedSecret.length,
-              'match:', incomingSecret === expectedSecret)
-  if (incomingSecret !== expectedSecret) {
+  if (incomingSecret !== Deno.env.get('INTERNAL_SECRET')) {
     return json({ error: 'unauthorized' }, 401)
   }
 

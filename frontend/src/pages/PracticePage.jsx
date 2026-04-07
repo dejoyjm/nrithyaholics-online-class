@@ -185,7 +185,6 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
       )
       const { upload_url, error: fnError } = await res.json()
       if (!res.ok || !upload_url) throw new Error(fnError || 'Failed to get upload URL')
-      console.log('[PracticePage] upload_url domain:', upload_url ? new URL(upload_url).hostname : 'none')
 
       // 2. PUT blob directly to R2
       const putRes = await fetch(upload_url, {
@@ -193,7 +192,6 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
         body: blob,
         headers: { 'Content-Type': mimeType },
       })
-      console.log('[PracticePage] R2 PUT status:', putRes.status, putRes.statusText)
       if (!putRes.ok) throw new Error('Upload failed')
 
       setSaveStatus('saved')

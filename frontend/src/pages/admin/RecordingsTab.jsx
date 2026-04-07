@@ -27,6 +27,14 @@ async function getToken() {
   return session?.access_token || ''
 }
 
+function scoreColor(score) {
+  if (score >= 80) return '#22c55e'
+  if (score >= 60) return '#f59e0b'
+  return '#ef4444'
+}
+
+// ── SkeletonModal ────────────────────────────────────────────────────────────
+
 function SkeletonModal({ recordingId, onClose }) {
   const [videoUrl, setVideoUrl] = useState(null)
   const [error, setError] = useState(null)
@@ -98,19 +106,170 @@ function SkeletonModal({ recordingId, onClose }) {
   )
 }
 
+// ── ScoreReportModal ─────────────────────────────────────────────────────────
+
+function ScoreReportModal({ rec, onClose }) {
+  const [refSkeletonUrl, setRefSkeletonUrl]   = useState(null)
+  const [studentVideoUrl, setStudentVideoUrl] = useState(null)
+  const [urlError, setUrlError]               = useState(null)
+
+  const score     = rec.dance_scores?.[0]
+  const overall   = score?.overall_score ?? null
+  const timeline  = score?.timeline_data ?? []
+  const refRecId  = score?.reference_recording_id ?? null
+
+  useEffect(() => {
+    let cancelled = false
+    async function fetchUrls() {
+      try {
+        const token = await getToken()
+        const [refRes, stuRes] = await Promise.all([
+          refRecId
+            ? fetch(`${SUPABASE_URL}/functions/v1/get-skeleton-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ recording_id: refRecId }),
+              }).then(r => r.json())
+            : Promise.resolve(null),
+          fetch(`${SUPABASE_URL}/functions/v1/get-recording-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+            body: JSON.stringify({ recording_id: rec.id, session_id: rec.session_id }),
+          }).then(r => r.json()),
+        ])
+        if (!cancelled) {
+          if (refRes?.url) setRefSkeletonUrl(refRes.url)
+          if (stuRes?.url) setStudentVideoUrl(stuRes.url)
+          else if (stuRes?.error) setUrlError(stuRes.error)
+        }
+      } catch (e) {
+        if (!cancelled) setUrlError(e.message)
+      }
+    }
+    fetchUrls()
+    return () => { cancelled = true }
+  }, [rec.id, rec.session_id, refRecId])
+
+  const maxBarScore = 100
+  const barWidth = timeline.length > 0 ? Math.max(2, Math.floor(560 / timeline.length)) : 4
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 9999, overflowY: 'auto', padding: 20,
+      }}
+    >
+      <div style={{
+        background: '#1a1612', borderRadius: 16, padding: 28,
+        width: '100%', maxWidth: 780, display: 'flex', flexDirection: 'column',
+        gap: 20, boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ color: '#e2dbd4', fontSize: 16, fontWeight: 700 }}>
+              {rec.sessions?.title || 'Student Recording'}
+            </div>
+            <div style={{ color: '#7a6e65', fontSize: 12, marginTop: 2 }}>
+              {formatDate(rec.created_at)}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: 24, cursor: 'pointer', lineHeight: 1, flexShrink: 0 }}
+          >×</button>
+        </div>
+
+        {/* Large score */}
+        {overall !== null && (
+          <div style={{ textAlign: 'center', padding: '8px 0' }}>
+            <span style={{ fontSize: 64, fontWeight: 900, color: scoreColor(overall), lineHeight: 1 }}>
+              {overall}
+            </span>
+            <span style={{ fontSize: 28, color: '#7a6e65', fontWeight: 700 }}>/100</span>
+          </div>
+        )}
+
+        {/* Timeline bar chart */}
+        {timeline.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Score Timeline
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 60, background: '#0f0c0c', borderRadius: 8, padding: '8px 10px', overflowX: 'auto' }}>
+              {timeline.map((pt, i) => {
+                const h = Math.max(2, Math.round((pt.score / maxBarScore) * 44))
+                const showLabel = pt.t_ms % 10000 === 0
+                return (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                    <div style={{
+                      width: barWidth, height: h,
+                      background: scoreColor(pt.score),
+                      borderRadius: 2,
+                    }} />
+                    {showLabel && (
+                      <div style={{ fontSize: 8, color: '#7a6e65', marginTop: 2, whiteSpace: 'nowrap' }}>
+                        {Math.round(pt.t_ms / 1000)}s
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Video players */}
+        {urlError && (
+          <div style={{ color: '#f87171', fontSize: 13 }}>{urlError}</div>
+        )}
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Reference</div>
+            {refSkeletonUrl ? (
+              <video src={refSkeletonUrl} controls controlsList="nodownload" onContextMenu={e => e.preventDefault()} style={{ width: '100%', borderRadius: 8, background: '#000' }} />
+            ) : (
+              <div style={{ width: '100%', height: 120, background: '#0f0c0c', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7a6e65', fontSize: 12 }}>
+                {refRecId ? 'Loading...' : 'No skeleton available'}
+              </div>
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Student</div>
+            {studentVideoUrl ? (
+              <video src={studentVideoUrl} controls controlsList="nodownload" onContextMenu={e => e.preventDefault()} style={{ width: '100%', borderRadius: 8, background: '#000' }} />
+            ) : (
+              <div style={{ width: '100%', height: 120, background: '#0f0c0c', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7a6e65', fontSize: 12 }}>
+                Loading...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── RecordingRow ─────────────────────────────────────────────────────────────
+
 function RecordingRow({ rec, onToggle, onSaveLabel }) {
-  const [label, setLabel] = useState(rec.reference_label || '')
-  const [poseStatus, setPoseStatus] = useState(null) // null | 'loading' | 'done' | 'error'
+  const [label, setLabel]         = useState(rec.reference_label || '')
+  const [poseStatus, setPoseStatus] = useState(null)
   const [showSkeleton, setShowSkeleton] = useState(false)
+  const [showScoreReport, setShowScoreReport] = useState(false)
   const fadeTimer = useRef(null)
+
+  const isStudent = rec.recorder_type === 'student'
   const r2Short = rec.r2_url ? ('…' + rec.r2_url.split('?')[0].slice(-30)) : '—'
+  const scoreRow = rec.dance_scores?.[0]
 
   function handleToggle() {
     const turningOn = !rec.is_ai_reference
     onToggle(rec)
-    if (turningOn) {
-      triggerExtractPose(rec.id)
-    }
+    if (turningOn) triggerExtractPose(rec.id)
   }
 
   async function triggerExtractPose(recordingId) {
@@ -134,85 +293,143 @@ function RecordingRow({ rec, onToggle, onSaveLabel }) {
     }
   }
 
+  // Score badge for student rows
+  function ScoreBadge() {
+    if (!scoreRow) return <span style={{ color: '#7a6e65', fontSize: 12 }}>—</span>
+    if (scoreRow.status === 'processing') return <span style={{ fontSize: 13 }}>⏳</span>
+    if (scoreRow.status === 'scored' && scoreRow.overall_score != null) {
+      const c = scoreColor(scoreRow.overall_score)
+      return (
+        <span style={{
+          background: '#0f0c0c', color: c, border: `1px solid ${c}`,
+          borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 700,
+        }}>
+          {scoreRow.overall_score}/100
+        </span>
+      )
+    }
+    return <span style={{ color: '#7a6e65', fontSize: 12 }}>—</span>
+  }
+
   return (
     <>
       {showSkeleton && (
         <SkeletonModal recordingId={rec.id} onClose={() => setShowSkeleton(false)} />
       )}
+      {showScoreReport && (
+        <ScoreReportModal rec={rec} onClose={() => setShowScoreReport(false)} />
+      )}
       <tr style={{ borderBottom: '1px solid #f0ebe6' }}>
+        {/* Session */}
         <td style={tdStyle}>
           <div style={{ fontWeight: 600, color: '#0f0c0c', fontSize: 13 }}>{rec.sessions?.title || '—'}</div>
         </td>
+        {/* Date */}
         <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#5a4e47', fontSize: 13 }}>
           {formatDate(rec.sessions?.scheduled_at)}
         </td>
+        {/* Type */}
+        <td style={tdStyle}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
+            background: isStudent ? '#1a1a3a' : '#1a3a2a',
+            color: isStudent ? '#a78bfa' : '#86efac',
+          }}>
+            {isStudent ? 'Student' : 'Choreo'}
+          </span>
+        </td>
+        {/* Duration */}
         <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: '#5a4e47', fontSize: 13 }}>
           {formatDuration(rec.duration_seconds)}
         </td>
+        {/* R2 Key */}
         <td style={{ ...tdStyle, fontFamily: 'monospace', color: '#9ca3af', fontSize: 11 }}>
           {r2Short}
         </td>
+        {/* Reference (choreo) / Score badge (student) */}
         <td style={tdStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={handleToggle}
-              title={rec.is_ai_reference ? 'Marked as reference' : 'Not a reference'}
-              style={{
-                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0,
-                background: rec.is_ai_reference ? '#22c55e' : '#d1d5db',
-                position: 'relative', flexShrink: 0,
-              }}
-            >
-              <span style={{
-                position: 'absolute', top: 3,
-                left: rec.is_ai_reference ? 23 : 3,
-                width: 18, height: 18, borderRadius: '50%', background: 'white',
-                display: 'block',
-              }} />
-            </button>
-            {poseStatus === 'loading' && (
-              <span style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' }}>⏳ Extracting...</span>
-            )}
-            {poseStatus === 'done' && (
-              <span style={{ fontSize: 11, color: '#22c55e', whiteSpace: 'nowrap' }}>✅ Done</span>
-            )}
-            {poseStatus === 'error' && (
-              <span style={{ fontSize: 11, color: '#f87171', whiteSpace: 'nowrap' }}>❌ Failed</span>
-            )}
-          </div>
-        </td>
-        <td style={tdStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              onBlur={() => onSaveLabel(rec, label)}
-              placeholder="Internal note..."
-              style={{
-                border: '1px solid #e2dbd4', borderRadius: 6, padding: '5px 10px',
-                fontSize: 12, outline: 'none', width: 180, color: '#0f0c0c',
-                background: '#faf7f2',
-              }}
-            />
-            {rec.pose_extracted && (
+          {isStudent ? (
+            <ScoreBadge />
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button
-                onClick={() => setShowSkeleton(true)}
-                title="Preview skeleton video"
+                onClick={handleToggle}
+                title={rec.is_ai_reference ? 'Marked as reference' : 'Not a reference'}
                 style={{
-                  background: '#e2dbd4', color: '#5a4e47', border: 'none',
-                  borderRadius: 6, padding: '5px 10px', fontSize: 12,
-                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                  width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0,
+                  background: rec.is_ai_reference ? '#22c55e' : '#d1d5db',
+                  position: 'relative', flexShrink: 0,
                 }}
               >
-                ▶ Preview
+                <span style={{
+                  position: 'absolute', top: 3,
+                  left: rec.is_ai_reference ? 23 : 3,
+                  width: 18, height: 18, borderRadius: '50%', background: 'white',
+                  display: 'block',
+                }} />
               </button>
-            )}
-          </div>
+              {poseStatus === 'loading' && (
+                <span style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' }}>⏳ Extracting...</span>
+              )}
+              {poseStatus === 'done' && (
+                <span style={{ fontSize: 11, color: '#22c55e', whiteSpace: 'nowrap' }}>✅ Done</span>
+              )}
+              {poseStatus === 'error' && (
+                <span style={{ fontSize: 11, color: '#f87171', whiteSpace: 'nowrap' }}>❌ Failed</span>
+              )}
+            </div>
+          )}
+        </td>
+        {/* Label (choreo) / Score Report button (student) */}
+        <td style={tdStyle}>
+          {isStudent ? (
+            scoreRow?.status === 'scored' ? (
+              <button
+                onClick={() => setShowScoreReport(true)}
+                style={{
+                  background: '#1a1a3a', color: '#a78bfa', border: '1px solid #7c3aed',
+                  borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                📊 Score Report
+              </button>
+            ) : null
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                value={label}
+                onChange={e => setLabel(e.target.value)}
+                onBlur={() => onSaveLabel(rec, label)}
+                placeholder="Internal note..."
+                style={{
+                  border: '1px solid #e2dbd4', borderRadius: 6, padding: '5px 10px',
+                  fontSize: 12, outline: 'none', width: 180, color: '#0f0c0c',
+                  background: '#faf7f2',
+                }}
+              />
+              {rec.pose_extracted && (
+                <button
+                  onClick={() => setShowSkeleton(true)}
+                  title="Preview skeleton video"
+                  style={{
+                    background: '#e2dbd4', color: '#5a4e47', border: 'none',
+                    borderRadius: 6, padding: '5px 10px', fontSize: 12,
+                    cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                  }}
+                >
+                  ▶ Preview
+                </button>
+              )}
+            </div>
+          )}
         </td>
       </tr>
     </>
   )
 }
+
+// ── RecordingsTab ────────────────────────────────────────────────────────────
 
 export default function RecordingsTab() {
   const [recordings, setRecordings] = useState([])
@@ -221,7 +438,7 @@ export default function RecordingsTab() {
   async function fetchRecordings() {
     const { data } = await supabase
       .from('recordings')
-      .select('*, sessions(title, scheduled_at)')
+      .select('*, sessions(title, scheduled_at), dance_scores(overall_score, status, timeline_data, created_at, reference_recording_id)')
       .order('created_at', { ascending: false })
     setRecordings(data || [])
     setLoading(false)
@@ -267,10 +484,11 @@ export default function RecordingsTab() {
               <tr style={{ borderBottom: '2px solid #e2dbd4' }}>
                 <th style={thStyle}>Session</th>
                 <th style={thStyle}>Date</th>
+                <th style={thStyle}>Type</th>
                 <th style={thStyle}>Duration</th>
                 <th style={thStyle}>R2 Key</th>
-                <th style={thStyle}>Reference</th>
-                <th style={thStyle}>Label</th>
+                <th style={thStyle}>Reference / Score</th>
+                <th style={thStyle}>Label / Report</th>
               </tr>
             </thead>
             <tbody>
