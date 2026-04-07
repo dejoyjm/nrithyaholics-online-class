@@ -67,12 +67,12 @@ serve(async (req) => {
     return json({ error: 'failed to get presigned URL' }, 502)
   }
 
-  // POST to Railway pose service
+  // POST to Railway pose service — fire and forget
   const poseServiceUrl = Deno.env.get('POSE_SERVICE_URL')!
   const poseSecret = Deno.env.get('POSE_SERVICE_SECRET') ?? ''
 
-  try {
-    const poseRes = await fetch(`${poseServiceUrl}/extract-pose`, {
+  EdgeRuntime.waitUntil(
+    fetch(`${poseServiceUrl}/extract-pose`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -80,15 +80,10 @@ serve(async (req) => {
       },
       body: JSON.stringify({ video_url: presignedUrl, recording_id }),
     })
-    const poseData = await poseRes.json().catch(() => ({ error: 'invalid response from pose service' }))
-    if (!poseRes.ok) {
-      console.error('[extract-pose] pose service error:', poseRes.status, poseData)
-      return json({ error: (poseData as Record<string, string>).error || 'pose service error' }, poseRes.status)
-    }
-    console.log('[extract-pose] dispatched recording:', recording_id, 'frame_count:', (poseData as Record<string, number>).frame_count)
-    return json(poseData)
-  } catch (e) {
-    console.error('[extract-pose] pose service unreachable:', e)
-    return json({ error: 'pose service unreachable' }, 502)
-  }
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => console.log('[extract-pose] completed recording:', recording_id, data))
+      .catch((e) => console.error('[extract-pose] pose service error:', recording_id, e))
+  )
+
+  return json({ status: 'processing', recording_id })
 })
