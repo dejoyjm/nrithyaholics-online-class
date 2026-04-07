@@ -121,13 +121,9 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
     mp_drawing_styles = mp.solutions.drawing_styles
     cap = cv2.VideoCapture(tmp_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    # Skeleton video writer
     skel_path = tmp_path.replace(".mp4", "_skeleton.mp4")
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    writer = cv2.VideoWriter(skel_path, fourcc, fps, (width, height))
+    tmpdir = tempfile.mkdtemp()
 
     frames = []
     frame_idx = 0
@@ -161,22 +157,25 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
                     landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
                 )
 
-            writer.write(frame)
+            cv2.imwrite(f"{tmpdir}/frame_{frame_idx:06d}.png", frame)
             frame_idx += 1
 
     cap.release()
-    writer.release()
     os.unlink(tmp_path)
 
-    # Re-encode skeleton video to H.264 for browser compatibility
-    import subprocess
-    h264_path = skel_path.replace(".mp4", "_h264.mp4")
+    # Assemble PNG sequence into H.264 MP4
+    import subprocess, shutil
     subprocess.run([
-        "ffmpeg", "-y", "-i", skel_path,
-        "-vcodec", "libx264", "-crf", "28",
-        "-preset", "fast", h264_path
+        "ffmpeg", "-y",
+        "-framerate", str(int(fps)),
+        "-i", f"{tmpdir}/frame_%06d.png",
+        "-vcodec", "libx264",
+        "-crf", "28",
+        "-preset", "fast",
+        "-pix_fmt", "yuv420p",
+        skel_path
     ], check=True)
-    os.unlink(skel_path)
+    shutil.rmtree(tmpdir)
 
     # Upload keypoints JSON to R2
     pose_key = f"pose-data/{req.recording_id}_keypoints.json"
@@ -185,10 +184,10 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
 
     # Upload skeleton video to R2
     skel_key = f"pose-data/{req.recording_id}_skeleton.mp4"
-    with open(h264_path, "rb") as f:
+    with open(skel_path, "rb") as f:
         skel_bytes = f.read()
     upload_to_r2(skel_key, skel_bytes, "video/mp4")
-    os.unlink(h264_path)
+    os.unlink(skel_path)
 
     # Update recordings table
     update_recording(req.recording_id, {
