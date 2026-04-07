@@ -145,7 +145,7 @@ serve(async (req) => {
     .single()
 
   if (insertErr) {
-    console.error('[upload-student-video] insert error:', insertErr.message)
+    console.log('[upload-student-video] insert error:', JSON.stringify(insertErr))
     return json({ error: 'db_error' }, 500)
   }
 
