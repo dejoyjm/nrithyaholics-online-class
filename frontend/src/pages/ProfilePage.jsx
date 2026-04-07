@@ -60,7 +60,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
     const [{ data: ownedData }, authSession] = await Promise.all([
       supabase
         .from('bookings')
-        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers, session_type, series_parts)')
+        .select('*, sessions(title, scheduled_at, style_tags, skill_level, duration_minutes, price_tiers, session_type, series_parts, status)')
         .eq('booked_by', user.id)
         .eq('status', 'confirmed')
         .order('created_at', { ascending: false }),
