@@ -13,21 +13,6 @@ R2_BUCKET = os.environ.get("R2_BUCKET", "nrh-recordings")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
-MODEL_PATH = "/tmp/pose_landmarker_full.task"
-MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/pose_landmarker"
-    "/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
-)
-
-def ensure_model():
-    if not os.path.exists(MODEL_PATH):
-        with httpx.Client(timeout=120) as client:
-            r = client.get(MODEL_URL)
-            r.raise_for_status()
-            with open(MODEL_PATH, "wb") as f:
-                f.write(r.content)
-    return MODEL_PATH
-
 def verify(secret: str = ""):
     if secret != POSE_SERVICE_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -102,41 +87,6 @@ def update_recording(recording_id: str, fields: dict):
         )
         r.raise_for_status()
 
-def _make_landmarker():
-    """Create a PoseLandmarker in VIDEO running mode."""
-    import mediapipe as mp
-    from mediapipe.tasks.python import BaseOptions
-    from mediapipe.tasks.python.vision import (
-        PoseLandmarker, PoseLandmarkerOptions, RunningMode
-    )
-    options = PoseLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=ensure_model()),
-        running_mode=RunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_pose_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-    return PoseLandmarker.create_from_options(options)
-
-def _draw_landmarks(frame, detection_result):
-    """Draw pose skeleton onto a BGR frame using Tasks API result."""
-    import mediapipe as mp
-    from mediapipe.framework.formats import landmark_pb2
-
-    for pose_landmarks in detection_result.pose_landmarks:
-        proto = landmark_pb2.NormalizedLandmarkList()
-        proto.landmark.extend([
-            landmark_pb2.NormalizedLandmark(x=lm.x, y=lm.y, z=lm.z)
-            for lm in pose_landmarks
-        ])
-        mp.solutions.drawing_utils.draw_landmarks(
-            frame,
-            proto,
-            mp.solutions.pose.POSE_CONNECTIONS,
-            mp.solutions.drawing_styles.get_default_pose_landmarks_style(),
-        )
-
 class ExtractRequest(BaseModel):
     video_url: str
     recording_id: str
@@ -148,7 +98,7 @@ class ScoreRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "pose-service", "version": "0.3.0"}
+    return {"status": "ok", "service": "pose-service", "version": "0.2.0"}
 
 @app.post("/extract-pose")
 def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
@@ -166,6 +116,9 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
             r.raise_for_status()
             f.write(r.content)
 
+    mp_pose = mp.solutions.pose
+    mp_drawing = mp.solutions.drawing_utils
+    mp_drawing_styles = mp.solutions.drawing_styles
     cap = cv2.VideoCapture(tmp_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -179,24 +132,34 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
     frames = []
     frame_idx = 0
 
-    with _make_landmarker() as landmarker:
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        smooth_landmarks=True,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as pose:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = pose.process(rgb)
             timestamp_ms = int((frame_idx / fps) * 1000)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
             if result.pose_landmarks:
-                pose_lms = result.pose_landmarks[0]
                 keypoints = [
-                    {"x": lm.x, "y": lm.y, "z": lm.z, "v": lm.visibility or 0.0}
-                    for lm in pose_lms
+                    {"x": lm.x, "y": lm.y, "z": lm.z, "v": lm.visibility}
+                    for lm in result.pose_landmarks.landmark
                 ]
                 frames.append({"t": timestamp_ms, "kp": keypoints})
-                _draw_landmarks(frame, result)
+
+                mp_drawing.draw_landmarks(
+                    frame,
+                    result.pose_landmarks,
+                    mp_pose.POSE_CONNECTIONS,
+                    landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
+                )
 
             writer.write(frame)
             frame_idx += 1
@@ -261,25 +224,29 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
             r.raise_for_status()
             f.write(r.content)
 
+    mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(tmp_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     student_vectors = []
-    frame_idx = 0
 
-    with _make_landmarker() as landmarker:
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5
+    ) as pose:
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            timestamp_ms = int((frame_idx / fps) * 1000)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            result = landmarker.detect_for_video(mp_image, timestamp_ms)
+            result = pose.process(rgb)
             if result.pose_landmarks:
-                pose_lms = result.pose_landmarks[0]
-                vec = np.array([v for lm in pose_lms for v in (lm.x, lm.y, lm.z)])
+                vec = np.array([
+                    v for lm in result.pose_landmarks.landmark
+                    for v in (lm.x, lm.y, lm.z)
+                ])
                 student_vectors.append(vec)
-            frame_idx += 1
 
     cap.release()
     os.unlink(tmp_path)
