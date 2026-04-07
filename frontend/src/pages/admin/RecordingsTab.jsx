@@ -438,7 +438,7 @@ export default function RecordingsTab() {
   async function fetchRecordings() {
     const { data, error } = await supabase
       .from('recordings')
-      .select('*, sessions(title, scheduled_at), dance_scores(overall_score, status, timeline_data, created_at, reference_recording_id)')
+      .select('*, sessions(title, scheduled_at), dance_scores!dance_scores_upload_id_fkey(overall_score, status, timeline_data, created_at, reference_recording_id)')
       .order('created_at', { ascending: false })
     if (error) console.error('[RecordingsTab] fetch error:', error.message, error.details, error.hint)
     setRecordings(data || [])
