@@ -12,6 +12,7 @@ R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "")
 R2_BUCKET = os.environ.get("R2_BUCKET", "nrh-recordings")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 
 def verify(secret: str = ""):
     if secret != POSE_SERVICE_SECRET:
@@ -95,6 +96,8 @@ class ScoreRequest(BaseModel):
     reference_keypoints_url: str
     student_video_url: str
     session_id: str
+    recording_id: str = ""
+    student_recording_id: str = ""
 
 @app.get("/health")
 def health():
@@ -283,6 +286,27 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         {"t_ms": int((i / fps) * 1000), "score": int(np.mean(frame_scores[i:i+bucket]) * 100)}
         for i in range(0, len(frame_scores), bucket)
     ]
+
+    # Call back to Supabase update-score edge function
+    student_rec_id = req.student_recording_id or req.recording_id
+    if SUPABASE_URL and student_rec_id:
+        try:
+            with httpx.Client(timeout=30) as client:
+                client.post(
+                    f"{SUPABASE_URL}/functions/v1/update-score",
+                    json={
+                        "session_id": req.session_id,
+                        "student_recording_id": student_rec_id,
+                        "overall_score": overall,
+                        "timeline": timeline,
+                    },
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-internal-secret": INTERNAL_SECRET,
+                    },
+                )
+        except Exception as e:
+            print(f"[score-student] update-score callback error: {e}")
 
     return {
         "session_id": req.session_id,

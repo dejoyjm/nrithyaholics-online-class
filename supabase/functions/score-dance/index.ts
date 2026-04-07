@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret',
 }
 
 function json(data: unknown, status = 200) {
@@ -38,7 +38,7 @@ async function getSigningKey(secret: string, date: string, region: string, servi
   return hmacSha256(kService, 'aws4_request')
 }
 
-async function presignR2Put(
+async function presignR2Get(
   accountId: string,
   accessKeyId: string,
   secretKey: string,
@@ -55,17 +55,16 @@ async function presignR2Put(
   const path       = `/${objectKey}`
   const credential = `${accessKeyId}/${dateStamp}/${region}/${service}/aws4_request`
 
-  // Query params must be sorted alphabetically by key name
   const qs = new URLSearchParams([
-    ['X-Amz-Algorithm',     'AWS4-HMAC-SHA256'],
-    ['X-Amz-Credential',    credential],
-    ['X-Amz-Date',          amzDate],
-    ['X-Amz-Expires',       String(expiresSeconds)],
-    ['X-Amz-SignedHeaders',  'host'],
+    ['X-Amz-Algorithm',    'AWS4-HMAC-SHA256'],
+    ['X-Amz-Credential',   credential],
+    ['X-Amz-Date',         amzDate],
+    ['X-Amz-Expires',      String(expiresSeconds)],
+    ['X-Amz-SignedHeaders', 'host'],
   ])
 
   const canonicalRequest = [
-    'PUT',
+    'GET',
     path,
     qs.toString(),
     `host:${host}\n`,
@@ -93,83 +92,115 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 })
 
-  const authHeader = req.headers.get('Authorization')
-  if (!authHeader) return json({ error: 'unauthorized' }, 401)
+  // Internal secret auth — no JWT needed
+  const incomingSecret = req.headers.get('x-internal-secret')
+  if (!incomingSecret || incomingSecret !== Deno.env.get('INTERNAL_SECRET')) {
+    return json({ error: 'unauthorized' }, 401)
+  }
+
+  const body = await req.json().catch(() => null)
+  const { recording_id, session_id, booking_id } = body ?? {}
+  if (!recording_id || !session_id || !booking_id) return json({ error: 'missing params' }, 400)
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
-  // Verify caller
-  const token = authHeader.replace('Bearer ', '')
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
-  if (authErr || !user) return json({ error: 'unauthorized' }, 401)
-
-  const body = await req.json().catch(() => null)
-  const { session_id, booking_id, file_size, mime_type } = body ?? {}
-  if (!session_id || !booking_id) return json({ error: 'missing params' }, 400)
-
-  // Verify booking belongs to this user and is confirmed
-  const { data: booking } = await supabase
-    .from('bookings')
-    .select('id')
-    .eq('id', booking_id)
+  // 1. Find choreographer reference recording with extracted pose
+  const { data: refRec } = await supabase
+    .from('recordings')
+    .select('id, r2_url, pose_r2_key')
     .eq('session_id', session_id)
-    .eq('booked_by', user.id)
-    .eq('status', 'confirmed')
+    .eq('recorder_type', 'choreographer')
+    .eq('pose_extracted', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
-  if (!booking) return json({ error: 'forbidden' }, 403)
 
+  if (!refRec) {
+    console.log('[score-dance] no reference recording for session:', session_id)
+    await supabase.from('dance_scores').insert({
+      session_id,
+      booking_id,
+      upload_id:    recording_id,
+      status:       'no_reference',
+    })
+    return json({ status: 'no_reference' })
+  }
+
+  // 2. Find student recording
+  const { data: studentRec } = await supabase
+    .from('recordings')
+    .select('id, r2_url')
+    .eq('id', recording_id)
+    .single()
+  if (!studentRec) return json({ error: 'student recording not found' }, 404)
+
+  // 3. Presign both URLs
   const accountId   = Deno.env.get('R2_ACCOUNT_ID')!
   const accessKeyId = Deno.env.get('R2_ACCESS_KEY_ID')!
   const secretKey   = Deno.env.get('R2_SECRET_ACCESS_KEY')!
   const bucket      = Deno.env.get('R2_BUCKET') ?? 'nrh-recordings'
 
-  const timestamp = Date.now()
-  const objectKey = `student-uploads/${session_id}/${booking_id}/${timestamp}.mp4`
-  const r2Key     = `https://${bucket}.${accountId}.r2.cloudflarestorage.com/${objectKey}`
+  // pose_r2_key is a relative path (e.g. pose-data/{id}_keypoints.json)
+  const refKeypointsUrl = await presignR2Get(
+    accountId, accessKeyId, secretKey, bucket, refRec.pose_r2_key, 3600,
+  )
 
-  const uploadUrl = await presignR2Put(accountId, accessKeyId, secretKey, bucket, objectKey, 3600)
+  // student r2_url is a full https URL — extract bucket + key
+  const studentBase   = studentRec.r2_url.split('?')[0]
+  const studentUrlObj = new URL(studentBase)
+  const studentBucket = studentUrlObj.hostname.split('.')[0]
+  const studentKey    = studentUrlObj.pathname.slice(1)
+  const studentVideoUrl = await presignR2Get(
+    accountId, accessKeyId, secretKey, studentBucket, studentKey, 3600,
+  )
 
-  const { data: recording, error: insertErr } = await supabase
-    .from('recordings')
+  // 4. Insert dance_scores row immediately with status='processing'
+  const { data: scoreRow, error: insertErr } = await supabase
+    .from('dance_scores')
     .insert({
       session_id,
       booking_id,
-      recorder_type:    'student',
-      r2_url:           r2Key,
-      file_size_bytes:  file_size || null,
+      reference_recording_id: refRec.id,
+      upload_id:              recording_id,
+      overall_score:          null,
+      status:                 'processing',
     })
     .select('id')
     .single()
 
   if (insertErr) {
-    console.error('[upload-student-video] insert error:', insertErr.message)
+    console.error('[score-dance] dance_scores insert error:', insertErr.message)
     return json({ error: 'db_error' }, 500)
   }
 
-  console.log('[upload-student-video] created recording:', recording?.id, 'user:', user.id)
+  // 5. Fire-and-forget to Railway pose service
+  const poseServiceUrl = Deno.env.get('POSE_SERVICE_URL')!
+  const poseSecret     = Deno.env.get('POSE_SERVICE_SECRET') ?? ''
 
-  // Fire-and-forget: trigger scoring pipeline — do not await, do not block response
-  const internalSecret = Deno.env.get('INTERNAL_SECRET') ?? ''
   EdgeRuntime.waitUntil(
-    fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/score-dance`, {
+    fetch(`${poseServiceUrl}/score-student`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-secret': internalSecret,
+        'x-secret': poseSecret,
       },
       body: JSON.stringify({
-        recording_id: recording?.id,
+        reference_keypoints_url: refKeypointsUrl,
+        student_video_url:       studentVideoUrl,
         session_id,
-        booking_id,
+        recording_id,
+        student_recording_id:    recording_id,
       }),
     })
       .then(r => r.json().catch(() => ({})))
-      .then(data => console.log('[upload-student-video] score-dance queued:', data))
-      .catch(e  => console.error('[upload-student-video] score-dance trigger error:', e))
+      .then(data => console.log('[score-dance] pose service responded for recording:', recording_id, data))
+      .catch(e  => console.error('[score-dance] pose service error for recording:', recording_id, e))
   )
 
-  return json({ upload_url: uploadUrl, recording_id: recording?.id })
+  console.log('[score-dance] queued scoring for recording:', recording_id, 'score_id:', scoreRow?.id)
+
+  return json({ status: 'processing', score_id: scoreRow?.id })
 })
