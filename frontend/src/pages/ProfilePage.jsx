@@ -562,7 +562,7 @@ async function callResendInvite(guestBookingId, newEmail) {
           ▶ Watch Recording
         </button>
       )}
-      {!isUpcoming && session?.status === 'completed' && onPractice && (
+      {!isUpcoming && booking.status === 'confirmed' && session?.status === 'completed' && onPractice && (
         <button
           onClick={() => onPractice(booking.session_id, booking.id)}
           style={{ marginTop: 10, marginLeft: 10, background: '#1a1a3a', color: '#a78bfa', border: '1px solid #7c3aed', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
