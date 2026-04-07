@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     ffmpeg \
+    libchromaprint-dev \
+    libchromaprint1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
