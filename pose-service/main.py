@@ -500,12 +500,6 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         ref_angles = ref_angles[ref_start_frame:] if ref_start_frame < len(ref_angles) else ref_angles
         ref_valids = ref_valids[ref_start_frame:] if ref_start_frame < len(ref_valids) else ref_valids
 
-        import sys
-        use_direct_align = (req.music_url and req.reference_video_url
-                           and _last_fingerprint_confidence >= 0.7)
-
-        min_len = min(len(ref_angles), len(student_angles))
-
         def angle_score(ref_a, ref_v, stu_a, stu_v, w):
             """
             Weighted angle similarity for one frame.
@@ -527,15 +521,32 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
             normalised = (raw - 0.5) / 0.5
             return max(0.0, min(1.0, normalised))
 
+        # Use DTW on angle vectors to find optimal time alignment
+        # This tolerates the student being slightly ahead or behind
+        # DTW operates on the norm of angle vectors as the distance signal
+        from dtaidistance import dtw as dtw_mod
+
+        ref_angle_arr = np.array(ref_angles)   # shape (N, 8)
+        stu_angle_arr = np.array(student_angles) # shape (M, 8)
+
+        # Use weighted norm as the 1D signal for DTW path finding
+        ref_norms = np.array([float(np.sum(weights * a)) for a in ref_angle_arr])
+        stu_norms = np.array([float(np.sum(weights * a)) for a in stu_angle_arr])
+
+        _, paths = dtw_mod.warping_paths(ref_norms, stu_norms)
+        best_path = dtw_mod.best_path(paths)
+
+        print(f"[score-student] DTW path length: {len(best_path)} "
+              f"ref_frames: {len(ref_angles)} stu_frames: {len(student_angles)}")
+
         frame_scores_raw = [
             angle_score(
                 ref_angles[i], ref_valids[i],
-                student_angles[i], student_valids[i],
+                student_angles[j], student_valids[j],
                 weights
             )
-            for i in range(min_len)
+            for i, j in best_path
         ]
-        # Drop None frames (both sides had no visible joints)
         frame_scores = [s for s in frame_scores_raw if s is not None]
 
         # Environment score: average student joint visibility across all frames
