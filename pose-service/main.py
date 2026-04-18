@@ -13,6 +13,7 @@ R2_BUCKET = os.environ.get("R2_BUCKET", "nrh-recordings")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
+_last_fingerprint_confidence = 0.0
 
 def get_song_offset_seconds(video_url: str, mp3_url: str) -> float:
     """
@@ -80,6 +81,11 @@ def get_song_offset_seconds(video_url: str, mp3_url: str) -> float:
 
         print(f'[fingerprint] ref video starts at {best_offset:.1f}s in song '
               f'(confidence {best_score:.3f})')
+        global _last_fingerprint_confidence
+        _last_fingerprint_confidence = best_score
+        if best_score < 0.7:
+            print(f'[fingerprint] confidence {best_score:.3f} below threshold, using 0.0s')
+            return 0.0
         return best_offset
 
     except Exception as e:
@@ -89,6 +95,79 @@ def get_song_offset_seconds(video_url: str, mp3_url: str) -> float:
         for path in [video_path, wav_path, mp3_path]:
             try: os.unlink(path)
             except: pass
+
+
+def angle_2d(a, b, c):
+    """
+    Compute angle at point b formed by vectors b->a and b->c.
+    Uses 2D XY only (ignores Z — MediaPipe Z is unreliable on phones).
+    Returns angle in degrees (0-180).
+    """
+    ba = np.array([a[0] - b[0], a[1] - b[1]])
+    bc = np.array([c[0] - b[0], c[1] - b[1]])
+    norm = np.linalg.norm(ba) * np.linalg.norm(bc)
+    if norm < 1e-6:
+        return 90.0
+    cos_angle = np.clip(np.dot(ba, bc) / norm, -1.0, 1.0)
+    return float(np.degrees(np.arccos(cos_angle)))
+
+
+def keypoints_to_angles(kp_list, visibility_threshold=0.5):
+    """
+    Convert 33 MediaPipe keypoints to 8 joint angles (XY plane only).
+    Returns (angles_array, valid_mask).
+
+    angles_array: numpy array of 8 floats (degrees, normalised 0-1 by /180)
+    valid_mask:   boolean array — False if any joint in that angle had visibility < threshold
+
+    MediaPipe landmark indices:
+      11=left_shoulder, 12=right_shoulder
+      13=left_elbow,    14=right_elbow
+      15=left_wrist,    16=right_wrist
+      23=left_hip,      24=right_hip
+      25=left_knee,     26=right_knee
+      27=left_ankle,    28=right_ankle
+
+    8 angles:
+      0: left_elbow    (shoulder->elbow->wrist):   11,13,15
+      1: right_elbow   (shoulder->elbow->wrist):   12,14,16
+      2: left_shoulder (elbow->shoulder->hip):     13,11,23
+      3: right_shoulder(elbow->shoulder->hip):     14,12,24
+      4: left_hip      (shoulder->hip->knee):      11,23,25
+      5: right_hip     (shoulder->hip->knee):      12,24,26
+      6: left_knee     (hip->knee->ankle):         23,25,27
+      7: right_knee    (hip->knee->ankle):         24,26,28
+    """
+    ANGLE_DEFS = [
+        (11, 13, 15),  # left elbow
+        (12, 14, 16),  # right elbow
+        (13, 11, 23),  # left shoulder
+        (14, 12, 24),  # right shoulder
+        (11, 23, 25),  # left hip
+        (12, 24, 26),  # right hip
+        (23, 25, 27),  # left knee
+        (24, 26, 28),  # right knee
+    ]
+
+    angles = np.zeros(8)
+    valid = np.ones(8, dtype=bool)
+
+    for i, (ai, bi, ci) in enumerate(ANGLE_DEFS):
+        va = kp_list[ai]['v']
+        vb = kp_list[bi]['v']
+        vc = kp_list[ci]['v']
+
+        if va < visibility_threshold or vb < visibility_threshold or vc < visibility_threshold:
+            valid[i] = False
+            angles[i] = 0.0
+            continue
+
+        a = (kp_list[ai]['x'], kp_list[ai]['y'])
+        b = (kp_list[bi]['x'], kp_list[bi]['y'])
+        c = (kp_list[ci]['x'], kp_list[ci]['y'])
+        angles[i] = angle_2d(a, b, c) / 180.0  # normalise to 0-1
+
+    return angles, valid
 
 
 def verify(secret: str = ""):
@@ -262,7 +341,42 @@ def extract_pose(req: ExtractRequest, x_secret: str = Header(default="")):
 
     # Upload keypoints JSON to R2
     pose_key = f"pose-data/{req.recording_id}_keypoints.json"
-    keypoints_bytes = json.dumps({"frames": frames}).encode()
+
+    # Compute per-frame angles
+    frame_angles = []
+    for frame in frames:
+        angles, valid = keypoints_to_angles(frame["kp"])
+        frame_angles.append({"angles": angles.tolist(), "valid": valid.tolist()})
+
+    # Compute angle variance across all frames → weights
+    # High variance = joint moves a lot = important for this choreography
+    all_angles = np.array([fa["angles"] for fa in frame_angles])  # shape (N, 8)
+    variances = np.var(all_angles, axis=0)  # shape (8,)
+    total_var = variances.sum()
+    weights = (variances / total_var).tolist() if total_var > 1e-6 else [0.125] * 8
+
+    # Compute bounding box from all visible landmarks
+    all_x = [kp["x"] for f in frames for kp in f["kp"] if kp["v"] > 0.5]
+    all_y = [kp["y"] for f in frames for kp in f["kp"] if kp["v"] > 0.5]
+    bounding_box = {
+        "x_min": float(min(all_x)) if all_x else 0.0,
+        "x_max": float(max(all_x)) if all_x else 1.0,
+        "y_min": float(min(all_y)) if all_y else 0.0,
+        "y_max": float(max(all_y)) if all_y else 1.0,
+    }
+
+    # Store enriched JSON
+    keypoints_data = {
+        "frames": frames,
+        "frame_angles": frame_angles,
+        "weights": weights,
+        "bounding_box": bounding_box,
+    }
+    keypoints_bytes = json.dumps(keypoints_data).encode()
+
+    print(f"[extract-pose] weights: {[round(w,3) for w in weights]}")
+    print(f"[extract-pose] bounding_box: {bounding_box}")
+
     upload_to_r2(pose_key, keypoints_bytes, "application/json")
 
     # Upload skeleton video to R2
@@ -302,10 +416,21 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         r.raise_for_status()
         ref_data = r.json()
 
-    ref_vectors = [
-        np.array([v for kp in frame["kp"] for v in (kp["x"], kp["y"], kp["z"])])
-        for frame in ref_data["frames"]
-    ]
+    # Use pre-computed angle vectors + weights from reference JSON
+    # Fall back to raw XYZ if old format (no frame_angles key)
+    use_angles = "frame_angles" in ref_data and "weights" in ref_data
+
+    if use_angles:
+        ref_angles = [np.array(fa["angles"]) for fa in ref_data["frame_angles"]]
+        ref_valids = [np.array(fa["valid"]) for fa in ref_data["frame_angles"]]
+        weights = np.array(ref_data["weights"])
+        print(f"[score-student] using angle-based scoring, weights: {[round(w,3) for w in weights]}")
+    else:
+        ref_vectors = [
+            np.array([v for kp in frame["kp"] for v in (kp["x"], kp["y"], kp["z"])])
+            for frame in ref_data["frames"]
+        ]
+        print("[score-student] falling back to raw XYZ (old reference format)")
 
     # Music-anchored alignment
     ref_offset_s = 0.0
@@ -327,7 +452,9 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
     mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(tmp_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    student_vectors = []
+    student_angles = []
+    student_valids = []
+    student_vectors = []  # kept for DTW fallback path
 
     with mp_pose.Pose(
         static_image_mode=False,
@@ -342,44 +469,103 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = pose.process(rgb)
             if result.pose_landmarks:
-                vec = np.array([
-                    v for lm in result.pose_landmarks.landmark
-                    for v in (lm.x, lm.y, lm.z)
-                ])
-                student_vectors.append(vec)
+                kp_list = [
+                    {"x": lm.x, "y": lm.y, "z": lm.z, "v": lm.visibility}
+                    for lm in result.pose_landmarks.landmark
+                ]
+                if use_angles:
+                    angles, valid = keypoints_to_angles(kp_list)
+                    student_angles.append(angles)
+                    student_valids.append(valid)
+                else:
+                    vec = np.array([v for lm in result.pose_landmarks.landmark
+                                   for v in (lm.x, lm.y, lm.z)])
+                    student_vectors.append(vec)
 
     cap.release()
     os.unlink(tmp_path)
 
-    if not ref_vectors or not student_vectors:
-        raise HTTPException(status_code=422, detail="Could not extract poses")
+    if use_angles:
+        if not ref_angles or not student_angles:
+            raise HTTPException(status_code=422, detail="Could not extract poses")
+    else:
+        if not ref_vectors or not student_vectors:
+            raise HTTPException(status_code=422, detail="Could not extract poses")
 
-    # Trim ref_vectors to start at the song position
+    # Trim reference to music offset
     fps_ref = 30
     ref_start_frame = int(ref_offset_s * fps_ref)
-    ref_vectors = ref_vectors[ref_start_frame:] if ref_start_frame < len(ref_vectors) else ref_vectors
 
-    def cosine_sim(a, b):
-        n = np.linalg.norm(a) * np.linalg.norm(b)
-        return float(np.dot(a, b) / n) if n > 0 else 0.0
+    if use_angles:
+        ref_angles = ref_angles[ref_start_frame:] if ref_start_frame < len(ref_angles) else ref_angles
+        ref_valids = ref_valids[ref_start_frame:] if ref_start_frame < len(ref_valids) else ref_valids
 
-    # If music_url provided, align by song time (no DTW)
-    # Otherwise fall back to DTW
-    if req.music_url and req.reference_video_url:
-        # Direct frame-by-frame scoring at matching song positions
-        min_len = min(len(ref_vectors), len(student_vectors))
-        frame_scores = [cosine_sim(ref_vectors[i], student_vectors[i])
-                        for i in range(min_len)]
+        import sys
+        use_direct_align = (req.music_url and req.reference_video_url
+                           and _last_fingerprint_confidence >= 0.7)
+
+        min_len = min(len(ref_angles), len(student_angles))
+
+        def angle_score(ref_a, ref_v, stu_a, stu_v, w):
+            """
+            Weighted angle similarity for one frame.
+            Only includes angles where BOTH ref and student joints are visible.
+            Normalises to 0-100 using floor of 0.5 (angle similarity baseline).
+            """
+            combined_valid = ref_v & stu_v
+            if not combined_valid.any():
+                return None  # skip frame entirely
+            valid_weights = w * combined_valid
+            weight_sum = valid_weights.sum()
+            if weight_sum < 1e-6:
+                return None
+            norm_weights = valid_weights / weight_sum
+            # Angle similarity: 1 - |angle_diff| (both normalised 0-1)
+            similarities = 1.0 - np.abs(ref_a - stu_a)
+            raw = float(np.sum(norm_weights * similarities))
+            # Normalise: floor is 0.5 (random pose similarity baseline for angles)
+            normalised = (raw - 0.5) / 0.5
+            return max(0.0, min(1.0, normalised))
+
+        frame_scores_raw = [
+            angle_score(
+                ref_angles[i], ref_valids[i],
+                student_angles[i], student_valids[i],
+                weights
+            )
+            for i in range(min_len)
+        ]
+        # Drop None frames (both sides had no visible joints)
+        frame_scores = [s for s in frame_scores_raw if s is not None]
+
+        # Environment score: average student joint visibility across all frames
+        all_vis = [v for sv in student_valids for v in sv.astype(float)]
+        environment_score = int(np.mean(all_vis) * 100) if all_vis else 0
+
     else:
-        # DTW fallback (no music)
-        from dtaidistance import dtw
-        ref_norms = np.array([np.linalg.norm(v) for v in ref_vectors])
-        stu_norms = np.array([np.linalg.norm(v) for v in student_vectors])
-        _, paths = dtw.warping_paths(ref_norms, stu_norms)
-        best_path = dtw.best_path(paths)
-        frame_scores = [cosine_sim(ref_vectors[i], student_vectors[j])
-                        for i, j in best_path]
-    overall = int(np.mean(frame_scores) * 100)
+        # Legacy XYZ path
+        ref_vectors = ref_vectors[ref_start_frame:] if ref_start_frame < len(ref_vectors) else ref_vectors
+
+        def cosine_sim(a, b):
+            n = np.linalg.norm(a) * np.linalg.norm(b)
+            return float(np.dot(a, b) / n) if n > 0 else 0.0
+
+        if req.music_url and req.reference_video_url:
+            min_len = min(len(ref_vectors), len(student_vectors))
+            frame_scores = [cosine_sim(ref_vectors[i], student_vectors[i])
+                           for i in range(min_len)]
+        else:
+            from dtaidistance import dtw
+            ref_norms = np.array([np.linalg.norm(v) for v in ref_vectors])
+            stu_norms = np.array([np.linalg.norm(v) for v in student_vectors])
+            _, paths = dtw.warping_paths(ref_norms, stu_norms)
+            best_path = dtw.best_path(paths)
+            frame_scores = [cosine_sim(ref_vectors[i], student_vectors[j])
+                           for i, j in best_path]
+
+        environment_score = 50  # unknown in legacy path
+
+    overall = int(np.mean(frame_scores) * 100) if frame_scores else 0
 
     # Per-second timeline
     bucket = int(fps)
@@ -400,6 +586,7 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
                         "student_recording_id": student_rec_id,
                         "overall_score": overall,
                         "timeline": timeline,
+                        "environment_score": environment_score,
                     },
                     headers={
                         "Content-Type": "application/json",
@@ -410,10 +597,14 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         except Exception as e:
             print(f"[score-student] update-score callback error: {e}")
 
+    print(f"[score-student] overall={overall} environment={environment_score} "
+          f"frames={len(frame_scores)} use_angles={use_angles}")
+
     return {
         "session_id": req.session_id,
         "overall_score": overall,
         "timeline": timeline,
         "frame_count": len(frame_scores),
-        "processing_ms": int((time.time() - start) * 1000)
+        "processing_ms": int((time.time() - start) * 1000),
+        "environment_score": environment_score,
     }
