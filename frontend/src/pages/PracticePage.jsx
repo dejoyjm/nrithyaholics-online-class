@@ -17,16 +17,13 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
   const [stream, setStream]             = useState(null)
   const [camError, setCamError]         = useState(null)
 
-  // ── Music ─────────────────────────────────────────────────────────────────
-  const [musicUrl, setMusicUrl]         = useState(null)
-  const [musicTitle, setMusicTitle]     = useState(null)
+  // ── Music progress (tracks ref video) ────────────────────────────────────
   const [musicProgress, setMusicProgress] = useState(0)
   const [musicDuration, setMusicDuration] = useState(0)
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const cameraVideoRef    = useRef(null)
   const refVideoRef       = useRef(null)
-  const audioRef          = useRef(null)
   const mediaRecorderRef  = useRef(null)
   const chunksRef         = useRef([])
   const countdownRef      = useRef(null)
@@ -76,22 +73,6 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     loadRefVideo()
   }, [sessionId])
 
-  // ── Fetch session music ───────────────────────────────────────────────────
-  useEffect(() => {
-    async function loadMusic() {
-      const { data: session } = await supabase
-        .from('sessions')
-        .select('music_track_url, music_track_title')
-        .eq('id', sessionId)
-        .single()
-      if (session?.music_track_url) {
-        setMusicUrl(session.music_track_url)
-        setMusicTitle(session.music_track_title || 'Music')
-      }
-    }
-    loadMusic()
-  }, [sessionId])
-
   // ── Camera setup ──────────────────────────────────────────────────────────
   useEffect(() => {
     async function startCamera() {
@@ -121,14 +102,14 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     }
   }, [refLoading])
 
-  // ── Music progress tracking during recording ──────────────────────────────
+  // ── Music progress tracking during recording (tracks ref video) ───────────
   useEffect(() => {
     if (phase === 'recording') {
       progressRef.current = setInterval(() => {
-        const audio = audioRef.current
-        if (audio && audio.duration) {
-          setMusicProgress(audio.currentTime / audio.duration)
-          setMusicDuration(audio.duration)
+        const video = refVideoRef.current
+        if (video && video.duration) {
+          setMusicProgress(video.currentTime / video.duration)
+          setMusicDuration(video.duration)
         }
       }, 500)
     } else {
@@ -176,14 +157,10 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     mr.start(1000)
     mediaRecorderRef.current = mr
 
-    if (audioRef.current) {
-      audioRef.current.currentTime = 0
-      audioRef.current.play()
-      audioRef.current.onended = () => stopAndSave()
-    }
     if (refVideoRef.current) {
       refVideoRef.current.currentTime = 0
       refVideoRef.current.play()
+      refVideoRef.current.onended = () => stopAndSave()
     }
 
     setMusicProgress(0)
@@ -192,12 +169,9 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
 
   function emergencyStop() {
     clearInterval(countdownRef.current)
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.onended = null
-    }
     if (refVideoRef.current) {
       refVideoRef.current.pause()
+      refVideoRef.current.onended = null
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       stopAndSave()
@@ -262,7 +236,7 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const isActive = phase === 'countdown' || phase === 'recording'
-  const canStart = !refLoading && !!stream && !!musicUrl && phase === 'ready'
+  const canStart = !refLoading && !!stream && phase === 'ready'
 
   const musicCurrentSecs = musicDuration * musicProgress
 
@@ -418,31 +392,28 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
         </div>
       </div>
 
-      {/* ── Music bar ── */}
-      {musicUrl && (
-        <div style={{
-          flexShrink: 0, margin: '0 20px 16px',
-          background: '#0f0c0c', borderRadius: 12,
-          padding: '12px 20px',
-          display: 'flex', alignItems: 'center', gap: 16,
-          border: '1px solid #2a2420',
-        }}>
-          <div style={{ fontSize: 13, color: '#faf7f2', fontWeight: 600, flexShrink: 0, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            🎵 {musicTitle}
-          </div>
-          <div style={{ flex: 1, height: 4, background: '#2a2420', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', background: '#c8430a', borderRadius: 2,
-              width: `${musicProgress * 100}%`,
-              transition: 'width 0.5s linear',
-            }} />
-          </div>
-          <div style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>
-            {fmtTime(musicCurrentSecs)} / {fmtTime(musicDuration)}
-          </div>
-          <audio ref={audioRef} src={musicUrl} />
+      {/* ── Music bar (tracks ref video progress) ── */}
+      <div style={{
+        flexShrink: 0, margin: '0 20px 16px',
+        background: '#0f0c0c', borderRadius: 12,
+        padding: '12px 20px',
+        display: 'flex', alignItems: 'center', gap: 16,
+        border: '1px solid #2a2420',
+      }}>
+        <div style={{ fontSize: 13, color: '#faf7f2', fontWeight: 600, flexShrink: 0 }}>
+          CLASS MUSIC
         </div>
-      )}
+        <div style={{ flex: 1, height: 4, background: '#2a2420', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', background: '#c8430a', borderRadius: 2,
+            width: `${musicProgress * 100}%`,
+            transition: 'width 0.5s linear',
+          }} />
+        </div>
+        <div style={{ fontSize: 12, color: '#7a6e65', flexShrink: 0 }}>
+          {fmtTime(musicCurrentSecs)} / {fmtTime(musicDuration)}
+        </div>
+      </div>
 
       {/* ── Center overlay: Start Practice / status ── */}
       {(phase === 'ready' || phase === 'saving' || phase === 'saved' || phase === 'error') && (

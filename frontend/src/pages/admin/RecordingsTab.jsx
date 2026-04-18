@@ -109,9 +109,15 @@ function SkeletonModal({ recordingId, onClose }) {
 // ── ScoreReportModal ─────────────────────────────────────────────────────────
 
 function ScoreReportModal({ rec, onClose }) {
-  const [refSkeletonUrl, setRefSkeletonUrl]   = useState(null)
+  const [refVideoUrl, setRefVideoUrl]     = useState(null)
   const [studentVideoUrl, setStudentVideoUrl] = useState(null)
-  const [urlError, setUrlError]               = useState(null)
+  const [urlError, setUrlError]           = useState(null)
+  const [isPlaying, setIsPlaying]         = useState(false)
+  const [playPosition, setPlayPosition]   = useState(0)
+
+  const refVideoRef   = useRef(null)
+  const stuVideoRef   = useRef(null)
+  const playTimerRef  = useRef(null)
 
   const score     = rec.dance_scores?.[0]
   const overall   = score?.overall_score ?? null
@@ -125,10 +131,14 @@ function ScoreReportModal({ rec, onClose }) {
         const token = await getToken()
         const [refRes, stuRes] = await Promise.all([
           refRecId
-            ? fetch(`${SUPABASE_URL}/functions/v1/get-skeleton-url`, {
+            ? fetch(`${SUPABASE_URL}/functions/v1/get-recording-url`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ recording_id: refRecId }),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`,
+                  'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                },
+                body: JSON.stringify({ recording_id: refRecId, session_id: rec.session_id }),
               }).then(r => r.json())
             : Promise.resolve(null),
           fetch(`${SUPABASE_URL}/functions/v1/get-recording-url`, {
@@ -138,7 +148,7 @@ function ScoreReportModal({ rec, onClose }) {
           }).then(r => r.json()),
         ])
         if (!cancelled) {
-          if (refRes?.url) setRefSkeletonUrl(refRes.url)
+          if (refRes?.url) setRefVideoUrl(refRes.url)
           if (stuRes?.url) setStudentVideoUrl(stuRes.url)
           else if (stuRes?.error) setUrlError(stuRes.error)
         }
@@ -149,6 +159,44 @@ function ScoreReportModal({ rec, onClose }) {
     fetchUrls()
     return () => { cancelled = true }
   }, [rec.id, rec.session_id, refRecId])
+
+  useEffect(() => () => clearInterval(playTimerRef.current), [])
+
+  function togglePlay() {
+    const rv = refVideoRef.current
+    const sv = stuVideoRef.current
+    if (!rv || !sv) return
+    if (isPlaying) {
+      rv.pause()
+      sv.pause()
+      clearInterval(playTimerRef.current)
+      setIsPlaying(false)
+    } else {
+      rv.currentTime = 0
+      sv.currentTime = 0
+      rv.play()
+      sv.play()
+      setIsPlaying(true)
+      playTimerRef.current = setInterval(() => {
+        if (rv.duration) setPlayPosition(rv.currentTime / rv.duration)
+        if (rv.ended) {
+          clearInterval(playTimerRef.current)
+          setIsPlaying(false)
+          setPlayPosition(0)
+        }
+      }, 200)
+    }
+  }
+
+  function seekTo(t_ms) {
+    const rv = refVideoRef.current
+    const sv = stuVideoRef.current
+    if (!rv || !sv) return
+    const secs = t_ms / 1000
+    rv.currentTime = secs
+    sv.currentTime = secs
+    if (rv.duration) setPlayPosition(secs / rv.duration)
+  }
 
   const maxBarScore = 100
   const barWidth = timeline.length > 0 ? Math.max(2, Math.floor(560 / timeline.length)) : 4
@@ -199,28 +247,63 @@ function ScoreReportModal({ rec, onClose }) {
             <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Score Timeline
             </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: 60, background: '#0f0c0c', borderRadius: 8, padding: '8px 10px', overflowX: 'auto' }}>
-              {timeline.map((pt, i) => {
-                const h = Math.max(2, Math.round((pt.score / maxBarScore) * 44))
-                const showLabel = pt.t_ms % 10000 === 0
-                return (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                    <div style={{
-                      width: barWidth, height: h,
-                      background: scoreColor(pt.score),
-                      borderRadius: 2,
-                    }} />
-                    {showLabel && (
-                      <div style={{ fontSize: 8, color: '#7a6e65', marginTop: 2, whiteSpace: 'nowrap' }}>
-                        {Math.round(pt.t_ms / 1000)}s
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+            <div style={{ background: '#0f0c0c', borderRadius: 8, padding: '8px 10px', overflowX: 'auto' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 1, height: 60 }}>
+                {timeline.map((pt, i) => {
+                  const h = Math.max(2, Math.round((pt.score / maxBarScore) * 44))
+                  const showLabel = pt.t_ms % 10000 === 0
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => seekTo(pt.t_ms)}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, cursor: 'pointer' }}
+                    >
+                      <div style={{
+                        width: barWidth, height: h,
+                        background: scoreColor(pt.score),
+                        borderRadius: 2,
+                      }} />
+                      {showLabel && (
+                        <div style={{ fontSize: 8, color: '#7a6e65', marginTop: 2, whiteSpace: 'nowrap' }}>
+                          {Math.round(pt.t_ms / 1000)}s
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {/* Scrubber */}
+                {isPlaying && timeline.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    left: `${playPosition * 100}%`,
+                    top: 0, bottom: 0,
+                    width: 2,
+                    background: 'white',
+                    opacity: 0.8,
+                    pointerEvents: 'none',
+                  }} />
+                )}
+              </div>
             </div>
           </div>
         )}
+
+        {/* Play button */}
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
+          <button
+            onClick={togglePlay}
+            disabled={!refVideoUrl || !studentVideoUrl}
+            style={{
+              background: (!refVideoUrl || !studentVideoUrl) ? '#2a2420' : '#c8430a',
+              color: 'white', border: 'none', borderRadius: 8,
+              padding: '10px 28px', fontSize: 14, fontWeight: 700,
+              cursor: (!refVideoUrl || !studentVideoUrl) ? 'not-allowed' : 'pointer',
+              opacity: (!refVideoUrl || !studentVideoUrl) ? 0.5 : 1,
+            }}
+          >
+            {isPlaying ? '⏸ Pause' : '▶ Play Both'}
+          </button>
+        </div>
 
         {/* Video players */}
         {urlError && (
@@ -229,18 +312,31 @@ function ScoreReportModal({ rec, onClose }) {
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Reference</div>
-            {refSkeletonUrl ? (
-              <video src={refSkeletonUrl} controls controlsList="nodownload" onContextMenu={e => e.preventDefault()} style={{ width: '100%', borderRadius: 8, background: '#000' }} />
+            {refVideoUrl ? (
+              <video
+                ref={refVideoRef}
+                src={refVideoUrl}
+                controlsList="nodownload"
+                onContextMenu={e => e.preventDefault()}
+                style={{ width: '100%', borderRadius: 8, background: '#000' }}
+              />
             ) : (
               <div style={{ width: '100%', height: 120, background: '#0f0c0c', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7a6e65', fontSize: 12 }}>
-                {refRecId ? 'Loading...' : 'No skeleton available'}
+                {refRecId ? 'Loading...' : 'No reference available'}
               </div>
             )}
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Student</div>
             {studentVideoUrl ? (
-              <video src={studentVideoUrl} controls controlsList="nodownload" onContextMenu={e => e.preventDefault()} style={{ width: '100%', borderRadius: 8, background: '#000' }} />
+              <video
+                ref={stuVideoRef}
+                src={studentVideoUrl}
+                muted
+                controlsList="nodownload"
+                onContextMenu={e => e.preventDefault()}
+                style={{ width: '100%', borderRadius: 8, background: '#000' }}
+              />
             ) : (
               <div style={{ width: '100%', height: 120, background: '#0f0c0c', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7a6e65', fontSize: 12 }}>
                 Loading...
