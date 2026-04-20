@@ -23,7 +23,7 @@ serve(async (req) => {
   }
 
   const body = await req.json().catch(() => null)
-  const { session_id, student_recording_id, overall_score, timeline } = body ?? {}
+  const { session_id, student_recording_id, overall_score, timeline, joint_summary } = body ?? {}
   if (!student_recording_id) return json({ error: 'missing student_recording_id' }, 400)
 
   const supabase = createClient(
@@ -36,6 +36,7 @@ serve(async (req) => {
     .update({
       overall_score,
       timeline_data: timeline,
+      joint_summary,
       status: 'scored',
     })
     .eq('upload_id', student_recording_id)
