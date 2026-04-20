@@ -501,25 +501,30 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         ref_valids = ref_valids[ref_start_frame:] if ref_start_frame < len(ref_valids) else ref_valids
 
         def angle_score(ref_a, ref_v, stu_a, stu_v, w):
-            """
-            Weighted angle similarity for one frame.
-            Only includes angles where BOTH ref and student joints are visible.
-            Normalises to 0-100 using floor of 0.5 (angle similarity baseline).
-            """
             combined_valid = ref_v & stu_v
             if not combined_valid.any():
-                return None  # skip frame entirely
+                return None, None
             valid_weights = w * combined_valid
             weight_sum = valid_weights.sum()
             if weight_sum < 1e-6:
-                return None
+                return None, None
             norm_weights = valid_weights / weight_sum
-            # Angle similarity: 1 - |angle_diff| (both normalised 0-1)
             similarities = 1.0 - np.abs(ref_a - stu_a)
             raw = float(np.sum(norm_weights * similarities))
-            # Normalise: floor is 0.5 (random pose similarity baseline for angles)
-            normalised = (raw - 0.5) / 0.5
-            return max(0.0, min(1.0, normalised))
+            normalised = max(0.0, min(1.0, (raw - 0.5) / 0.5))
+            # Per-joint normalised scores (only for valid joints)
+            joint_names = [
+                'left_elbow', 'right_elbow',
+                'left_shoulder', 'right_shoulder',
+                'left_hip', 'right_hip',
+                'left_knee', 'right_knee',
+            ]
+            per_joint = {}
+            for idx, name in enumerate(joint_names):
+                if combined_valid[idx]:
+                    js = max(0.0, min(1.0, (similarities[idx] - 0.5) / 0.5))
+                    per_joint[name] = round(js * 100)
+            return normalised, per_joint
 
         # Use DTW on angle vectors to find optimal time alignment
         # This tolerates the student being slightly ahead or behind
@@ -539,7 +544,7 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         print(f"[score-student] DTW path length: {len(best_path)} "
               f"ref_frames: {len(ref_angles)} stu_frames: {len(student_angles)}")
 
-        frame_scores_raw = [
+        raw_results = [
             angle_score(
                 ref_angles[i], ref_valids[i],
                 student_angles[j], student_valids[j],
@@ -547,7 +552,8 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
             )
             for i, j in best_path
         ]
-        frame_scores = [s for s in frame_scores_raw if s is not None]
+        frame_scores = [s for s, _ in raw_results if s is not None]
+        frame_joint_scores = [jd for s, jd in raw_results if s is not None and jd is not None]
 
         # Environment score: average student joint visibility across all frames
         all_vis = [v for sv in student_valids for v in sv.astype(float)]
@@ -575,15 +581,42 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
                            for i, j in best_path]
 
         environment_score = 50  # unknown in legacy path
+        frame_joint_scores = []
 
     overall = int(np.mean(frame_scores) * 100) if frame_scores else 0
 
-    # Per-second timeline
     bucket = int(fps)
-    timeline = [
-        {"t_ms": int((i / fps) * 1000), "score": int(np.mean(frame_scores[i:i+bucket]) * 100)}
-        for i in range(0, len(frame_scores), bucket)
+    joint_names = [
+        'left_elbow', 'right_elbow',
+        'left_shoulder', 'right_shoulder',
+        'left_hip', 'right_hip',
+        'left_knee', 'right_knee',
     ]
+    timeline = []
+    for i in range(0, len(frame_scores), bucket):
+        t_ms = int((i / fps) * 1000)
+        sec_scores = frame_scores[i:i+bucket]
+        sec_joints = frame_joint_scores[i:i+bucket] if frame_joint_scores else []
+
+        # Per-joint average for this second
+        joints_this_sec = {}
+        for name in joint_names:
+            vals = [jd[name] for jd in sec_joints if name in jd]
+            if vals:
+                joints_this_sec[name] = int(np.mean(vals))
+
+        timeline.append({
+            "t_ms": t_ms,
+            "score": int(np.mean(sec_scores) * 100),
+            "joints": joints_this_sec,
+        })
+
+    # Joint summary — average per joint across all frames
+    joint_summary = {}
+    for name in joint_names:
+        vals = [jd[name] for jd in frame_joint_scores if name in jd]
+        if vals:
+            joint_summary[name] = int(np.mean(vals))
 
     # Call back to Supabase update-score edge function
     student_rec_id = req.student_recording_id or req.recording_id
@@ -598,6 +631,7 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
                         "overall_score": overall,
                         "timeline": timeline,
                         "environment_score": environment_score,
+                        "joint_summary": joint_summary,
                     },
                     headers={
                         "Content-Type": "application/json",
@@ -609,7 +643,9 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
             print(f"[score-student] update-score callback error: {e}")
 
     print(f"[score-student] overall={overall} environment={environment_score} "
-          f"frames={len(frame_scores)} use_angles={use_angles}")
+          f"frames={len(frame_scores)} use_angles={use_angles} "
+          f"worst_joint={min(joint_summary, key=joint_summary.get) if joint_summary else 'n/a'} "
+          f"best_joint={max(joint_summary, key=joint_summary.get) if joint_summary else 'n/a'}")
 
     return {
         "session_id": req.session_id,
@@ -618,4 +654,5 @@ def score_student(req: ScoreRequest, x_secret: str = Header(default="")):
         "frame_count": len(frame_scores),
         "processing_ms": int((time.time() - start) * 1000),
         "environment_score": environment_score,
+        "joint_summary": joint_summary,
     }
