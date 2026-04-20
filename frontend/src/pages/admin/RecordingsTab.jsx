@@ -114,15 +114,17 @@ function ScoreReportModal({ rec, onClose }) {
   const [urlError, setUrlError]           = useState(null)
   const [isPlaying, setIsPlaying]         = useState(false)
   const [playPosition, setPlayPosition]   = useState(0)
+  const [selectedT, setSelectedT]         = useState(null)
 
   const refVideoRef   = useRef(null)
   const stuVideoRef   = useRef(null)
   const playTimerRef  = useRef(null)
 
-  const score     = rec.dance_scores?.[0]
-  const overall   = score?.overall_score ?? null
-  const timeline  = score?.timeline_data ?? []
-  const refRecId  = score?.reference_recording_id ?? null
+  const score       = rec.dance_scores?.[0]
+  const overall     = score?.overall_score ?? null
+  const timeline    = score?.timeline_data ?? []
+  const jointSummary = score?.joint_summary ?? {}
+  const refRecId    = score?.reference_recording_id ?? null
 
   useEffect(() => {
     let cancelled = false
@@ -241,6 +243,38 @@ function ScoreReportModal({ rec, onClose }) {
           </div>
         )}
 
+        {/* Joint breakdown */}
+        {Object.keys(jointSummary).length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase',
+                          letterSpacing: 1, marginBottom: 8 }}>Joint Breakdown</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {Object.entries(jointSummary)
+                .sort((a, b) => a[1] - b[1])
+                .map(([joint, score]) => (
+                  <div key={joint} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ fontSize: 11, color: '#9ca3af', width: 110, flexShrink: 0,
+                                  textTransform: 'capitalize' }}>
+                      {joint.replace(/_/g, ' ')}
+                    </div>
+                    <div style={{ flex: 1, height: 6, background: '#1a1a1a', borderRadius: 3 }}>
+                      <div style={{
+                        height: '100%', borderRadius: 3,
+                        width: `${score}%`,
+                        background: score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444',
+                      }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', width: 32,
+                                  textAlign: 'right', flexShrink: 0 }}>
+                      {score}
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        )}
+
         {/* Timeline bar chart */}
         {timeline.length > 0 && (
           <div>
@@ -255,13 +289,16 @@ function ScoreReportModal({ rec, onClose }) {
                   return (
                     <div
                       key={i}
-                      onClick={() => seekTo(pt.t_ms)}
+                      onClick={() => { seekTo(pt.t_ms); setSelectedT(pt) }}
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, cursor: 'pointer' }}
                     >
                       <div style={{
-                        width: barWidth, height: h,
+                        width: barWidth,
+                        height: h,
                         background: scoreColor(pt.score),
                         borderRadius: 2,
+                        cursor: 'pointer',
+                        outline: selectedT?.t_ms === pt.t_ms ? '2px solid white' : 'none',
                       }} />
                       {showLabel && (
                         <div style={{ fontSize: 8, color: '#7a6e65', marginTop: 2, whiteSpace: 'nowrap' }}>
@@ -285,6 +322,31 @@ function ScoreReportModal({ rec, onClose }) {
                 )}
               </div>
             </div>
+            {selectedT && selectedT.joints && Object.keys(selectedT.joints).length > 0 && (
+              <div style={{
+                marginTop: 8, background: '#0f0c0c', borderRadius: 8,
+                padding: '10px 14px', border: '1px solid #2a2420',
+              }}>
+                <div style={{ fontSize: 11, color: '#7a6e65', marginBottom: 6 }}>
+                  At {Math.round(selectedT.t_ms / 1000)}s — Overall: {selectedT.score}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {Object.entries(selectedT.joints)
+                    .sort((a, b) => a[1] - b[1])
+                    .map(([joint, score]) => (
+                      <span key={joint} style={{
+                        fontSize: 11, padding: '2px 8px', borderRadius: 12,
+                        background: score >= 80 ? '#14532d' : score >= 60 ? '#451a03' : '#450a0a',
+                        color: score >= 80 ? '#86efac' : score >= 60 ? '#fde68a' : '#fca5a5',
+                        fontWeight: 600,
+                      }}>
+                        {joint.replace(/_/g, ' ')}: {score}
+                      </span>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -534,7 +596,7 @@ export default function RecordingsTab() {
   async function fetchRecordings() {
     const { data, error } = await supabase
       .from('recordings')
-      .select('*, sessions(title, scheduled_at), dance_scores!dance_scores_upload_id_fkey(overall_score, status, timeline_data, created_at, reference_recording_id)')
+      .select('*, sessions(title, scheduled_at), dance_scores!dance_scores_upload_id_fkey(overall_score, status, timeline_data, joint_summary, created_at, reference_recording_id)')
       .order('created_at', { ascending: false })
     if (error) console.error('[RecordingsTab] fetch error:', error.message, error.details, error.hint)
     setRecordings(data || [])
