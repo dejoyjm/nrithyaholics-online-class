@@ -723,7 +723,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
                 <span style={{ fontSize: 13, color: '#7a6e65' }}>
-                  Payment gateway fee ({gatewayFeePct}%)
+                  Platform fee ({gatewayFeePct}%)
                 </span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#7a6e65' }}>₹{gatewayFeePerSeat * seats}</span>
               </div>

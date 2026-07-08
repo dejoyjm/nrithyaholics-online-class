@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase'
 import ImageCropUploader from '../components/ImageCropUploader'
 import { isIST, getTimezoneCode, toISTPreview } from '../utils/timezone'
 import { canJoinNow } from '../utils/sessionTime'
-import { resolvePolicy, calculateSessionSettlement } from '../utils/revenue'
 
 // ── Time picker helpers ──────────────────────────────────────
 // Replaced TIME_SLOTS array with hour + minute dropdowns.
@@ -42,19 +41,15 @@ function canChoreoStartNow(session, platformConfig) {
   return canJoinNow(session, platformConfig, true)
 }
 
-export default function ChoreoPage({ user, profile, platformConfig, onLogout, onSwitchToLearning, onProfileClick, onStartClass }) {
+export default function ChoreoPage({ user, platformConfig, onLogout, onSwitchToLearning, onProfileClick, onStartClass }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [editSession, setEditSession] = useState(null)
   const [musicSession, setMusicSession] = useState(null)
-  const [revPolicies, setRevPolicies] = useState([])
+  const [earningsBySession, setEarningsBySession] = useState({})
 
   useEffect(() => { fetchSessions() }, [])
-  useEffect(() => {
-    supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)')
-      .then(({ data }) => setRevPolicies(data || []))
-  }, [])
 
   async function fetchSessions() {
     const { data, error } = await supabase
@@ -64,6 +59,19 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
     if (error) console.error(error)
     else setSessions(data || [])
     setLoading(false)
+
+    const sessionIds = (data || []).map(s => s.id)
+    if (sessionIds.length > 0) {
+      const { data: bookingsData } = await supabase
+        .from('bookings')
+        .select('session_id, choreo_share')
+        .in('session_id', sessionIds)
+        .eq('status', 'confirmed')
+      setEarningsBySession((bookingsData || []).reduce((acc, b) => {
+        acc[b.session_id] = (acc[b.session_id] || 0) + (b.choreo_share || 0)
+        return acc
+      }, {}))
+    }
   }
 
   function getActiveRule(s) {
@@ -82,12 +90,7 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
   })
 
   function getSessionEarnings(s) {
-    const bookings = s.bookings_count || 0
-    const price = s.price_tiers?.length ? s.price_tiers[0].price : 0
-    if (!bookings || !price) return 0
-    const policy = resolvePolicy(s, profile, revPolicies)
-    const slabs = policy?.revenue_policy_slabs || []
-    return calculateSessionSettlement(bookings, price, policy, slabs).choreoShare
+    return earningsBySession[s.id] || 0
   }
 
   const totalRevenue = sessions.reduce((sum, s) => sum + getSessionEarnings(s), 0)
