@@ -148,11 +148,11 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
           sessions.map(s => {
             const canStart = canChoreoStartNow(s, platformConfig)
             return (
-              <div key={s.id} style={{ background: 'white', borderRadius: 14, border: '1px solid #e2dbd4', padding: '20px 24px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 20 }}>
+              <div key={s.id} className="choreo-session-card" style={{ background: 'white', borderRadius: 14, border: '1px solid #e2dbd4', padding: '20px 24px', marginBottom: 12 }}>
                 {s.cover_photo_url && (
-                  <img src={s.cover_photo_url} alt="" style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+                  <img src={s.cover_photo_url} alt="" className="choreo-session-card__cover" style={{ objectFit: 'cover', borderRadius: 8 }} />
                 )}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="choreo-session-card__details">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <span style={{ fontSize: 15, fontWeight: 700, color: '#0f0c0c' }}>{s.title}</span>
                     <span style={{ background: statusColor[s.status] + '22', color: statusColor[s.status], fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, textTransform: 'uppercase' }}>{s.status}</span>
@@ -173,7 +173,7 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                <div className="choreo-session-card__price">
                   {(() => {
                     const basePrice = s.price_tiers?.length ? s.price_tiers[0].price : 0
                     const activeRule = getActiveRule(s)
@@ -211,7 +211,7 @@ export default function ChoreoPage({ user, profile, platformConfig, onLogout, on
                     )
                   })()}
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <div className="choreo-session-card__actions">
                   {canStart && onStartClass && (
                     <button onClick={() => onStartClass(s)}
                       style={{ background: '#22c55e', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>

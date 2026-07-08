@@ -123,6 +123,8 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forc
     setJoiningWaitlist(false)
   }
 
+  const isChoreo = user && session.choreographer_id === user.id
+
   const cardImgUrl = session.card_thumbnail_url || session.cover_photo_url
   const cardFocalX = session.card_thumbnail_url ? (session.card_thumbnail_focal_x ?? 50) : (session.cover_photo_focal_x ?? 50)
   const cardFocalY = session.card_thumbnail_url ? (session.card_thumbnail_focal_y ?? 50) : (session.cover_photo_focal_y ?? 50)
@@ -312,17 +314,17 @@ function SessionCard({ session, onClick, onChoreoClick, user, onLoginClick, forc
             })()}
           </div>
           <button
-            onClick={isFull ? handleWaitlist : undefined}
-            disabled={isFull && onWaitlist}
+            onClick={isChoreo ? undefined : (isFull ? handleWaitlist : undefined)}
+            disabled={isChoreo || (isFull && onWaitlist)}
             style={{
-              background: isFull ? (onWaitlist ? '#1a7a3c' : '#333') : '#c8430a',
-              color: 'white', border: 'none', borderRadius: 8,
+              background: isChoreo ? '#f0ebe6' : (isFull ? (onWaitlist ? '#1a7a3c' : '#333') : '#c8430a'),
+              color: isChoreo ? '#5a4e47' : 'white', border: 'none', borderRadius: 8,
               padding: '8px 16px', fontSize: 13, fontWeight: 600,
-              cursor: (isFull && onWaitlist) ? 'default' : 'pointer',
+              cursor: isChoreo ? 'default' : ((isFull && onWaitlist) ? 'default' : 'pointer'),
               opacity: joiningWaitlist ? 0.7 : 1,
             }}
           >
-            {isFull ? (onWaitlist ? '✓ On Waitlist' : joiningWaitlist ? '...' : 'Waitlist') : 'Book'}
+            {isChoreo ? 'Your session' : isFull ? (onWaitlist ? '✓ On Waitlist' : joiningWaitlist ? '...' : 'Waitlist') : 'Book'}
           </button>
         </div>
       </div>
