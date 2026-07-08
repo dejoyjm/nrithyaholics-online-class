@@ -917,7 +917,7 @@ function PolicyEditModal({ policy, onClose, onSave, saving }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, display: 'block' }}>Gateway Fee %</label>
+              <label style={{ fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, display: 'block' }}>Platform Fee %</label>
               <input type="number" style={{ ...inp, width: '100%' }} value={form.gateway_fee_pct} onChange={e => setForm(f => ({ ...f, gateway_fee_pct: Number(e.target.value) }))} min="0" step="0.01" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', paddingTop: 20 }}>
