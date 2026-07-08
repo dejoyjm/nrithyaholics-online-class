@@ -359,10 +359,10 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const gatewayFeePerSeat = currentTierPrice > 0 ? calculateGatewayFee(currentTierPrice, gatewayFeePct) : 0
   const totalChargedPerSeat = currentTierPrice + gatewayFeePerSeat
   const totalChargedAmount = totalChargedPerSeat * seats
-  const isBookable = (session.status === 'open' || session.status === 'confirmed') && !alreadyBooked
   const sessionStart = new Date(session.scheduled_at).getTime()
   const sessionEnd = sessionStart + (session.duration_minutes || 60) * 60 * 1000
   const isChoreo = user && session.choreographer_id === user.id
+  const isBookable = (session.status === 'open' || session.status === 'confirmed') && !alreadyBooked && !isChoreo
   const isHost = isChoreo || profile?.is_admin
 
   const canJoinNow = computeCanJoin(session, platformConfig, isHost)
@@ -595,11 +595,13 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
           <p style={{ fontSize: 13, color: '#7a6e65' }}>You have a confirmed spot in this session.</p>
         </div>
 
-      ) : isChoreo && !isBookable ? (
-        <div style={{ textAlign: 'center', padding: '12px 0' }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>🎭</div>
-          <p style={{ fontSize: 13, color: '#7a6e65' }}>This is your session.</p>
-        </div>
+      ) : isChoreo ? (
+        canEnterClass ? null : (
+          <div style={{ textAlign: 'center', padding: '12px 0' }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>🎭</div>
+            <p style={{ fontSize: 13, color: '#7a6e65' }}>This is your session.</p>
+          </div>
+        )
 
       ) : session.status === 'full' ? (
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
