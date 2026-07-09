@@ -262,6 +262,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         session_id: session.id,
         seats,
         amount_inr,
+        ticket_price: _ticketPricePerSeat,
         order_id: orderData.order_id,
         guest_emails: validGuestEmails,
       }))
