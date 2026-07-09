@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { session_id, amount_inr, seats } = await req.json()
+    const { session_id, amount_inr, seats, ticket_price } = await req.json()
 
     if (!session_id || !amount_inr || !seats) {
       return new Response(
@@ -49,6 +49,7 @@ serve(async (req) => {
         notes: {
           session_id,
           seats: String(seats),
+          ticket_price: String(ticket_price),
         },
       }),
     })

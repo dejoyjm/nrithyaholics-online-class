@@ -246,7 +246,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             'Authorization': `Bearer ${token}`,
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ session_id: session.id, amount_inr, seats }),
+          body: JSON.stringify({ session_id: session.id, amount_inr, seats, ticket_price: _ticketPricePerSeat }),
         }
       )
 
