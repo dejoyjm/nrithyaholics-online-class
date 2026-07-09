@@ -664,83 +664,77 @@ serve(async (req) => {
     }
 
     // ── Compute and store financial breakdown ─────────────────────
-    // Fire-and-forget: never blocks the booking success response
-    const financialsPromise = (async () => {
-      try {
-        // Fetch session info + all policies
-        const [sessionPolicyRes, policiesRes, bookingCountRes] = await Promise.all([
-          supabase.from('sessions')
-            .select('revenue_policy_id, choreographer_id, price_tiers')
-            .eq('id', session_id).single(),
-          supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)'),
-          supabase.from('bookings')
-            .select('*', { count: 'exact', head: true })
-            .eq('session_id', session_id).eq('status', 'confirmed'),
-        ])
-
-        const sessionInfo = sessionPolicyRes.data
-        const policies = policiesRes.data || []
-
-        // Resolve policy: session > choreo > default
-        let resolvedPolicy: any = null
-        if (sessionInfo?.revenue_policy_id) {
-          resolvedPolicy = policies.find((p: any) => p.id === sessionInfo.revenue_policy_id)
-        }
-        if (!resolvedPolicy && sessionInfo?.choreographer_id) {
-          const { data: choreoProfile } = await supabase
-            .from('profiles').select('revenue_policy_id')
-            .eq('id', sessionInfo.choreographer_id).single()
-          if (choreoProfile?.revenue_policy_id) {
-            resolvedPolicy = policies.find((p: any) => p.id === choreoProfile.revenue_policy_id)
-          }
-        }
-        if (!resolvedPolicy) {
-          resolvedPolicy = policies.find((p: any) => p.is_default) || policies[0] || null
-        }
-
-        const slabs: any[] = resolvedPolicy?.revenue_policy_slabs || []
-
-        // Resolve ticket price: from request or fallback to session price_tiers
-        const sessionSeats = seats || 1
-        const ticketPricePerSeat: number = ticket_price
-          || sessionInfo?.price_tiers?.[0]?.price
-          || Math.round(amount_inr / sessionSeats)
-
-        const gatewayFeePct: number = resolvedPolicy?.gateway_fee_pct ?? 3
-        const gatewayFeePerSeat = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
-
-        // Marginal NRH share for this booking (current count includes this booking)
-        const currentCount: number = bookingCountRes.count || 1
-        const prevCount = Math.max(0, currentCount - sessionSeats)
-        const nrhForCurrent = calculateNRHShare(currentCount, ticketPricePerSeat, slabs)
-        const nrhForPrev = calculateNRHShare(prevCount, ticketPricePerSeat, slabs)
-        const marginalNrhShare = nrhForCurrent - nrhForPrev
-        const choreoShareForBooking = ticketPricePerSeat * sessionSeats - marginalNrhShare
-
-        const policySnapshot = resolvedPolicy
-          ? { ...resolvedPolicy, revenue_policy_slabs: slabs }
-          : null
-
-        const { error: finUpdateError } = await supabase.from('bookings').update({
-          ticket_price: ticketPricePerSeat * sessionSeats,
-          gateway_fee: gatewayFeePerSeat * sessionSeats,
-          nrh_share: marginalNrhShare,
-          choreo_share: choreoShareForBooking,
-          policy_id: resolvedPolicy?.id || null,
-          policy_snapshot: policySnapshot,
-        }).eq('id', booking.id)
-        if (finUpdateError) {
-          console.error('Financial breakdown update failed:', finUpdateError)
-        }
-      } catch (err) {
-        console.error('Financial breakdown update failed silently:', err)
-      }
-    })()
+    // Runs synchronously (awaited) so it's guaranteed to execute. Isolated in
+    // its own try/catch — a failure here must never affect the booking's
+    // success response, only be logged.
     try {
-      // @ts-ignore
-      EdgeRuntime.waitUntil(financialsPromise)
-    } catch {
-      financialsPromise.catch(() => {})
+      // Fetch session info + all policies
+      const [sessionPolicyRes, policiesRes, bookingCountRes] = await Promise.all([
+        supabase.from('sessions')
+          .select('revenue_policy_id, choreographer_id, price_tiers')
+          .eq('id', session_id).single(),
+        supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)'),
+        supabase.from('bookings')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', session_id).eq('status', 'confirmed'),
+      ])
+
+      const sessionInfo = sessionPolicyRes.data
+      const policies = policiesRes.data || []
+
+      // Resolve policy: session > choreo > default
+      let resolvedPolicy: any = null
+      if (sessionInfo?.revenue_policy_id) {
+        resolvedPolicy = policies.find((p: any) => p.id === sessionInfo.revenue_policy_id)
+      }
+      if (!resolvedPolicy && sessionInfo?.choreographer_id) {
+        const { data: choreoProfile } = await supabase
+          .from('profiles').select('revenue_policy_id')
+          .eq('id', sessionInfo.choreographer_id).single()
+        if (choreoProfile?.revenue_policy_id) {
+          resolvedPolicy = policies.find((p: any) => p.id === choreoProfile.revenue_policy_id)
+        }
+      }
+      if (!resolvedPolicy) {
+        resolvedPolicy = policies.find((p: any) => p.is_default) || policies[0] || null
+      }
+
+      const slabs: any[] = resolvedPolicy?.revenue_policy_slabs || []
+
+      // Resolve ticket price: from request or fallback to session price_tiers
+      const sessionSeats = seats || 1
+      const ticketPricePerSeat: number = ticket_price
+        || sessionInfo?.price_tiers?.[0]?.price
+        || Math.round(amount_inr / sessionSeats)
+
+      const gatewayFeePct: number = resolvedPolicy?.gateway_fee_pct ?? 3
+      const gatewayFeePerSeat = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
+
+      // Marginal NRH share for this booking (current count includes this booking)
+      const currentCount: number = bookingCountRes.count || 1
+      const prevCount = Math.max(0, currentCount - sessionSeats)
+      const nrhForCurrent = calculateNRHShare(currentCount, ticketPricePerSeat, slabs)
+      const nrhForPrev = calculateNRHShare(prevCount, ticketPricePerSeat, slabs)
+      const marginalNrhShare = nrhForCurrent - nrhForPrev
+      const choreoShareForBooking = ticketPricePerSeat * sessionSeats - marginalNrhShare
+
+      const policySnapshot = resolvedPolicy
+        ? { ...resolvedPolicy, revenue_policy_slabs: slabs }
+        : null
+
+      const { error: finUpdateError } = await supabase.from('bookings').update({
+        ticket_price: ticketPricePerSeat * sessionSeats,
+        gateway_fee: gatewayFeePerSeat * sessionSeats,
+        nrh_share: marginalNrhShare,
+        choreo_share: choreoShareForBooking,
+        policy_id: resolvedPolicy?.id || null,
+        policy_snapshot: policySnapshot,
+      }).eq('id', booking.id)
+      if (finUpdateError) {
+        console.error('Financial breakdown update failed:', finUpdateError)
+      }
+    } catch (err) {
+      console.error('Financial breakdown calculation failed:', err)
     }
 
     // Increment bookings_count on session

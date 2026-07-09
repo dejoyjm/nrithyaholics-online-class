@@ -1,6 +1,28 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// ── Revenue calculation helper (identical to verify-payment) ──
+function calculateNRHShare(studentCount: number, ticketPrice: number, slabs: any[]): number {
+  if (!slabs || slabs.length === 0) return 0
+  const sorted = [...slabs].sort((a, b) => a.sort_order - b.sort_order)
+  let nrhShare = 0
+  for (const slab of sorted) {
+    const slabFrom = slab.from_student
+    const slabTo = slab.to_student
+    const slabEnd = slabTo ?? Infinity
+    if (studentCount < slabFrom) break
+    const studentsInSlab = Math.min(studentCount, slabEnd) - slabFrom + 1
+    if (slab.mode === 'flat') {
+      nrhShare += Number(slab.value)
+    } else {
+      const slabRevenue = studentsInSlab * ticketPrice
+      nrhShare += slabRevenue * (Number(slab.value) / 100)
+    }
+    if (slabTo === null || slabTo === undefined || studentCount <= slabEnd) break
+  }
+  return Math.round(nrhShare)
+}
+
 // ── Email helper (identical to verify-payment) ───────────────
 // Sends booking confirmation via Resend. Never throws — email
 // failure never affects booking creation.
@@ -411,7 +433,7 @@ serve(async (req) => {
       return new Response('OK', { status: 200 })
     }
 
-    const { error: bookingError } = await supabase
+    const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .insert({
         session_id,
@@ -421,6 +443,8 @@ serve(async (req) => {
         razorpay_order_id: order_id,
         razorpay_payment_id: payment_id,
       })
+      .select()
+      .single()
 
     if (bookingError) {
       console.error('Webhook booking insert failed:', bookingError)
@@ -443,6 +467,80 @@ serve(async (req) => {
         adminFailPromise.catch(() => {})
       }
       return new Response('OK', { status: 200 })
+    }
+
+    // ── Compute and store financial breakdown ─────────────────────
+    // Runs synchronously (awaited) so it's guaranteed to execute. Isolated in
+    // its own try/catch — a failure here must never affect the booking's
+    // success response, only be logged.
+    try {
+      // Fetch session info + all policies
+      const [sessionPolicyRes, policiesRes, bookingCountRes] = await Promise.all([
+        supabase.from('sessions')
+          .select('revenue_policy_id, choreographer_id, price_tiers')
+          .eq('id', session_id).single(),
+        supabase.from('revenue_policies').select('*, revenue_policy_slabs(*)'),
+        supabase.from('bookings')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', session_id).eq('status', 'confirmed'),
+      ])
+
+      const sessionInfo = sessionPolicyRes.data
+      const policies = policiesRes.data || []
+
+      // Resolve policy: session > choreo > default
+      let resolvedPolicy: any = null
+      if (sessionInfo?.revenue_policy_id) {
+        resolvedPolicy = policies.find((p: any) => p.id === sessionInfo.revenue_policy_id)
+      }
+      if (!resolvedPolicy && sessionInfo?.choreographer_id) {
+        const { data: choreoProfile } = await supabase
+          .from('profiles').select('revenue_policy_id')
+          .eq('id', sessionInfo.choreographer_id).single()
+        if (choreoProfile?.revenue_policy_id) {
+          resolvedPolicy = policies.find((p: any) => p.id === choreoProfile.revenue_policy_id)
+        }
+      }
+      if (!resolvedPolicy) {
+        resolvedPolicy = policies.find((p: any) => p.is_default) || policies[0] || null
+      }
+
+      const slabs: any[] = resolvedPolicy?.revenue_policy_slabs || []
+
+      // Resolve ticket price: fallback to session price_tiers (webhook has no
+      // explicit ticket_price field), then to amount / seats
+      const sessionSeats = seats || 1
+      const ticketPricePerSeat: number = sessionInfo?.price_tiers?.[0]?.price
+        || Math.round(amount_inr / sessionSeats)
+
+      const gatewayFeePct: number = resolvedPolicy?.gateway_fee_pct ?? 3
+      const gatewayFeePerSeat = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
+
+      // Marginal NRH share for this booking (current count includes this booking)
+      const currentCount: number = bookingCountRes.count || 1
+      const prevCount = Math.max(0, currentCount - sessionSeats)
+      const nrhForCurrent = calculateNRHShare(currentCount, ticketPricePerSeat, slabs)
+      const nrhForPrev = calculateNRHShare(prevCount, ticketPricePerSeat, slabs)
+      const marginalNrhShare = nrhForCurrent - nrhForPrev
+      const choreoShareForBooking = ticketPricePerSeat * sessionSeats - marginalNrhShare
+
+      const policySnapshot = resolvedPolicy
+        ? { ...resolvedPolicy, revenue_policy_slabs: slabs }
+        : null
+
+      const { error: finUpdateError } = await supabase.from('bookings').update({
+        ticket_price: ticketPricePerSeat * sessionSeats,
+        gateway_fee: gatewayFeePerSeat * sessionSeats,
+        nrh_share: marginalNrhShare,
+        choreo_share: choreoShareForBooking,
+        policy_id: resolvedPolicy?.id || null,
+        policy_snapshot: policySnapshot,
+      }).eq('id', booking.id)
+      if (finUpdateError) {
+        console.error('Financial breakdown update failed:', finUpdateError)
+      }
+    } catch (err) {
+      console.error('Financial breakdown calculation failed:', err)
     }
 
     await supabase.rpc('increment_bookings_count', { session_id_input: session_id, seats_input: seats })
