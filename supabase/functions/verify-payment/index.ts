@@ -32,7 +32,7 @@ function calculateNRHShare(studentCount: number, ticketPrice: number, slabs: any
 }
 
 // ── Email helper ─────────────────────────────────────────────
-// Sends booking confirmation via Resend. Fire-and-forget —
+// Sends booking confirmation via Brevo. Fire-and-forget —
 // never throws, never blocks the booking success response.
 async function sendBookingConfirmationEmail(
   toEmail: string,
@@ -48,12 +48,12 @@ async function sendBookingConfirmationEmail(
   sessionId: string,
 ) {
   try {
-    const RESEND_API_KEY   = Deno.env.get('RESEND_API_KEY')
-    const RESEND_FROM      = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
-    const APP_URL          = 'https://online.nrithyaholics.in'
+    const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')
+    const FROM_EMAIL    = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
+    const APP_URL       = 'https://online.nrithyaholics.in'
 
-    if (!RESEND_API_KEY) {
-      console.error('RESEND_API_KEY not set — skipping confirmation email')
+    if (!BREVO_API_KEY) {
+      console.error('BREVO_API_KEY not set — skipping confirmation email')
       return
     }
 
@@ -245,23 +245,23 @@ async function sendBookingConfirmationEmail(
 </body>
 </html>`
 
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'api-key': BREVO_API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: `NrithyaHolics Online <${RESEND_FROM}>`,
-        to:   [toEmail],
+        sender: { email: FROM_EMAIL, name: 'NrithyaHolics Online' },
+        to:     [{ email: toEmail }],
         subject,
-        html,
+        htmlContent: html,
       }),
     })
 
     if (!res.ok) {
       const err = await res.text()
-      console.error('Resend error:', err)
+      console.error('Brevo error:', err)
       return false
     }
     console.log('Booking confirmation email sent to:', toEmail)
@@ -276,7 +276,7 @@ async function sendBookingConfirmationEmail(
 // ── Admin notification email ──────────────────────────────────
 // Fires on every booking attempt (success or failure). Never throws.
 async function sendAdminNotification(opts: {
-  resendApiKey: string
+  brevoApiKey: string
   success: boolean
   learnerName: string
   learnerEmail: string
@@ -289,7 +289,7 @@ async function sendAdminNotification(opts: {
   errorMessage?: string
 }) {
   try {
-    if (!opts.resendApiKey) return
+    if (!opts.brevoApiKey) return
     const nowStr = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric',
       month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
@@ -337,14 +337,14 @@ ${row('Time', `${nowStr} IST`)}
 </table></div></body></html>`
     }
 
-    await fetch('https://api.resend.com/emails', {
+    await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${opts.resendApiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'api-key': opts.brevoApiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'NrithyaHolics Online <bookings@nrithyaholics.in>',
-        to: ['nrithyaholics@gmail.com'],
+        sender: { email: 'bookings@nrithyaholics.in', name: 'NrithyaHolics Online' },
+        to: [{ email: 'nrithyaholics@gmail.com' }],
         subject,
-        html,
+        htmlContent: html,
       }),
     })
   } catch (err) {
@@ -497,10 +497,10 @@ serve(async (req) => {
             // Send invite emails fire-and-forget
             const invitePromise = (async () => {
               try {
-                const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-                const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
+                const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')
+                const FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
                 const APP_URL = 'https://online.nrithyaholics.in'
-                if (RESEND_API_KEY) {
+                if (BREVO_API_KEY) {
                   const sessionRes2 = await supabase.from('sessions')
                     .select('title, scheduled_at, duration_minutes').eq('id', session_id).single()
                   const sessionTitle = sessionRes2.data?.title || 'your dance class'
@@ -513,14 +513,14 @@ serve(async (req) => {
                   const sessionUrl = `${APP_URL}/?session=${session_id}`
                   for (const guestEmail of guestEmailList) {
                     try {
-                      await fetch('https://api.resend.com/emails', {
+                      await fetch('https://api.brevo.com/v3/smtp/email', {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                        headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                          from: `NrithyaHolics Online <${RESEND_FROM}>`,
-                          to: [guestEmail],
+                          sender: { email: FROM_EMAIL, name: 'NrithyaHolics Online' },
+                          to: [{ email: guestEmail }],
                           subject: `You're invited to ${sessionTitle} 💃`,
-                          html: `<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:24px;">
+                          htmlContent: `<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:24px;">
 <h2 style="color:#c8430a;">You've been invited to a dance class!</h2>
 <p>Someone booked a seat for you in <strong>${sessionTitle}</strong>${sessionDate ? ` on ${sessionDate} (IST)` : ''}.</p>
 <p>Visit the link below to view your class and join when it's time:</p>
@@ -568,7 +568,7 @@ serve(async (req) => {
     if (bookingError) {
       console.error('Booking insert failed:', bookingError)
       const adminFailPromise = sendAdminNotification({
-        resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
+        brevoApiKey: Deno.env.get('BREVO_API_KEY') || '',
         success: false,
         learnerName: resolvedEmail?.split('@')[0] || 'unknown',
         learnerEmail: resolvedEmail,
@@ -614,10 +614,10 @@ serve(async (req) => {
         // Send invite emails fire-and-forget
         const invitePromise = (async () => {
           try {
-            const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-            const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
+            const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')
+            const FROM_EMAIL = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
             const APP_URL = 'https://online.nrithyaholics.in'
-            if (RESEND_API_KEY) {
+            if (BREVO_API_KEY) {
               const sessionRes2 = await supabase.from('sessions')
                 .select('title, scheduled_at, duration_minutes').eq('id', session_id).single()
               const sessionTitle = sessionRes2.data?.title || 'your dance class'
@@ -630,14 +630,14 @@ serve(async (req) => {
               const sessionUrl = `${APP_URL}/?session=${session_id}`
               for (const guestEmail of guestEmailList) {
                 try {
-                  await fetch('https://api.resend.com/emails', {
+                  await fetch('https://api.brevo.com/v3/smtp/email', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+                    headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                      from: `NrithyaHolics Online <${RESEND_FROM}>`,
-                      to: [guestEmail],
+                      sender: { email: FROM_EMAIL, name: 'NrithyaHolics Online' },
+                      to: [{ email: guestEmail }],
                       subject: `You're invited to ${sessionTitle} 💃`,
-                      html: `<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:24px;">
+                      htmlContent: `<div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:24px;">
 <h2 style="color:#c8430a;">You've been invited to a dance class!</h2>
 <p>Someone booked a seat for you in <strong>${sessionTitle}</strong>${sessionDate ? ` on ${sessionDate} (IST)` : ''}.</p>
 <p>Visit the link below to view your class and join when it's time:</p>
@@ -818,7 +818,7 @@ serve(async (req) => {
         }
       })()
       const adminPromise = sendAdminNotification({
-        resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
+        brevoApiKey: Deno.env.get('BREVO_API_KEY') || '',
         success: true,
         learnerName,
         learnerEmail: resolvedEmail,
