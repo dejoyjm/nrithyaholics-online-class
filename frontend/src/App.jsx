@@ -186,6 +186,7 @@ export default function App() {
           session_id:          pending.session_id,
           seats:               pending.seats,
           amount_inr:          pending.amount_inr,
+          ticket_price:        pending.ticket_price,
           guest_emails:        pending.guest_emails || [],
         })
       } else {
