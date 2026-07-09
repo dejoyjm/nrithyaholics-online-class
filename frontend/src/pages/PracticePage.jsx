@@ -12,6 +12,7 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
   const [refVideoUrl, setRefVideoUrl]   = useState(null)
   const [refLoading, setRefLoading]     = useState(true)
   const [refError, setRefError]         = useState(null)
+  const [refPlayBlocked, setRefPlayBlocked] = useState(false)
 
   // ── Camera ────────────────────────────────────────────────────────────────
   const [stream, setStream]             = useState(null)
@@ -136,6 +137,17 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
 
   // ── Start practice: countdown → beginRecording ────────────────────────────
   function startPractice() {
+    // Unlock the reference video's audio playback using this click's user-gesture
+    // credit. The real play() call in beginRecording() fires seconds later once the
+    // countdown ends, and by then mobile browsers no longer treat it as user-initiated
+    // and silently block unmuted autoplay — this primes the element while the click is
+    // still trusted, so that later call is allowed to proceed.
+    if (refVideoRef.current) {
+      refVideoRef.current.play()?.catch(() => {})
+      refVideoRef.current.pause()
+      refVideoRef.current.currentTime = 0
+    }
+
     setPhase('countdown')
     setCountdown(5)
     let c = 5
@@ -149,6 +161,11 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     }, 1000)
   }
 
+  function retryRefVideoPlay() {
+    refVideoRef.current?.play()?.then(() => setRefPlayBlocked(false))
+      .catch(() => setRefPlayBlocked(true))
+  }
+
   function beginRecording() {
     if (!stream) return
     chunksRef.current = []
@@ -157,9 +174,10 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
     mr.start(1000)
     mediaRecorderRef.current = mr
 
+    setRefPlayBlocked(false)
     if (refVideoRef.current) {
       refVideoRef.current.currentTime = 0
-      refVideoRef.current.play()
+      refVideoRef.current.play()?.catch(() => setRefPlayBlocked(true))
       refVideoRef.current.onended = () => stopAndSave()
     }
 
@@ -289,7 +307,7 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
 
         {/* Left — Choreographer Reference */}
         <div style={{
-          flex: 1, minWidth: 0,
+          flex: 1, minWidth: 0, position: 'relative',
           background: '#0f0c0c', borderRadius: 16,
           border: '1px solid #1a1616', overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
@@ -320,6 +338,22 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
               />
             )}
           </div>
+
+          {/* Fallback when the browser blocked play() even after the click-time unlock */}
+          {refPlayBlocked && (
+            <button
+              onClick={retryRefVideoPlay}
+              style={{
+                position: 'absolute', inset: 0,
+                background: 'rgba(0,0,0,0.8)', border: 'none', cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 10, color: '#faf7f2',
+              }}
+            >
+              <span style={{ fontSize: 32 }}>▶</span>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Tap to play reference video</span>
+            </button>
+          )}
         </div>
 
         {/* Right — Your Recording */}
