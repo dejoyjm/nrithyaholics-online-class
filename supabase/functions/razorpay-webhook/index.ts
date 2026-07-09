@@ -388,6 +388,7 @@ serve(async (req) => {
     const order_id   = payment.order_id
     const payment_id = payment.id
     const notes      = payment.notes || {}
+    console.log('[webhook] raw notes received:', JSON.stringify(notes))
     const session_id = notes.session_id
     const seats      = parseInt(notes.seats || '1')
     const amount_inr = payment.amount / 100
