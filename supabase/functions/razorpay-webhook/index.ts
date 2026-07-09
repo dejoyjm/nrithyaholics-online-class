@@ -388,7 +388,6 @@ serve(async (req) => {
     const order_id   = payment.order_id
     const payment_id = payment.id
     const notes      = payment.notes || {}
-    console.log('[webhook] raw notes received:', JSON.stringify(notes))
     const session_id = notes.session_id
     const seats      = parseInt(notes.seats || '1')
     const amount_inr = payment.amount / 100
@@ -508,18 +507,19 @@ serve(async (req) => {
 
       const slabs: any[] = resolvedPolicy?.revenue_policy_slabs || []
 
-      // Resolve ticket price: authoritative source is the price captured at
-      // checkout time (payment.notes.ticket_price, e.g. early-bird/sale price).
-      // Falls back to session price_tiers / amount-per-seat for older orders
-      // created before this field was sent.
+      // Resolve ticket price: derive directly from Razorpay's own authoritative
+      // charged amount (amount_inr) and the resolved policy's gateway fee —
+      // back out the pre-fee ticket price rather than trusting client-supplied
+      // metadata.
       const sessionSeats = seats || 1
-      const notesTicketPrice = Number(notes.ticket_price)
-      const ticketPricePerSeat: number = (notesTicketPrice > 0 ? notesTicketPrice : null)
-        || sessionInfo?.price_tiers?.[0]?.price
-        || Math.round(amount_inr / sessionSeats)
-
+      const totalPerSeat = amount_inr / sessionSeats
       const gatewayFeePct: number = resolvedPolicy?.gateway_fee_pct ?? 3
-      const gatewayFeePerSeat = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
+      let ticketPricePerSeat = Math.round(totalPerSeat / (1 + gatewayFeePct / 100))
+      let computedFee = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
+      if (Math.round(ticketPricePerSeat + computedFee) !== Math.round(totalPerSeat)) {
+        ticketPricePerSeat += Math.round(totalPerSeat) - Math.round(ticketPricePerSeat + computedFee)
+      }
+      const gatewayFeePerSeat = computedFee
 
       // Marginal NRH share for this booking (current count includes this booking)
       const currentCount: number = bookingCountRes.count || 1
