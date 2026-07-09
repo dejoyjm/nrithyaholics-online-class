@@ -24,6 +24,11 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const WARN_BEFORE_SECS = 10 * 60   // 10 minutes
 const CRITICAL_BEFORE_SECS = 5 * 60 // 5 minutes
 
+// Large rooms (up to 30 peers) risk decoder overload if every peer's video is
+// mounted at once, especially on mobile — cap simultaneously rendered tiles.
+const STRIP_TILES_PER_PAGE = 6          // Class View bottom strip
+const GALLERY_MOBILE_TILES_PER_PAGE = 6 // Gallery View, narrow viewports only
+
 // ─────────────────────────────────────────────────────────────────
 // Status screens
 // ─────────────────────────────────────────────────────────────────
@@ -252,6 +257,45 @@ function HostPlaceholder() {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// PagerControls — simple < Prev / Next > row for paginated peer grids
+// ─────────────────────────────────────────────────────────────────
+
+function PagerControls({ page, totalPages, onPrev, onNext }) {
+  if (totalPages <= 1) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+      <button
+        onClick={onPrev}
+        disabled={page === 0}
+        style={{
+          background: '#1a1a1a', border: '1px solid #2a2a2a',
+          color: page === 0 ? '#4a4040' : '#faf7f2',
+          borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 600,
+          cursor: page === 0 ? 'not-allowed' : 'pointer',
+        }}
+      >
+        ‹ Prev
+      </button>
+      <span style={{ fontSize: 11, color: '#7a6e65', minWidth: 40, textAlign: 'center' }}>
+        {page + 1} / {totalPages}
+      </span>
+      <button
+        onClick={onNext}
+        disabled={page >= totalPages - 1}
+        style={{
+          background: '#1a1a1a', border: '1px solid #2a2a2a',
+          color: page >= totalPages - 1 ? '#4a4040' : '#faf7f2',
+          borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 600,
+          cursor: page >= totalPages - 1 ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Next ›
+      </button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Inner component — must be a child of HMSRoomProvider
 // ─────────────────────────────────────────────────────────────────
 
@@ -293,6 +337,10 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
   // ── Week 2: layout state ─────────────────────────────────────
   const [viewMode, setViewMode] = useState('self')  // 'class' | 'gallery' | 'self'
   const [mirrored, setMirrored] = useState(true)
+
+  // ── Peer grid pagination — bounds simultaneously decoded video tracks ──
+  const [stripPage, setStripPage]     = useState(0)
+  const [galleryPage, setGalleryPage] = useState(0)
 
   // ── Week 3: recording state ───────────────────────────────────
   const [recordingState, setRecordingState]         = useState('idle') // 'idle'|'recording'|'paused'|'stopped'
@@ -342,6 +390,30 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
     ...guestPeers.filter(p => p.isLocal),
     ...guestPeers.filter(p => !p.isLocal),
   ]
+
+  // ── Class View strip pagination — local guest always pinned as the first
+  // tile; the rest of stripPeers is paged. Tiles not in visibleStripPeers
+  // simply aren't mounted, so PeerTile's useVideo hook detaches their video
+  // on unmount (the same hmsActions.detachVideo call used manually for the
+  // self-view below) — the decoder never sees off-page tracks.
+  const localStripPeer     = stripPeers.find(p => p.isLocal) || null
+  const remoteStripPeers   = stripPeers.filter(p => !p.isLocal)
+  const remoteStripPerPage = localStripPeer ? STRIP_TILES_PER_PAGE - 1 : STRIP_TILES_PER_PAGE
+  const stripTotalPages    = Math.max(1, Math.ceil(remoteStripPeers.length / remoteStripPerPage))
+  const stripPageClamped   = Math.min(stripPage, stripTotalPages - 1)
+  const visibleRemoteStrip = remoteStripPeers.slice(
+    stripPageClamped * remoteStripPerPage,
+    stripPageClamped * remoteStripPerPage + remoteStripPerPage
+  )
+  const visibleStripPeers = localStripPeer ? [localStripPeer, ...visibleRemoteStrip] : visibleRemoteStrip
+
+  // ── Gallery View pagination — clamped on mobile only; desktop keeps the
+  // existing unbounded grid since it isn't the hardware-constrained case.
+  const galleryTotalPages   = isMobile ? Math.max(1, Math.ceil(peers.length / GALLERY_MOBILE_TILES_PER_PAGE)) : 1
+  const galleryPageClamped  = Math.min(galleryPage, galleryTotalPages - 1)
+  const visibleGalleryPeers = isMobile
+    ? peers.slice(galleryPageClamped * GALLERY_MOBILE_TILES_PER_PAGE, galleryPageClamped * GALLERY_MOBILE_TILES_PER_PAGE + GALLERY_MOBILE_TILES_PER_PAGE)
+    : peers
 
   // Self-view overlay: all remote peers (host + guests), local is the full-screen video
   const overlayPeers = peers.filter(p => !p.isLocal)
@@ -917,36 +989,48 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
           // GALLERY MODE — equal grid of all peers
           // ════════════════════════════════════════════════
           ? (() => {
-            const n = peers.length
+            const n = visibleGalleryPeers.length
             const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3
             return (
-              <div style={{
-                flex: 1,
-                display: 'grid',
-                gridTemplateColumns: `repeat(${cols}, 1fr)`,
-                gap: 8,
-                padding: 8,
-                overflow: 'auto',
-                alignContent: 'start',
-              }}>
-                {peers.map(peer => (
-                  <div
-                    key={peer.id}
-                    style={{ aspectRatio: '9/16', borderRadius: 10, overflow: 'hidden', position: 'relative' }}
-                    onMouseEnter={() => setHoveredPeerId(peer.id)}
-                    onMouseLeave={() => setHoveredPeerId(null)}
-                  >
-                    <PeerTile peer={peer} mirrored={mirrored} />
-                    {isHost && !peer.isLocal && hoveredPeerId === peer.id && (
-                      <button
-                        onClick={() => hmsActions.removePeer(peer.id, 'Removed by host')}
-                        style={{ position: 'absolute', top: 8, right: 8, fontSize: 11, padding: '2px 6px', background: '#450a0a', color: '#fca5a5', border: 'none', borderRadius: 4, cursor: 'pointer', zIndex: 10 }}
-                      >
-                        ❌
-                      </button>
-                    )}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+                <div style={{
+                  flex: 1,
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                  gap: 8,
+                  padding: 8,
+                  overflow: 'auto',
+                  alignContent: 'start',
+                }}>
+                  {visibleGalleryPeers.map(peer => (
+                    <div
+                      key={peer.id}
+                      style={{ aspectRatio: '9/16', borderRadius: 10, overflow: 'hidden', position: 'relative' }}
+                      onMouseEnter={() => setHoveredPeerId(peer.id)}
+                      onMouseLeave={() => setHoveredPeerId(null)}
+                    >
+                      <PeerTile peer={peer} mirrored={mirrored} />
+                      {isHost && !peer.isLocal && hoveredPeerId === peer.id && (
+                        <button
+                          onClick={() => hmsActions.removePeer(peer.id, 'Removed by host')}
+                          style={{ position: 'absolute', top: 8, right: 8, fontSize: 11, padding: '2px 6px', background: '#450a0a', color: '#fca5a5', border: 'none', borderRadius: 4, cursor: 'pointer', zIndex: 10 }}
+                        >
+                          ❌
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {isMobile && galleryTotalPages > 1 && (
+                  <div style={{ padding: '8px', borderTop: '1px solid #2a2a2a', flexShrink: 0 }}>
+                    <PagerControls
+                      page={galleryPageClamped}
+                      totalPages={galleryTotalPages}
+                      onPrev={() => setGalleryPage(Math.max(0, galleryPageClamped - 1))}
+                      onNext={() => setGalleryPage(Math.min(galleryTotalPages - 1, galleryPageClamped + 1))}
+                    />
                   </div>
-                ))}
+                )}
               </div>
             )
           })()
@@ -1091,35 +1175,44 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
                 )}
               </div>
 
-              {/* BOTTOM STRIP — guest peers, horizontal scroll */}
-              <div style={{
-                height: stripTileH + 16,
-                background: '#111',
-                borderTop: '1px solid #2a2a2a',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '8px',
-                gap: 8,
-                overflowX: 'auto',
-                overflowY: 'hidden',
-                flexShrink: 0,
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#3a3a3a #111',
-              }}>
-                {stripPeers.length === 0 ? (
-                  <div style={{ color: '#7a6e65', fontSize: 13, width: '100%', textAlign: 'center' }}>
-                    Waiting for guests to join...
+              {/* BOTTOM STRIP — guest peers, paginated + horizontal scroll */}
+              <div style={{ background: '#111', borderTop: '1px solid #2a2a2a', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+                {stripTotalPages > 1 && (
+                  <div style={{ padding: '6px 8px 0' }}>
+                    <PagerControls
+                      page={stripPageClamped}
+                      totalPages={stripTotalPages}
+                      onPrev={() => setStripPage(Math.max(0, stripPageClamped - 1))}
+                      onNext={() => setStripPage(Math.min(stripTotalPages - 1, stripPageClamped + 1))}
+                    />
                   </div>
-                ) : (
-                  stripPeers.map(peer => (
-                    <div
-                      key={peer.id}
-                      style={{ width: stripTileW, height: stripTileH, flexShrink: 0, borderRadius: 8, overflow: 'hidden' }}
-                    >
-                      <PeerTile peer={peer} mirrored={mirrored} />
-                    </div>
-                  ))
                 )}
+                <div style={{
+                  height: stripTileH + 16,
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '8px',
+                  gap: 8,
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: '#3a3a3a #111',
+                }}>
+                  {stripPeers.length === 0 ? (
+                    <div style={{ color: '#7a6e65', fontSize: 13, width: '100%', textAlign: 'center' }}>
+                      Waiting for guests to join...
+                    </div>
+                  ) : (
+                    visibleStripPeers.map(peer => (
+                      <div
+                        key={peer.id}
+                        style={{ width: stripTileW, height: stripTileH, flexShrink: 0, borderRadius: 8, overflow: 'hidden' }}
+                      >
+                        <PeerTile peer={peer} mirrored={mirrored} />
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )
