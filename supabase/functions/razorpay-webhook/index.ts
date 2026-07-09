@@ -507,10 +507,14 @@ serve(async (req) => {
 
       const slabs: any[] = resolvedPolicy?.revenue_policy_slabs || []
 
-      // Resolve ticket price: fallback to session price_tiers (webhook has no
-      // explicit ticket_price field), then to amount / seats
+      // Resolve ticket price: authoritative source is the price captured at
+      // checkout time (payment.notes.ticket_price, e.g. early-bird/sale price).
+      // Falls back to session price_tiers / amount-per-seat for older orders
+      // created before this field was sent.
       const sessionSeats = seats || 1
-      const ticketPricePerSeat: number = sessionInfo?.price_tiers?.[0]?.price
+      const notesTicketPrice = Number(notes.ticket_price)
+      const ticketPricePerSeat: number = (notesTicketPrice > 0 ? notesTicketPrice : null)
+        || sessionInfo?.price_tiers?.[0]?.price
         || Math.round(amount_inr / sessionSeats)
 
       const gatewayFeePct: number = resolvedPolicy?.gateway_fee_pct ?? 3
