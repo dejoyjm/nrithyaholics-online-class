@@ -365,7 +365,6 @@ serve(async (req) => {
       session_id,
       seats,
       amount_inr,
-      ticket_price,
       user_id,
       guest_emails,
     } = await req.json()
@@ -701,14 +700,19 @@ serve(async (req) => {
 
       const slabs: any[] = resolvedPolicy?.revenue_policy_slabs || []
 
-      // Resolve ticket price: from request or fallback to session price_tiers
+      // Resolve ticket price: derive directly from Razorpay's own authoritative
+      // charged amount (amount_inr) and the resolved policy's gateway fee —
+      // back out the pre-fee ticket price rather than trusting client-supplied
+      // metadata.
       const sessionSeats = seats || 1
-      const ticketPricePerSeat: number = ticket_price
-        || sessionInfo?.price_tiers?.[0]?.price
-        || Math.round(amount_inr / sessionSeats)
-
+      const totalPerSeat = amount_inr / sessionSeats
       const gatewayFeePct: number = resolvedPolicy?.gateway_fee_pct ?? 3
-      const gatewayFeePerSeat = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
+      let ticketPricePerSeat = Math.round(totalPerSeat / (1 + gatewayFeePct / 100))
+      let computedFee = Math.round(ticketPricePerSeat * gatewayFeePct / 100)
+      if (Math.round(ticketPricePerSeat + computedFee) !== Math.round(totalPerSeat)) {
+        ticketPricePerSeat += Math.round(totalPerSeat) - Math.round(ticketPricePerSeat + computedFee)
+      }
+      const gatewayFeePerSeat = computedFee
 
       // Marginal NRH share for this booking (current count includes this booking)
       const currentCount: number = bookingCountRes.count || 1
