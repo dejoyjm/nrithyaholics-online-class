@@ -262,8 +262,11 @@ export default function ChoreoPage({ user, platformConfig, onLogout, onSwitchToL
   )
 }
 
-function SessionModal({ user, session, onClose, onSaved }) {
+export function SessionModal({ user, session, onClose, onSaved, adminMode = false, choreographers = [] }) {
   const isEdit = !!session
+  const needsChoreographerPick = adminMode && !isEdit
+  const [selectedChoreographerId, setSelectedChoreographerId] = useState('')
+  const formUnlocked = !needsChoreographerPick || !!selectedChoreographerId
 
   // ── Parse existing time into hour + minute if editing ────────
   const existingTime = session?.scheduled_at ? parseTimeString((() => {
@@ -365,6 +368,10 @@ function SessionModal({ user, session, onClose, onSaved }) {
   }
 
   async function handleSave() {
+    if (needsChoreographerPick && !selectedChoreographerId) {
+      alert('Please select a choreographer')
+      return
+    }
     if (!form.title) {
       alert('Please fill in a title')
       return
@@ -432,7 +439,7 @@ function SessionModal({ user, session, onClose, onSaved }) {
       savedSessionId = session.id
     } else {
       const { data: newSession, error: insertError } = await supabase.from('sessions')
-        .insert({ ...payload, choreographer_id: user.id, status: 'open' })
+        .insert({ ...payload, choreographer_id: adminMode ? selectedChoreographerId : user.id, status: 'open' })
         .select('id').single()
       error = insertError
       savedSessionId = newSession?.id
@@ -482,6 +489,28 @@ function SessionModal({ user, session, onClose, onSaved }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* Admin-only: choreographer picker, required before the rest of the form unlocks */}
+          {needsChoreographerPick && (
+            <div style={{ background: '#fff8e6', border: '1px solid #f0c040', borderRadius: 10, padding: 16 }}>
+              <div style={{ fontSize: 10, color: '#e8a020', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>⚡ Admin: Create for Choreographer</div>
+              <label style={labelStyle}>Choreographer</label>
+              <select
+                style={inputStyle}
+                value={selectedChoreographerId}
+                onChange={e => setSelectedChoreographerId(e.target.value)}
+              >
+                <option value="">Select a choreographer...</option>
+                {choreographers.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.full_name || c.email || c.id}{c.email && c.full_name ? ` (${c.email})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {formUnlocked && <>
 
           {/* Timezone warning — only for non-IST choreographers */}
           {!isIST() && (
@@ -831,6 +860,8 @@ function SessionModal({ user, session, onClose, onSaved }) {
             style={{ background: saving ? '#a09890' : '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', marginTop: 8 }}>
             {saving ? 'Saving...' : isEdit ? 'Save Changes →' : 'Create Session →'}
           </button>
+
+          </>}
 
         </div>
       </div>
