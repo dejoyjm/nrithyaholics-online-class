@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImageCropUploader from '../../components/ImageCropUploader'
+import { SessionModal } from '../ChoreoPage'
 
 const ADMIN_HOURS   = Array.from({ length: 24 }, (_, i) => i)
 const ADMIN_MINUTES = ['00', '15', '30', '45']
@@ -25,10 +26,11 @@ function toLocalDateString(utcStr) {
   return `${y}-${m}-${day}`
 }
 
-export default function SessionsTab({ sessions, waitlistCounts, onRefresh }) {
+export default function SessionsTab({ sessions, waitlistCounts, onRefresh, adminUser, choreographers = [] }) {
   const [sessionsSearch, setSessionsSearch] = useState('')
   const [sessionsStatusFilter, setSessionsStatusFilter] = useState('active')
   const [adminEditSession, setAdminEditSession] = useState(null)
+  const [showCreateForChoreographer, setShowCreateForChoreographer] = useState(false)
 
   async function adminCancelSession(sessionId) {
     if (!window.confirm('Cancel this session? All bookings will be cancelled.')) return
@@ -98,8 +100,12 @@ export default function SessionsTab({ sessions, waitlistCounts, onRefresh }) {
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
+        <button onClick={() => setShowCreateForChoreographer(true)}
+          style={{ background: '#c8430a', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'white', marginLeft: 'auto' }}>
+          + Create Session for Choreographer
+        </button>
         <button onClick={downloadSessionsCSV}
-          style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#5a4e47', marginLeft: 'auto' }}>
+          style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}>
           📥 Download CSV
         </button>
       </div>
@@ -162,6 +168,16 @@ export default function SessionsTab({ sessions, waitlistCounts, onRefresh }) {
           session={adminEditSession}
           onClose={() => setAdminEditSession(null)}
           onSaved={() => { setAdminEditSession(null); onRefresh() }}
+        />
+      )}
+
+      {showCreateForChoreographer && (
+        <SessionModal
+          user={adminUser}
+          adminMode={true}
+          choreographers={choreographers}
+          onClose={() => setShowCreateForChoreographer(false)}
+          onSaved={() => { setShowCreateForChoreographer(false); onRefresh() }}
         />
       )}
     </>

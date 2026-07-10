@@ -129,6 +129,8 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
               sessions={sessions}
               waitlistCounts={waitlistCounts}
               onRefresh={fetchAll}
+              adminUser={user}
+              choreographers={users.filter(u => u.role === 'choreographer')}
             />
           )}
 
