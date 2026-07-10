@@ -263,6 +263,19 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
     card_thumbnail_focal_y: session.card_thumbnail_focal_y ?? 50,
   })
   const [saving, setSaving] = useState(false)
+  const [pricingRules, setPricingRules] = useState([])
+  const [showPricingRules, setShowPricingRules] = useState(false)
+
+  useEffect(() => {
+    supabase.from('pricing_rules').select('*').eq('session_id', session.id)
+      .order('sort_order').then(({ data }) => {
+        if (data && data.length > 0) {
+          setPricingRules(data)
+          setShowPricingRules(true)
+        }
+      })
+  }, [session.id])
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const [seriesParts, setSeriesParts] = useState(() => {
     if (session.session_type === 'series' && Array.isArray(session.series_parts) && session.series_parts.length >= 2) {
@@ -291,6 +304,28 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
 
   const inputStyle = { width: '100%', background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '10px 14px', fontSize: 14, outline: 'none', boxSizing: 'border-box', color: '#0f0c0c' }
   const labelStyle = { fontSize: 11, color: '#7a6e65', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, display: 'block' }
+
+  async function savePricingRules(sessionId) {
+    if (showPricingRules) {
+      await supabase.from('pricing_rules').delete().eq('session_id', sessionId)
+      const validRules = pricingRules.filter(r => r.label && r.price > 0)
+      if (validRules.length > 0) {
+        await supabase.from('pricing_rules').insert(
+          validRules.map((r, i) => ({
+            session_id: sessionId,
+            label: r.label,
+            price: r.price,
+            valid_until: r.valid_until || null,
+            max_tickets: r.max_tickets || null,
+            sort_order: i,
+          }))
+        )
+      }
+    } else {
+      // Remove any existing rules if admin removed them
+      await supabase.from('pricing_rules').delete().eq('session_id', sessionId)
+    }
+  }
 
   async function handleSave() {
     if (!form.title) { alert('Title required'); return }
@@ -322,8 +357,9 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
         card_thumbnail_focal_x: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_x : null,
         card_thumbnail_focal_y: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_y : null,
       }).eq('id', session.id)
-      if (error) alert(error.message)
-      else onSaved()
+      if (error) { alert(error.message); setSaving(false); return }
+      await savePricingRules(session.id)
+      onSaved()
       setSaving(false)
     } else {
       if (!form.date || form.hour === '' || !form.minute) { alert('Title, date and time required'); return }
@@ -348,8 +384,9 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
         card_thumbnail_focal_x: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_x : null,
         card_thumbnail_focal_y: form.card_thumbnail_url.trim() ? form.card_thumbnail_focal_y : null,
       }).eq('id', session.id)
-      if (error) alert(error.message)
-      else onSaved()
+      if (error) { alert(error.message); setSaving(false); return }
+      await savePricingRules(session.id)
+      onSaved()
       setSaving(false)
     }
   }
@@ -512,6 +549,80 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
                 )
               })}
             </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {/* Pricing Rules (Early Bird) */}
+          <div style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 12, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showPricingRules ? 16 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#0f0c0c' }}>🎟️ Early Bird / Pricing Rules</div>
+                <div style={{ fontSize: 12, color: '#7a6e65' }}>Optional — override base price for a limited time or seats</div>
+              </div>
+              <button type="button"
+                onClick={() => setShowPricingRules(p => !p)}
+                style={{ background: showPricingRules ? '#fff0f0' : '#0f0c0c', color: showPricingRules ? '#cc0000' : 'white', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                {showPricingRules ? '− Remove' : '+ Add rule'}
+              </button>
+            </div>
+            {showPricingRules && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {pricingRules.map((rule, i) => (
+                  <div key={i} style={{ background: 'white', border: '1px solid #e2dbd4', borderRadius: 10, padding: 12 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                      <input
+                        style={{ ...inputStyle, flex: 2 }}
+                        placeholder="Label (e.g. Early Bird)"
+                        value={rule.label}
+                        onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: 4 }}>
+                        <span style={{ fontSize: 14, color: '#7a6e65' }}>₹</span>
+                        <input
+                          type="number"
+                          style={{ ...inputStyle }}
+                          placeholder="Price"
+                          value={rule.price}
+                          onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, price: Number(e.target.value) } : r))}
+                          min="0"
+                        />
+                      </div>
+                      <button type="button"
+                        onClick={() => setPricingRules(rules => rules.filter((_, j) => j !== i))}
+                        style={{ background: 'transparent', border: 'none', color: '#cc0000', fontSize: 18, cursor: 'pointer', padding: '0 4px' }}>×</button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#7a6e65', marginBottom: 4 }}>Valid until (optional)</div>
+                        <input
+                          type="datetime-local"
+                          style={{ ...inputStyle, fontSize: 12 }}
+                          value={rule.valid_until ? rule.valid_until.slice(0, 16) : ''}
+                          onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, valid_until: e.target.value ? new Date(e.target.value).toISOString() : null } : r))}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: '#7a6e65', marginBottom: 4 }}>Max tickets (optional)</div>
+                        <input
+                          type="number"
+                          style={{ ...inputStyle, fontSize: 12 }}
+                          placeholder="e.g. 50"
+                          value={rule.max_tickets || ''}
+                          onChange={e => setPricingRules(rules => rules.map((r, j) => j === i ? { ...r, max_tickets: e.target.value ? Number(e.target.value) : null } : r))}
+                          min="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button type="button"
+                  onClick={() => setPricingRules(rules => [...rules, { label: 'Early Bird', price: Math.round(form.price * 0.8), valid_until: null, max_tickets: null }])}
+                  style={{ background: 'white', border: '1px dashed #c8430a', borderRadius: 8, padding: '8px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#c8430a' }}>
+                  + Add pricing rule
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
