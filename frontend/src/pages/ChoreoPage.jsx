@@ -705,7 +705,7 @@ export function SessionModal({ user, session, onClose, onSaved, adminMode = fals
                       ))}
                     </select>
                     <select style={inputStyle} value={part.duration} onChange={e => updatePart(idx, 'duration', Number(e.target.value))}>
-                      {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                      {[30, 45, 60, 75, 90, 120, 150, 180].map(d => <option key={d} value={d}>{d} min</option>)}
                     </select>
                   </div>
                 </div>
@@ -731,7 +731,7 @@ export function SessionModal({ user, session, onClose, onSaved, adminMode = fals
               <div>
                 <label style={labelStyle}>Duration (minutes)</label>
                 <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
-                  {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                  {[30, 45, 60, 75, 90, 120, 150, 180].map(d => <option key={d} value={d}>{d} min</option>)}
                 </select>
               </div>
             )}
