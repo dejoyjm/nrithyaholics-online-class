@@ -24,7 +24,7 @@ function calculateNRHShare(studentCount: number, ticketPrice: number, slabs: any
 }
 
 // ── Email helper (identical to verify-payment) ───────────────
-// Sends booking confirmation via Resend. Never throws — email
+// Sends booking confirmation via Brevo. Never throws — email
 // failure never affects booking creation.
 async function sendBookingConfirmationEmail(
   toEmail: string,
@@ -40,12 +40,12 @@ async function sendBookingConfirmationEmail(
   sessionId: string,
 ) {
   try {
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
-    const RESEND_FROM    = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
-    const APP_URL        = 'https://online.nrithyaholics.in'
+    const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')
+    const FROM_EMAIL    = Deno.env.get('RESEND_FROM_EMAIL') || 'bookings@nrithyaholics.in'
+    const APP_URL       = 'https://online.nrithyaholics.in'
 
-    if (!RESEND_API_KEY) {
-      console.error('RESEND_API_KEY not set — skipping confirmation email')
+    if (!BREVO_API_KEY) {
+      console.error('BREVO_API_KEY not set — skipping confirmation email')
       return
     }
 
@@ -222,22 +222,22 @@ async function sendBookingConfirmationEmail(
 </body>
 </html>`
 
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'api-key': BREVO_API_KEY,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: `NrithyaHolics Online <${RESEND_FROM}>`,
-        to:   [toEmail],
+        sender: { email: FROM_EMAIL, name: 'NrithyaHolics Online' },
+        to:     [{ email: toEmail }],
         subject,
-        html,
+        htmlContent: html,
       }),
     })
 
     if (!res.ok) {
-      console.error('Resend error:', await res.text())
+      console.error('Brevo error:', await res.text())
       return false
     }
     console.log('Webhook: booking confirmation email sent to:', toEmail)
@@ -251,7 +251,7 @@ async function sendBookingConfirmationEmail(
 // ── Admin notification email ──────────────────────────────────
 // Fires on every booking attempt (success or failure). Never throws.
 async function sendAdminNotification(opts: {
-  resendApiKey: string
+  brevoApiKey: string
   success: boolean
   learnerName: string
   learnerEmail: string
@@ -264,7 +264,7 @@ async function sendAdminNotification(opts: {
   errorMessage?: string
 }) {
   try {
-    if (!opts.resendApiKey) return
+    if (!opts.brevoApiKey) return
     const nowStr = new Date().toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric',
       month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
@@ -312,14 +312,14 @@ ${row('Time', `${nowStr} IST`)}
 </table></div></body></html>`
     }
 
-    await fetch('https://api.resend.com/emails', {
+    await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${opts.resendApiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'api-key': opts.brevoApiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'NrithyaHolics Online <bookings@nrithyaholics.in>',
-        to: ['nrithyaholics@gmail.com'],
+        sender: { email: 'bookings@nrithyaholics.in', name: 'NrithyaHolics Online' },
+        to: [{ email: 'nrithyaholics@gmail.com' }],
         subject,
-        html,
+        htmlContent: html,
       }),
     })
   } catch (err) {
@@ -449,7 +449,7 @@ serve(async (req) => {
     if (bookingError) {
       console.error('Webhook booking insert failed:', bookingError)
       const adminFailPromise = sendAdminNotification({
-        resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
+        brevoApiKey: Deno.env.get('BREVO_API_KEY') || '',
         success: false,
         learnerName: userEmail.split('@')[0],
         learnerEmail: userEmail,
@@ -624,7 +624,7 @@ serve(async (req) => {
         }
       })()
       const adminPromise = sendAdminNotification({
-        resendApiKey: Deno.env.get('RESEND_API_KEY') || '',
+        brevoApiKey: Deno.env.get('BREVO_API_KEY') || '',
         success: true,
         learnerName,
         learnerEmail: userEmail,
