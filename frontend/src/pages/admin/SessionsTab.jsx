@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import ImageCropUploader from '../../components/ImageCropUploader'
 import { SessionModal } from '../ChoreoPage'
@@ -186,7 +186,9 @@ export default function SessionsTab({ sessions, waitlistCounts, onRefresh, admin
 
 function SessionRowActions({ session: s, onEdit, onCancel, onSetStatus }) {
   const [open, setOpen] = useState(false)
+  const [openUpward, setOpenUpward] = useState(false)
   const btnRef = useRef(null)
+  const menuRef = useRef(null)
 
   useEffect(() => {
     if (!open) return
@@ -195,6 +197,16 @@ function SessionRowActions({ session: s, onEdit, onCancel, onSetStatus }) {
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  // Flip the menu upward when there isn't enough room below the button —
+  // measured after the menu mounts, before paint, so there's no visible flicker.
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current || !menuRef.current) return
+    const buttonRect = btnRef.current.getBoundingClientRect()
+    const menuHeight = menuRef.current.offsetHeight
+    const spaceBelow = window.innerHeight - buttonRect.bottom
+    setOpenUpward(spaceBelow < menuHeight)
   }, [open])
 
   const items = [
@@ -214,7 +226,14 @@ function SessionRowActions({ session: s, onEdit, onCancel, onSetStatus }) {
         ⚡ Actions ▾
       </button>
       {open && (
-        <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'white', border: '1px solid #e2dbd4', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, minWidth: 190, overflow: 'hidden' }}>
+        <div
+          ref={menuRef}
+          style={{
+            position: 'absolute', right: 0, background: 'white', border: '1px solid #e2dbd4', borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, minWidth: 190, overflow: 'hidden',
+            ...(openUpward ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
+          }}
+        >
           {items.map(item => (
             <button
               key={item.label}
