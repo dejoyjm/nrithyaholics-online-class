@@ -6,6 +6,13 @@ function formatDate(d) {
   return d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 }
 
+function cleanInstagram(val) {
+  if (!val) return ''
+  const match = val.match(/instagram\.com\/([^/?#]+)/i)
+  if (match) return match[1].replace('@', '')
+  return val.replace('@', '').trim()
+}
+
 // section = 'applications' | 'users'
 export default function UsersTab({ section, applications, users, loading, onRefresh }) {
   const [selectedUser, setSelectedUser] = useState(null)
@@ -221,7 +228,7 @@ export default function UsersTab({ section, applications, users, loading, onRefr
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {!drawerEditMode && (
                 <button
-                  onClick={() => { setDrawerEditMode(true); setDrawerEditForm({ full_name: selectedUser.full_name || '', phone: selectedUser.phone || '', admin_notes: selectedUser.admin_notes || '' }) }}
+                  onClick={() => { setDrawerEditMode(true); setDrawerEditForm({ full_name: selectedUser.full_name || '', phone: selectedUser.phone || '', instagram_handle: selectedUser.instagram_handle || '', admin_notes: selectedUser.admin_notes || '' }) }}
                   style={{ background: '#faf7f2', border: '1px solid #e2dbd4', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#5a4e47' }}
                 >
                   ✏️ Edit
@@ -255,6 +262,7 @@ export default function UsersTab({ section, applications, users, loading, onRefr
               const { error } = await supabase.from('profiles').update({
                 full_name: drawerEditForm.full_name.trim() || null,
                 phone: drawerEditForm.phone.trim() || null,
+                instagram_handle: drawerEditForm.instagram_handle.trim() || null,
                 admin_notes: drawerEditForm.admin_notes.trim() || null,
               }).eq('id', selectedUser.id)
               if (error) { alert(error.message); return }
@@ -275,6 +283,10 @@ export default function UsersTab({ section, applications, users, loading, onRefr
                   <div>
                     <label style={labelStyle}>Phone</label>
                     <input style={inputStyle} value={drawerEditForm.phone} onChange={e => setDrawerEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91 98765 43210" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Instagram</label>
+                    <input style={inputStyle} value={drawerEditForm.instagram_handle} onChange={e => setDrawerEditForm(f => ({ ...f, instagram_handle: cleanInstagram(e.target.value) }))} placeholder="yourhandle" />
                   </div>
                   <div>
                     <label style={labelStyle}>Admin Notes</label>

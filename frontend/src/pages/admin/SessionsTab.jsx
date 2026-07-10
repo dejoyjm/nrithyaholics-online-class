@@ -475,7 +475,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
               <div>
                 <label style={labelStyle}>Duration (mins)</label>
                 <select style={inputStyle} value={form.duration} onChange={e => set('duration', Number(e.target.value))}>
-                  {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                  {[30, 45, 60, 75, 90, 120, 150, 180].map(d => <option key={d} value={d}>{d} min</option>)}
                 </select>
               </div>
               <div>
@@ -517,7 +517,7 @@ function AdminSessionEditModal({ session, onClose, onSaved }) {
                       ))}
                     </select>
                     <select style={inputStyle} value={part.duration} onChange={e => updatePart(idx, 'duration', Number(e.target.value))}>
-                      {[30, 45, 60, 75, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+                      {[30, 45, 60, 75, 90, 120, 150, 180].map(d => <option key={d} value={d}>{d} min</option>)}
                     </select>
                   </div>
                 </div>
