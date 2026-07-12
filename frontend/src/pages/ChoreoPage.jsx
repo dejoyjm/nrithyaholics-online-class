@@ -100,7 +100,7 @@ export default function ChoreoPage({ user, platformConfig, onLogout, onSwitchToL
       {/* Header */}
       <div style={{ background: '#0f0c0c', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontFamily: 'Georgia, serif', fontWeight: 700, color: '#faf7f2', fontSize: 20 }}>
-          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+          Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           <span style={{ fontSize: 13, fontWeight: 400, color: '#a09890', marginLeft: 12 }}>Choreographer Dashboard</span>
         </span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

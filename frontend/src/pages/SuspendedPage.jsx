@@ -31,7 +31,7 @@ export default function SuspendedPage({ reason, suspendedAt, onLogout }) {
         marginBottom: 48,
         letterSpacing: '-0.5px',
       }}>
-        Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+        Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
       </div>
 
       {/* Card */}
@@ -75,7 +75,7 @@ export default function SuspendedPage({ reason, suspendedAt, onLogout }) {
           lineHeight: 1.7,
           marginBottom: 24,
         }}>
-          Your account has been suspended and you cannot access NrithyaHolics at this time.
+          Your account has been suspended and you cannot access NrithyaHolics Online at this time.
         </p>
 
         {/* Reason box — show if provided */}
@@ -156,7 +156,7 @@ export default function SuspendedPage({ reason, suspendedAt, onLogout }) {
         fontSize: 12,
         color: 'rgba(250,247,242,0.3)',
       }}>
-        © {new Date().getFullYear()} NrithyaHolics
+        © {new Date().getFullYear()} NrithyaHolics Online
       </div>
     </div>
   )

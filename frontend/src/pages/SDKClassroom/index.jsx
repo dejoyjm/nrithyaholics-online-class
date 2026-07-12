@@ -41,7 +41,7 @@ function FetchingScreen({ session }) {
       )}
       <div style={{ position: 'relative', textAlign: 'center' }}>
         <div style={{ fontFamily: 'Georgia, serif', fontSize: 28, fontWeight: 900, color: '#faf7f2', marginBottom: 8 }}>
-          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+          Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
         </div>
         <div style={{ fontSize: 15, color: '#a09890', marginBottom: 32 }}>{session?.title}</div>
         <div style={{ width: 44, height: 44, border: '3px solid #c8430a', borderTopColor: 'transparent', borderRadius: '50%', animation: 'nhSpin 1s linear infinite', margin: '0 auto 16px' }} />
@@ -903,7 +903,7 @@ function SDKClassroomInner({ sessionId, session: sessionData, onLeave }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 16, fontWeight: 900, color: '#faf7f2' }}>
-            Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+            Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           </div>
           <div style={{ width: 1, height: 16, background: '#3a3a3a' }} />
           <div style={{ fontSize: 13, color: '#a09890', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

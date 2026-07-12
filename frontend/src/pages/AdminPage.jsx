@@ -59,7 +59,7 @@ export default function AdminPage({ user, onLogout, onConfigChange }) {
       {/* NAV */}
       <nav style={{ background: '#0f0c0c', padding: '0 40px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2' }}>
-          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+          Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           <span style={{ fontSize: 12, color: '#e8a020', marginLeft: 12, fontFamily: 'sans-serif', fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase' }}>Admin</span>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>

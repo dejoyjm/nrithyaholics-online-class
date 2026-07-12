@@ -24,8 +24,8 @@ export default async function handler(req, res) {
   const SUPABASE_URL = process.env.VITE_SUPABASE_URL
   const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY
 
-  let title = 'NrithyaHolics — Live Dance Classes'
-  let description = 'Book live dance classes with top choreographers on NrithyaHolics.'
+  let title = 'NrithyaHolics Online — Live Dance Classes'
+  let description = 'Book live dance classes with top choreographers on NrithyaHolics Online.'
   let image = `${APP_URL}/og-default.jpg`
 
   try {
@@ -45,14 +45,14 @@ export default async function handler(req, res) {
       const name = choreo.full_name || 'Choreographer'
       const styles = choreo.style_tags?.join(', ') || ''
 
-      title = `${name} — Dance Teacher on NrithyaHolics`
+      title = `${name} — Dance Teacher on NrithyaHolics Online`
 
       if (choreo.bio) {
         description = choreo.bio.replace(/\n+/g, ' ').trim().slice(0, 200)
       } else if (styles) {
-        description = `${name} teaches ${styles} on NrithyaHolics. Book a live class now.`
+        description = `${name} teaches ${styles} on NrithyaHolics Online. Book a live class now.`
       } else {
-        description = `Live dance classes by ${name} on NrithyaHolics.`
+        description = `Live dance classes by ${name} on NrithyaHolics Online.`
       }
 
       if (choreo.avatar_url) image = choreo.avatar_url
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
 
   <meta property="og:type" content="profile" />
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
-  <meta property="og:site_name" content="NrithyaHolics" />
+  <meta property="og:site_name" content="NrithyaHolics Online" />
   <meta property="og:title" content="${escapeHtml(title)}" />
   <meta property="og:description" content="${escapeHtml(description)}" />
   <meta property="og:image" content="${escapeHtml(image)}" />
@@ -94,7 +94,7 @@ export default async function handler(req, res) {
 <body>
   <script>window.location.replace(${JSON.stringify(redirectUrl)})<\/script>
   <p style="font-family:sans-serif;text-align:center;padding:40px">
-    Redirecting to <a href="${escapeHtml(redirectUrl)}">NrithyaHolics</a>…
+    Redirecting to <a href="${escapeHtml(redirectUrl)}">NrithyaHolics Online</a>…
   </p>
 </body>
 </html>`)

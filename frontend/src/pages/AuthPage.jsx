@@ -44,7 +44,7 @@ export default function AuthPage({ onAuth }) {
       alignItems: 'center', justifyContent: 'center', padding: 24,
     }}>
       <div style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 900, color: '#faf7f2', marginBottom: 48 }}>
-        Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+        Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
       </div>
 
       <div style={{
@@ -54,7 +54,7 @@ export default function AuthPage({ onAuth }) {
         {step === 'email' ? (
           <>
             <h2 style={{ color: '#faf7f2', fontSize: 24, fontWeight: 700, marginBottom: 8, fontFamily: 'Georgia, serif' }}>
-              Welcome to NrithyaHolics
+              Welcome to NrithyaHolics Online
             </h2>
             <p style={{ color: 'rgba(250,247,242,0.45)', fontSize: 14, marginBottom: 32 }}>
               Enter your email — we'll send you a login link. No password needed.

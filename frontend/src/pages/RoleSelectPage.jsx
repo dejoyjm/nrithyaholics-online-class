@@ -107,11 +107,11 @@ export default function RoleSelectPage({ user, profile, onRoleSelected }) {
   if (step === 'choose') return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 900, color: '#faf7f2', marginBottom: 32 }}>
-        Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+        Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
       </div>
       <div style={{ background: '#1a1614', border: '1px solid rgba(250,247,242,0.1)', borderRadius: 20, padding: '40px 36px', width: '100%', maxWidth: 520 }}>
         <h2 style={{ color: '#faf7f2', fontSize: 22, fontWeight: 700, marginBottom: 8, fontFamily: 'Georgia, serif', textAlign: 'center' }}>
-          How will you use NrithyaHolics?
+          How will you use NrithyaHolics Online?
         </h2>
         <p style={{ color: 'rgba(250,247,242,0.45)', fontSize: 14, marginBottom: 32, textAlign: 'center' }}>You can do both — this just sets your starting point</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -139,11 +139,11 @@ export default function RoleSelectPage({ user, profile, onRoleSelected }) {
   return (
     <div style={{ minHeight: '100vh', background: '#0f0c0c', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 900, color: '#faf7f2', marginBottom: 32 }}>
-        Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+        Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
       </div>
       <div style={{ background: '#1a1614', border: '1px solid rgba(250,247,242,0.1)', borderRadius: 20, padding: '40px 36px', width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto' }}>
         <button onClick={() => { localStorage.setItem('nrh_choreo_apply_step', JSON.stringify('choose')); setStep('choose') }} style={{ background: 'none', border: 'none', color: 'rgba(250,247,242,0.4)', fontSize: 13, cursor: 'pointer', marginBottom: 20, padding: 0 }}>← Back</button>
-        <h2 style={{ color: '#faf7f2', fontSize: 22, fontWeight: 700, marginBottom: 8, fontFamily: 'Georgia, serif' }}>Apply to teach on NrithyaHolics</h2>
+        <h2 style={{ color: '#faf7f2', fontSize: 22, fontWeight: 700, marginBottom: 8, fontFamily: 'Georgia, serif' }}>Apply to teach on NrithyaHolics Online</h2>
         <p style={{ color: 'rgba(250,247,242,0.45)', fontSize: 13, marginBottom: 28, lineHeight: 1.6 }}>
           We review every application personally. You'll hear back within 1–2 days.
         </p>
