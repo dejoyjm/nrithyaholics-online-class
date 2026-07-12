@@ -76,6 +76,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
   const [revPolicy, setRevPolicy] = useState(null)
   const [pricingRules, setPricingRules] = useState([])
   const [guestEmails, setGuestEmails] = useState([])
+  const [linkCopied, setLinkCopied] = useState(false)
 
   useEffect(() => { fetchSession() }, [sessionId])
   useEffect(() => { if (user) fetchUserDetails() }, [user])
@@ -411,6 +412,25 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
     </div>
   ) : null
 
+  const shareUrl = `${APP_URL}/share/session/${sessionId}`
+
+  function handleCopyShareLink() {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    }).catch(() => {
+      // Fallback for browsers without clipboard API
+      const el = document.createElement('textarea')
+      el.value = shareUrl
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    })
+  }
+
   const badgesAndTitle = (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -426,9 +446,27 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
           <span key={ag} style={{ background: '#ede9fe', color: '#5b4fcf', fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 20 }}>{ag}</span>
         ))}
       </div>
-      <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0, lineHeight: 1.3 }}>
-        {session.title}
-      </h1>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0f0c0c', fontFamily: 'Georgia, serif', margin: 0, lineHeight: 1.3, flex: 1 }}>
+          {session.title}
+        </h1>
+        <button
+          onClick={handleCopyShareLink}
+          title="Copy share link"
+          style={{
+            flexShrink: 0, marginTop: 4,
+            background: linkCopied ? '#e8f5e9' : '#f0ebe6',
+            border: linkCopied ? '1px solid #81c784' : '1px solid #d4cdc7',
+            borderRadius: 8, padding: '6px 12px',
+            fontSize: 12, fontWeight: 600,
+            color: linkCopied ? '#2e7d32' : '#5a4e47',
+            cursor: 'pointer', whiteSpace: 'nowrap',
+            transition: 'all 0.15s',
+          }}
+        >
+          {linkCopied ? '✓ Copied!' : '🔗 Share'}
+        </button>
+      </div>
     </div>
   )
 
@@ -797,8 +835,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
     >
       <button
         onClick={e => { e.stopPropagation(); setAvatarLightbox(false) }}
-        style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: 44, height: 44, borderRadius: '50%', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >×</button>
+        style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: 44, height: 44, borderRadius: '50%', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
       <img
         src={session.profiles.avatar_url} alt=""
         style={{ maxWidth: 360, maxHeight: 360, width: '80vmin', height: '80vmin', borderRadius: '50%', objectFit: 'cover' }}
