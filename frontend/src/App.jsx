@@ -18,7 +18,7 @@ import MusicBotPage from './pages/MusicBotPage'
 import RecorderPage from './pages/RecorderPage'
 import PracticePage from './pages/PracticePage'
 
-// ── Hash helpers (module-level, no state dependency) ─────────────────────────
+// ── Hash helpers (module-level, no state dependency) ─────────────────────
 
 function parseHash(hash = window.location.hash) {
   const h = (hash || '').replace(/^#\/?/, '')
@@ -59,7 +59,7 @@ export default function App() {
   // Set when ?test=1 arrives without ?session= — show modal after loading resolves
   const pendingQuickTest = useRef(false)
 
-  // ── Hash state application ────────────────────────────────────────────────
+  // ── Hash state application ──────────────────────────────────────────
   //
   // u and p are passed explicitly to avoid stale-closure issues when called
   // from effects that re-register infrequently (e.g. popstate listener).
@@ -135,15 +135,24 @@ export default function App() {
     const paymentError    = params.get('payment_error')
     const sessionIdParam  = params.get('session_id')
     const sessionDeepLink = params.get('session')
+    const choreoDeepLink  = params.get('choreo')
     const testParam       = params.get('test')
 
     // Nothing to handle — leave hash-based restore in charge
-    if (!orderId && !paymentSuccess && !paymentError && !sessionDeepLink && testParam !== '1') return
+    if (!orderId && !paymentSuccess && !paymentError && !sessionDeepLink && !choreoDeepLink && testParam !== '1') return
 
     // ── Standalone setup test: ?test=1 (no session param) ──
     if (testParam === '1' && !sessionDeepLink) {
       window.history.replaceState({}, '', window.location.pathname + window.location.hash)
       pendingQuickTest.current = true
+      return
+    }
+
+    // ── Choreographer profile deep link: ?choreo=ID (from /share/choreographer/:id redirect) ──
+    if (choreoDeepLink) {
+      urlParamsHandled.current = true
+      window.history.replaceState({}, '', window.location.pathname)
+      setCurrentChoreoId(choreoDeepLink)
       return
     }
 
@@ -199,7 +208,7 @@ export default function App() {
     window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
-  // ── Platform config ───────────────────────────────────────────────────────
+  // ── Platform config ───────────────────────────────────────────────
 
   useEffect(() => {
     supabase
@@ -210,7 +219,7 @@ export default function App() {
       .then(({ data }) => { if (data) setPlatformConfig(data) })
   }, [])
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Auth ───────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -251,7 +260,7 @@ export default function App() {
     }
   }
 
-  // ── Hash restoration on initial load ─────────────────────────────────────
+  // ── Hash restoration on initial load ─────────────────────────────────────────
   // Runs once when loading resolves. Skipped if URL params already handled
   // navigation (magic links, Razorpay redirects take priority — Rule 5).
 
@@ -267,7 +276,7 @@ export default function App() {
     }
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Restore pending hash after login ─────────────────────────────────────
+  // ── Restore pending hash after login ─────────────────────────────────────────
   // If auth was required (e.g. #/profile on refresh while logged out), this
   // re-applies the saved hash once both user and profile are available.
 
@@ -286,7 +295,7 @@ export default function App() {
     }
   }, [user?.id, profile?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Admin hash sync ───────────────────────────────────────────────────────
+  // ── Admin hash sync ─────────────────────────────────────────────────────────────
   // AdminPage always renders for admins — keep the URL bar in sync.
 
   useEffect(() => {
@@ -295,7 +304,7 @@ export default function App() {
     }
   }, [user, profile?.is_admin]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Browser back/forward (popstate) ──────────────────────────────────────
+  // ── Browser back/forward (popstate) ───────────────────────────────────────────
   // Re-registers when auth changes so the handler sees current user/profile.
 
   useEffect(() => {
@@ -313,7 +322,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', handler)
   }, [user, profile, currentClassroom]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Logout ────────────────────────────────────────────────────────────────
+  // ── Logout ───────────────────────────────────────────────────────────────────────
 
   const logOut = async () => {
     window.location.hash = '#/'
@@ -326,7 +335,7 @@ export default function App() {
     setCurrentClassroom(null)
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────────────
 
   // Music bot page — headless Puppeteer page, bypasses all auth/session logic.
   // URL: https://online.nrithyaholics.in/?token=XXX&track_url=YYY#/music-bot
