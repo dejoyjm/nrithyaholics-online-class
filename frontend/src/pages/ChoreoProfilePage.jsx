@@ -28,11 +28,31 @@ function formatDateShort(dateStr) {
   })
 }
 
+const APP_URL = 'https://online.nrithyaholics.in'
+
 export default function ChoreoProfilePage({ choreoId, user, onBack, onSessionClick, onLoginClick }) {
   const [choreo, setChoreo] = useState(null)
   const [upcomingSessions, setUpcomingSessions] = useState([])
   const [pastSessions, setPastSessions] = useState([])
   const [loading, setLoading] = useState(true)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  function handleCopyShareLink() {
+    const shareUrl = `${APP_URL}/share/choreographer/${choreoId}`
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    }).catch(() => {
+      const el = document.createElement('textarea')
+      el.value = shareUrl
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    })
+  }
 
   useEffect(() => {
     if (choreoId) fetchAll()
@@ -164,7 +184,7 @@ export default function ChoreoProfilePage({ choreoId, user, onBack, onSessionCli
             </div>
 
             {/* Social links */}
-            <div style={{ display: 'flex', gap: 10, paddingBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingBottom: 8 }}>
               {choreo.instagram_handle && (
                 <a
                   href={`https://instagram.com/${choreo.instagram_handle.replace('@', '')}`}
@@ -180,6 +200,21 @@ export default function ChoreoProfilePage({ choreoId, user, onBack, onSessionCli
                   📸 @{choreo.instagram_handle.replace('@', '')}
                 </a>
               )}
+              <button
+                onClick={handleCopyShareLink}
+                title="Copy share link"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: linkCopied ? '#e8f5e9' : 'white',
+                  border: linkCopied ? '1px solid #81c784' : '1px solid #e2dbd4',
+                  borderRadius: 8, padding: '8px 14px',
+                  fontSize: 13, fontWeight: 600,
+                  color: linkCopied ? '#2e7d32' : '#0f0c0c',
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                {linkCopied ? '✓ Copied!' : '🔗 Share profile'}
+              </button>
             </div>
           </div>
         </div>
