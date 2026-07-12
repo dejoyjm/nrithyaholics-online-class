@@ -9,8 +9,7 @@ function escapeHtml(str) {
 }
 
 function safeId(raw) {
-  // Accept only UUID-shaped strings (hex + hyphens, 36 chars max)
-  return /^[0-9a-f-]{1,36}$/i.test(raw) ? raw : null
+  return /^[0-9a-f-]{1,36}$/i.test(String(raw ?? '')) ? String(raw) : null
 }
 
 export default async function handler(req, res) {
@@ -100,7 +99,7 @@ export default async function handler(req, res) {
   <meta http-equiv="refresh" content="0;url=${escapeHtml(redirectUrl)}" />
 </head>
 <body>
-  <script>window.location.replace(${JSON.stringify(redirectUrl)})</script>
+  <script>window.location.replace(${JSON.stringify(redirectUrl)})<\/script>
   <p style="font-family:sans-serif;text-align:center;padding:40px">
     Redirecting to <a href="${escapeHtml(redirectUrl)}">NrithyaHolics</a>…
   </p>

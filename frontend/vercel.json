@@ -1,7 +1,7 @@
 {
   "rewrites": [
-    { "source": "/share/session/:id", "destination": "/api/share/session/:id" },
-    { "source": "/share/choreographer/:id", "destination": "/api/share/choreographer/:id" },
+    { "source": "/share/session/:id", "destination": "/api/share/session?id=:id" },
+    { "source": "/share/choreographer/:id", "destination": "/api/share/choreographer?id=:id" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
