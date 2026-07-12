@@ -208,7 +208,7 @@ export default function App() {
     window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
-  // ── Platform config ───────────────────────────────────────────────
+  // ── Platform config ───────────────────────────────────────────
 
   useEffect(() => {
     supabase
