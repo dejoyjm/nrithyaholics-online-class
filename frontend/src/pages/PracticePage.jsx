@@ -285,7 +285,7 @@ export default function PracticePage({ user, sessionId, bookingId, onBack, platf
         flexShrink: 0, borderBottom: '1px solid #1a1616',
       }}>
         <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, fontWeight: 900, color: '#faf7f2' }}>
-          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+          Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           <span style={{ fontSize: 13, fontWeight: 400, color: '#9a8e85', marginLeft: 12 }}>Practice Room</span>
         </div>
         <button

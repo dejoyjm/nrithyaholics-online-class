@@ -24,8 +24,8 @@ export default async function handler(req, res) {
   const SUPABASE_URL = process.env.VITE_SUPABASE_URL
   const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY
 
-  let title = 'NrithyaHolics — Live Dance Classes'
-  let description = 'Book live dance classes with top choreographers on NrithyaHolics.'
+  let title = 'NrithyaHolics Online — Live Dance Classes'
+  let description = 'Book live dance classes with top choreographers on NrithyaHolics Online.'
   let image = `${APP_URL}/og-default.jpg`
 
   try {
@@ -50,14 +50,14 @@ export default async function handler(req, res) {
           })
         : ''
 
-      title = `${session.title} — NrithyaHolics`
+      title = `${session.title} — NrithyaHolics Online`
 
       if (session.description) {
         description = session.description.replace(/\n+/g, ' ').trim().slice(0, 200)
       } else if (choreoName && dateStr) {
         description = `Live dance class by ${choreoName} on ${dateStr}.`
       } else if (choreoName) {
-        description = `Live dance class by ${choreoName} on NrithyaHolics.`
+        description = `Live dance class by ${choreoName} on NrithyaHolics Online.`
       }
 
       // Prefer card thumbnail (smaller, crop-optimised) over full cover for OG
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
 
   <meta property="og:type" content="website" />
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
-  <meta property="og:site_name" content="NrithyaHolics" />
+  <meta property="og:site_name" content="NrithyaHolics Online" />
   <meta property="og:title" content="${escapeHtml(title)}" />
   <meta property="og:description" content="${escapeHtml(description)}" />
   <meta property="og:image" content="${escapeHtml(image)}" />
@@ -101,7 +101,7 @@ export default async function handler(req, res) {
 <body>
   <script>window.location.replace(${JSON.stringify(redirectUrl)})<\/script>
   <p style="font-family:sans-serif;text-align:center;padding:40px">
-    Redirecting to <a href="${escapeHtml(redirectUrl)}">NrithyaHolics</a>…
+    Redirecting to <a href="${escapeHtml(redirectUrl)}">NrithyaHolics Online</a>…
   </p>
 </body>
 </html>`)

@@ -50,9 +50,9 @@ async function sendReminderEmail(
   })
 
   const calUrl = `https://www.google.com/calendar/render?action=TEMPLATE` +
-    `&text=${encodeURIComponent(sessionTitle + ' — NrithyaHolics')}` +
+    `&text=${encodeURIComponent(sessionTitle + ' — NrithyaHolics Online')}` +
     `&dates=${toGCalDate(sessionDate)}/${toGCalDate(endDate)}` +
-    `&details=${encodeURIComponent(`Live dance class with ${choreographerName} on NrithyaHolics.\n\nJoin at: ${APP_URL}/#/session/${sessionId}`)}`
+    `&details=${encodeURIComponent(`Live dance class with ${choreographerName} on NrithyaHolics Online.\n\nJoin at: ${APP_URL}/#/session/${sessionId}`)}`
 
   const testSetupUrl = `${APP_URL}/#/session/${sessionId}`
 

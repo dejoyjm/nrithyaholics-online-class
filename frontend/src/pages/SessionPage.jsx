@@ -274,7 +274,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
         key: RAZORPAY_KEY_ID,
         amount: orderData.amount,
         currency: orderData.currency,
-        name: 'NrithyaHolics',
+        name: 'NrithyaHolics Online',
         description: `${session.title} · ${seats} seat${seats > 1 ? 's' : ''}`,
         order_id: orderData.order_id,
         prefill: { email: userEmail, name: userName },
@@ -854,7 +854,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             ← Back
           </button>
           <span style={{ fontFamily: 'Georgia, serif', fontWeight: 700, color: '#faf7f2', fontSize: 18 }}>
-            Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+            Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           </span>
         </div>
 
@@ -948,7 +948,7 @@ export default function SessionPage({ sessionId, user, profile, onBack, onLoginC
             ← Back
           </button>
           <span style={{ fontFamily: 'Georgia, serif', fontWeight: 700, color: '#0f0c0c', fontSize: 18 }}>
-            Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+            Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           </span>
         </div>
 

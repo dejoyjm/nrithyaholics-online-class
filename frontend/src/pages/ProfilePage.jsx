@@ -181,7 +181,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
         position: 'sticky', top: 0, zIndex: 100,
       }}>
         <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2' }}>
-          Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+          Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {isApprovedChoreo && onSwitchToTeaching && (
@@ -421,7 +421,7 @@ export default function ProfilePage({ user, profile, platformConfig, onBack, onA
             {!isChoreo && onApplyToTeach && (
               <div style={{ background: 'white', borderRadius: 16, padding: 24, border: '1px solid #e2dbd4', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: '#0f0c0c', marginBottom: 4 }}>Want to teach on NrithyaHolics?</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: '#0f0c0c', marginBottom: 4 }}>Want to teach on NrithyaHolics Online?</div>
                   <div style={{ fontSize: 13, color: '#7a6e65' }}>Apply to become a choreographer and host live sessions.</div>
                 </div>
                 <button onClick={onApplyToTeach} style={{ background: '#c8430a', color: 'white', border: 'none', borderRadius: 10, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>

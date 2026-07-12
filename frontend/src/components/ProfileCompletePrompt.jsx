@@ -56,7 +56,7 @@ export default function ProfileCompletePrompt({ user, profile, onComplete, onSki
       }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>👋</div>
         <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 700, color: '#0f0c0c', margin: '0 0 8px' }}>
-          Welcome to NrithyaHolics!
+          Welcome to NrithyaHolics Online!
         </h2>
         <p style={{ fontSize: 14, color: '#7a6e65', margin: '0 0 24px', lineHeight: 1.5 }}>
           Help us personalise your experience

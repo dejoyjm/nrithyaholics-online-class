@@ -156,7 +156,7 @@ export default function SettingsTab({ onConfigSaved }) {
         </div>
         <div style={{ fontSize: 13, color: form.classroom_mode === 'sdk' ? '#22c55e' : '#7a6e65', marginBottom: 20 }}>
           {form.classroom_mode === 'sdk'
-            ? 'NrithyaHolics custom classroom. Full control.'
+            ? 'NrithyaHolics Online custom classroom. Full control.'
             : '100ms hosted UI. Stable, no customisation.'}
         </div>
         <button onClick={handleSaveMode} disabled={savingMode}

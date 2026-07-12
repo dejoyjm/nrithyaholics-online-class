@@ -597,7 +597,7 @@ export default function HomePage({ onLoginClick, user, onLogout, onSessionClick,
       }}>
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, fontWeight: 900, color: '#faf7f2' }}>
-            Nrithya<span style={{ color: '#c8430a' }}>Holics</span>
+            Nrithya<span style={{ color: '#c8430a' }}>Holics</span><span style={{ fontWeight: 400, color: '#7a6e65', marginLeft: 4 }}> Online</span>
           </div>
           {!isIST() && (
             <span style={{
